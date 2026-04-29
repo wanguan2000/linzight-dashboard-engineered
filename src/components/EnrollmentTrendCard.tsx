@@ -1,6 +1,6 @@
 import { Card } from './Card';
 
-export function EnrollmentTrendCard() {
+export function EnrollmentTrendCard({ enrolled = '2,842', helper = '累计入组', delta = '较上季度 18.6%' }: { enrolled?: string; helper?: string; delta?: string }) {
   return (
     <Card
       title="入组趋势"
@@ -10,9 +10,9 @@ export function EnrollmentTrendCard() {
         </select>
       }
     >
-      <div className="trend-card__value">2,842</div>
-      <div className="trend-card__label">累计入组</div>
-      <div className="trend-card__delta">↑ 较上季度 18.6%</div>
+      <div className="trend-card__value">{enrolled}</div>
+      <div className="trend-card__label">{helper}</div>
+      <div className="trend-card__delta">{delta}</div>
 
       <div className="mini-chart" aria-label="入组趋势图">
         <svg viewBox="0 0 220 80" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">

@@ -31,10 +31,10 @@ function KpiCard({ metric }: { metric: KpiMetric }) {
   );
 }
 
-export function MetricGrid() {
+export function MetricGrid({ metrics = kpiMetrics }: { metrics?: KpiMetric[] }) {
   return (
     <section className="kpi-grid" aria-label="研究关键指标">
-      {kpiMetrics.map((metric) => (
+      {metrics.map((metric) => (
         <KpiCard key={metric.label} metric={metric} />
       ))}
     </section>

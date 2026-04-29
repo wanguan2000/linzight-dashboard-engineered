@@ -1,12 +1,13 @@
 import { cohortStats } from '../data/dashboard';
+import type { CohortStat } from '../types';
 import { Card } from './Card';
 import { Icon } from './Icon';
 
-export function CohortOverviewCard() {
+export function CohortOverviewCard({ stats = cohortStats }: { stats?: CohortStat[] }) {
   return (
     <Card title="真实世界队列概览">
       <div className="cohort-list">
-        {cohortStats.map((stat) => (
+        {stats.map((stat) => (
           <div className="cohort-list__row" key={stat.label}>
             <div className="cohort-list__label">
               <Icon name={stat.icon} />

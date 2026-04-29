@@ -639,13 +639,35 @@ def analytics_summary() -> dict[str, Any]:
             value = payload.get("数据完整度", 0)
             completeness_values.append(float(value) if isinstance(value, (int, float)) else 0.0)
         omics_count = conn.execute("SELECT COUNT(*) AS count FROM omics_records").fetchone()["count"]
+        patient_count = conn.execute("SELECT COUNT(*) AS count FROM patients").fetchone()["count"]
+        visit_count = conn.execute("SELECT COUNT(*) AS count FROM visits").fetchone()["count"]
+        crf_count = conn.execute("SELECT COUNT(*) AS count FROM crf_entries").fetchone()["count"]
+        consent_signed_count = conn.execute("SELECT COUNT(*) AS count FROM consents WHERE status = '已签署'").fetchone()["count"]
+        sample_patient_count = conn.execute("SELECT COUNT(DISTINCT patient_id) AS count FROM samples").fetchone()["count"]
+        active_patient_count = conn.execute("SELECT COUNT(*) AS count FROM patients WHERE disease_type != 'HC'").fetchone()["count"]
+        completed_patient_count = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM patients p
+            WHERE EXISTS (
+              SELECT 1 FROM omics_records o
+              WHERE o.patient_id = p.id AND o.status = '结果归档'
+            )
+            """
+        ).fetchone()["count"]
         return {
-            "patient_count": conn.execute("SELECT COUNT(*) AS count FROM patients").fetchone()["count"],
+            "patient_count": patient_count,
             "disease_distribution": disease_distribution,
             "sample_count": conn.execute("SELECT COUNT(*) AS count FROM samples").fetchone()["count"],
             "omics_count": omics_count,
             "completed_omics_count": conn.execute("SELECT COUNT(*) AS count FROM omics_records WHERE status = '结果归档'").fetchone()["count"],
             "data_completeness_avg": round(sum(completeness_values) / len(completeness_values), 1) if completeness_values else 0,
+            "visit_count": visit_count,
+            "crf_count": crf_count,
+            "consent_signed_count": consent_signed_count,
+            "sample_patient_count": sample_patient_count,
+            "active_patient_count": active_patient_count,
+            "completed_patient_count": completed_patient_count,
         }
 
 

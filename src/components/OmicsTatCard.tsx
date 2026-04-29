@@ -1,7 +1,17 @@
 import { omicsStats } from '../data/dashboard';
 import { Card } from './Card';
 
-export function OmicsTatCard() {
+export function OmicsTatCard({
+  stats = omicsStats,
+  tatValue = '2.6',
+  tatUnit = '天',
+  tatLabel = '中位 TAT'
+}: {
+  stats?: typeof omicsStats;
+  tatValue?: string;
+  tatUnit?: string;
+  tatLabel?: string;
+}) {
   return (
     <Card
       title="多组学检测的统计"
@@ -23,14 +33,14 @@ export function OmicsTatCard() {
           <circle cx="45" cy="45" r="35" className="donut-stat__value" stroke="url(#omicsDonutGrad)" strokeDasharray="155 220" />
         </svg>
         <div className="donut-stat__center">
-          <strong>2.6</strong>
-          <span>天</span>
-          <small>中位 TAT</small>
+          <strong>{tatValue}</strong>
+          {tatUnit ? <span>{tatUnit}</span> : null}
+          <small>{tatLabel}</small>
         </div>
       </div>
 
       <div className="omics-list">
-        {omicsStats.map((stat) => (
+        {stats.map((stat) => (
           <div className="omics-list__item" key={stat.label}>
             <span>{stat.label}</span>
             <div>

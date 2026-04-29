@@ -1,12 +1,13 @@
 import { journeyRates, journeyStages } from '../data/dashboard';
+import type { JourneyStage } from '../types';
 import { Card } from './Card';
 import { Icon } from './Icon';
 
-export function PatientJourneyCard() {
+export function PatientJourneyCard({ stages = journeyStages, rates = journeyRates }: { stages?: JourneyStage[]; rates?: string[] }) {
   return (
     <Card title="患者旅程概览" action={<button className="link-button" type="button">查看全部患者 →</button>}>
       <div className="journey__stats">
-        {journeyStages.map((stage) => (
+        {stages.map((stage) => (
           <div className="journey__stat" key={stage.label}>
             <span>{stage.label}</span>
             <strong>{stage.value}</strong>
@@ -16,7 +17,7 @@ export function PatientJourneyCard() {
 
       <div className="journey__timeline">
         <div className="journey__line" />
-        {journeyStages.map((stage) => (
+        {stages.map((stage) => (
           <div className="journey__node-wrap" key={stage.label}>
             <div className={`journey__node journey__node--${stage.theme}`}>
               <Icon name={stage.icon} />
@@ -43,7 +44,7 @@ export function PatientJourneyCard() {
       </div>
 
       <div className="journey__rates">
-        {journeyRates.map((rate) => (
+        {rates.map((rate) => (
           <span key={rate}>{rate}</span>
         ))}
       </div>

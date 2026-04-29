@@ -107,6 +107,12 @@ export type ApiAnalysisSummary = {
   omics_count: number;
   completed_omics_count: number;
   data_completeness_avg: number;
+  visit_count?: number;
+  crf_count?: number;
+  consent_signed_count?: number;
+  sample_patient_count?: number;
+  active_patient_count?: number;
+  completed_patient_count?: number;
 };
 
 export type ApiPanorama = {

@@ -1,7 +1,7 @@
 import type { OmicsRecord, SampleRecord } from '../data/operations';
 import { roleLabels, type AuthenticatedUser } from '../data/auth';
 import type { OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
-import type { ApiExportJob, ApiFileMetadata, ApiLoginResponse, ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
+import type { ApiAnalysisSummary, ApiExportJob, ApiFileMetadata, ApiLoginResponse, ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
 
 export type DemoDataset = {
   patients: PatientRecord[];
@@ -108,6 +108,10 @@ export async function createExportJob(exportType = 'cohort_csv'): Promise<ApiExp
 export async function runQualityChecks(): Promise<{ status: string; created: number }> {
   const token = window.localStorage.getItem('linzight-demo-token');
   return postJson<{ status: string; created: number }>('/quality/run', {}, token ? { Authorization: `Bearer ${token}` } : undefined);
+}
+
+export async function fetchAnalyticsSummary(): Promise<ApiAnalysisSummary> {
+  return getJson<ApiAnalysisSummary>('/analytics/summary');
 }
 
 function toSamplesByType(records: ApiSample[]): SampleCollection[] {

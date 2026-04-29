@@ -1,11 +1,11 @@
 import type { CSSProperties } from 'react';
 import { workflowItems } from '../data/dashboard';
+import type { WorkflowItem } from '../types';
 import { Card } from './Card';
 import { Icon } from './Icon';
 
-export function WorkflowProgressCard() {
+export function WorkflowProgressCard({ items = workflowItems, overall = 68 }: { items?: WorkflowItem[]; overall?: number }) {
   const circumference = 2 * Math.PI * 45;
-  const overall = 68;
   const offset = circumference - (circumference * overall) / 100;
 
   return (
@@ -20,7 +20,7 @@ export function WorkflowProgressCard() {
     >
       <div className="workflow-card__body">
         <div className="workflow-list">
-          {workflowItems.map((item) => {
+          {items.map((item) => {
             const width = `${Math.min(item.percent, 100)}%`;
             return (
               <div className={`workflow-list__row workflow-list__row--${item.status ?? 'normal'}`} key={item.label}>
