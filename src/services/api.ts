@@ -1,7 +1,7 @@
-import type { OmicsRecord, SampleRecord } from '../data/operations';
+import type { ConsentRecord, OmicsRecord, SampleRecord } from '../data/operations';
 import { roleLabels, type AuthenticatedUser } from '../data/auth';
 import type { OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
-import type { ApiAnalysisSummary, ApiExportJob, ApiFileMetadata, ApiLoginResponse, ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
+import type { ApiAnalysisSummary, ApiConsent, ApiExportJob, ApiFileMetadata, ApiLoginResponse, ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
 
 export type DemoDataset = {
   patients: PatientRecord[];
@@ -112,6 +112,42 @@ export async function runQualityChecks(): Promise<{ status: string; created: num
 
 export async function fetchAnalyticsSummary(): Promise<ApiAnalysisSummary> {
   return getJson<ApiAnalysisSummary>('/analytics/summary');
+}
+
+function toConsentRecord(record: ApiConsent): ConsentRecord {
+  return {
+    id: record.id,
+    patientId: record.patient_id,
+    patientName: record.patient_name,
+    hospitalNo: record.hospital_no,
+    diseaseType: record.disease_type,
+    status: record.status,
+    signedAt: record.signed_at,
+    version: record.version,
+    method: record.method
+  };
+}
+
+export async function fetchConsentRecords(): Promise<ConsentRecord[]> {
+  return (await getJson<ApiConsent[]>('/consents')).map(toConsentRecord);
+}
+
+export async function updateConsentRecord(id: string, payload: Partial<Pick<ConsentRecord, 'status' | 'signedAt' | 'version' | 'method'>>): Promise<ConsentRecord> {
+  const token = window.localStorage.getItem('linzight-demo-token');
+  const response = await requestJson<ApiConsent>(`/consents/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify({
+      status: payload.status,
+      signed_at: payload.signedAt,
+      version: payload.version,
+      method: payload.method
+    })
+  });
+  return toConsentRecord(response);
 }
 
 function toSamplesByType(records: ApiSample[]): SampleCollection[] {

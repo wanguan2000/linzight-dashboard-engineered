@@ -59,6 +59,7 @@ export interface OmicsRecord {
 
 export interface ConsentRecord {
   id: string;
+  patientId?: string;
   patientName: string;
   hospitalNo: string;
   diseaseType: string;

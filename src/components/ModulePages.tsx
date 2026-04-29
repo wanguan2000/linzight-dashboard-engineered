@@ -17,7 +17,16 @@ import {
   type VisitRecord
 } from '../data/operations';
 import { patientRecords, type PatientRecord } from '../data/patientCohort';
-import { createExportJob, fetchDemoDataset, fetchOmicsRecords, fetchSamples, runQualityChecks, uploadFileToBackend } from '../services/api';
+import {
+  createExportJob,
+  fetchConsentRecords,
+  fetchDemoDataset,
+  fetchOmicsRecords,
+  fetchSamples,
+  runQualityChecks,
+  updateConsentRecord,
+  uploadFileToBackend
+} from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 import { PatientListModule } from './PatientCohortPage';
@@ -1100,6 +1109,7 @@ function SampleTestingStatTiles({
 
 export function ConsentManagementPage() {
   const [selected, setSelected] = useState<ConsentRecord>(consentRecords[0]);
+  const [baseRecords, setBaseRecords] = useState<ConsentRecord[]>(consentRecords);
   const [recordOverrides, setRecordOverrides] = useState<Record<string, Partial<ConsentRecord>>>({});
   const [understoodRecords, setUnderstoodRecords] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState('');
@@ -1107,9 +1117,9 @@ export function ConsentManagementPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [activeConsentSection, setActiveConsentSection] = useState(0);
   const records = useMemo(() => {
-    return consentRecords.map((record) => ({ ...record, ...recordOverrides[record.id] }));
-  }, [recordOverrides]);
-  const selectedRecord = records.find((record) => record.id === selected.id) ?? records[0];
+    return baseRecords.map((record) => ({ ...record, ...recordOverrides[record.id] }));
+  }, [baseRecords, recordOverrides]);
+  const selectedRecord = records.find((record) => record.id === selected.id) ?? records[0] ?? consentRecords[0];
   const statusCounts = useMemo(() => {
     return records.reduce<Record<'全部' | ConsentRecord['status'], number>>(
       (acc, record) => {
@@ -1161,15 +1171,22 @@ export function ConsentManagementPage() {
   };
 
   const markUploaded = (record: ConsentRecord) => {
+    const nextRecord = { ...record, status: '已签署' as const, signedAt: new Date().toISOString().slice(0, 10), method: '电子' as const };
     setRecordOverrides((current) => ({
       ...current,
       [record.id]: {
-        status: '已签署',
-        signedAt: '2026-04-27'
+        status: nextRecord.status,
+        signedAt: nextRecord.signedAt,
+        method: nextRecord.method
       }
     }));
     setUnderstoodRecords((current) => ({ ...current, [record.id]: true }));
-    setSelected({ ...record, status: '已签署', signedAt: '2026-04-27' });
+    setSelected(nextRecord);
+    void updateConsentRecord(record.id, {
+      status: nextRecord.status,
+      signedAt: nextRecord.signedAt,
+      method: nextRecord.method
+    }).catch(() => undefined);
   };
 
   const markSelectedUnderstood = () => {
@@ -1179,6 +1196,23 @@ export function ConsentManagementPage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [query, statusFilter]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    void fetchConsentRecords()
+      .then((nextRecords) => {
+        if (ignore || !nextRecords.length) return;
+        setBaseRecords(nextRecords);
+        setRecordOverrides({});
+        setSelected(nextRecords[0]);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);

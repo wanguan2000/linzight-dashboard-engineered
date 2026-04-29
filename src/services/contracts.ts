@@ -58,6 +58,18 @@ export type ApiOmics = {
   completed_at: string;
 };
 
+export type ApiConsent = {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  hospital_no: string;
+  disease_type: DiseaseType;
+  status: '已签署' | '待签署' | '已撤回';
+  version: string;
+  signed_at: string;
+  method: '电子' | '纸质' | '-';
+};
+
 export type ApiCrfEntry = {
   id: string;
   patient_id: string;

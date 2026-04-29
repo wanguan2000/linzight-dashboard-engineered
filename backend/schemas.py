@@ -12,6 +12,7 @@ SampleType = Literal["血液", "CSF", "肾", "尿液"]
 SampleStatus = Literal["已采集", "已送检", "检测中", "结果回传", "待处理"]
 OmicsStatus = Literal["样本接收", "文库构建", "测序完成", "数据分析", "结果归档"]
 QcStatus = Literal["通过", "未通过", "待确认"]
+ConsentStatus = Literal["已签署", "待签署", "已撤回"]
 CrfStatus = Literal["draft", "submitted", "locked"]
 FileCategory = Literal["consent", "clinical", "sample", "omics_result", "analysis_export", "other"]
 ExportStatus = Literal["queued", "running", "ready", "failed"]
@@ -124,6 +125,13 @@ class OmicsUpdate(BaseModel):
     qc: QcStatus | None = None
     sent_at: str | None = None
     completed_at: str | None = None
+
+
+class ConsentUpdate(BaseModel):
+    status: ConsentStatus | None = None
+    version: str | None = None
+    signed_at: str | None = None
+    method: Literal["电子", "纸质", "-"] | None = None
 
 
 class CrfEntryBase(BaseModel):

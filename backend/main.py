@@ -19,6 +19,7 @@ try:
         fetch_one,
         initialize_schema,
         row_to_audit_log,
+        row_to_consent,
         row_to_crf_entry,
         row_to_export_job,
         row_to_file,
@@ -29,7 +30,7 @@ try:
         row_to_user,
         utc_now,
     )
-    from .schemas import CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate
+    from .schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate
     from .seed import seed_database
 except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from database import (
@@ -39,6 +40,7 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         fetch_one,
         initialize_schema,
         row_to_audit_log,
+        row_to_consent,
         row_to_crf_entry,
         row_to_export_job,
         row_to_file,
@@ -49,7 +51,7 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         row_to_user,
         utc_now,
     )
-    from schemas import CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate
+    from schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate
     from seed import seed_database
 
 app = FastAPI(title="LinZight RWS Demo API", version="1.0.0")
@@ -103,9 +105,9 @@ def role_can(role: str, resource: str, action: str) -> bool:
     if action == "read":
         return True
     allowed: dict[str, set[str]] = {
-        "project_admin": {"patients", "crf", "samples", "omics", "files", "exports", "quality"},
-        "investigator": {"crf", "files"},
-        "crc": {"patients", "crf", "samples", "omics", "files"},
+        "project_admin": {"patients", "consents", "crf", "samples", "omics", "files", "exports", "quality"},
+        "investigator": {"consents", "crf", "files"},
+        "crc": {"patients", "consents", "crf", "samples", "omics", "files"},
         "data_manager": {"crf", "exports", "quality"},
         "viewer": set(),
     }
@@ -460,6 +462,75 @@ def delete_omics(record_id: str, authorization: str | None = Header(default=None
         result = conn.execute("DELETE FROM omics_records WHERE id = ?", (record_id,))
         if result.rowcount == 0:
             raise not_found()
+
+
+@app.get("/consents")
+def list_consents(q: str | None = Query(default=None), status_filter: str | None = Query(default=None, alias="status")) -> list[dict[str, Any]]:
+    sql = """
+        SELECT
+          c.id,
+          c.patient_id,
+          p.name AS patient_name,
+          p.hospital_no,
+          p.disease_type,
+          c.status,
+          c.version,
+          c.signed_at,
+          c.method
+        FROM consents c
+        JOIN patients p ON p.id = c.patient_id
+    """
+    params: list[Any] = []
+    where: list[str] = []
+    if q:
+        where.append("(p.name LIKE ? OR p.hospital_no LIKE ? OR p.disease_type LIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
+    if status_filter:
+        where.append("c.status = ?")
+        params.append(status_filter)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY p.id"
+    with connect() as conn:
+        return [row_to_consent(row) for row in conn.execute(sql, params).fetchall()]
+
+
+@app.put("/consents/{consent_id}")
+def update_consent(consent_id: str, payload: ConsentUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = authorize(authorization, "consents")
+    data = dump_model(payload, exclude_unset=True)
+    if not data:
+        with connect() as conn:
+            return row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
+    columns = [f"{key} = ?" for key in data]
+    values = list(data.values())
+    values.append(consent_id)
+    with connect() as conn:
+        before = row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
+        result = conn.execute(f"UPDATE consents SET {', '.join(columns)} WHERE id = ?", values)
+        if result.rowcount == 0:
+            raise not_found()
+        after = row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
+        insert_audit(conn, user, "update", "consents", consent_id, before=before, after=after)
+        joined = conn.execute(
+            """
+            SELECT
+              c.id,
+              c.patient_id,
+              p.name AS patient_name,
+              p.hospital_no,
+              p.disease_type,
+              c.status,
+              c.version,
+              c.signed_at,
+              c.method
+            FROM consents c
+            JOIN patients p ON p.id = c.patient_id
+            WHERE c.id = ?
+            """,
+            (consent_id,),
+        ).fetchone()
+        return row_to_consent(joined)
 
 
 @app.get("/crf")
