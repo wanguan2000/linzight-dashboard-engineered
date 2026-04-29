@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Dashboard } from './components/Dashboard';
+import { LoginPage } from './components/LoginPage';
 import {
   ClinicalDataCapturePage,
   ConsentManagementPage,
@@ -11,6 +12,7 @@ import {
 import { PatientCohortPage } from './components/PatientCohortPage';
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
+import type { AuthenticatedUser } from './data/auth';
 import { navItems } from './data/dashboard';
 import type { PatientRecord } from './data/patientCohort';
 
@@ -30,6 +32,8 @@ const moduleSlugMap: Record<string, string> = {
   数据分析: 'data-analysis',
   系统管理: 'system-management'
 };
+
+const authStorageKey = 'linzight-demo-user';
 
 function getNavIndexByLabel(label?: string | null) {
   if (!label) return 0;
@@ -60,6 +64,19 @@ function getInitialNavIndex() {
 
   const pathSlug = window.location.pathname.split('/').pop();
   return getNavIndexBySlug(pathSlug);
+}
+
+function getInitialUser(): AuthenticatedUser | null {
+  if (typeof window === 'undefined') return null;
+  const rawUser = window.localStorage.getItem(authStorageKey);
+  if (!rawUser) return null;
+
+  try {
+    return JSON.parse(rawUser) as AuthenticatedUser;
+  } catch {
+    window.localStorage.removeItem(authStorageKey);
+    return null;
+  }
 }
 
 function syncModuleRoute(label: string) {
@@ -120,6 +137,7 @@ function getTopbarCopy(activeModule: string) {
 }
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(getInitialUser);
   const [activeNavIndex, setActiveNavIndex] = useState(getInitialNavIndex);
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
   const activeModule = navItems[activeNavIndex]?.label ?? '首页工作台';
@@ -149,6 +167,18 @@ export default function App() {
     setActiveModule('临床数据采集');
   }
 
+  function handleAuthenticated(user: AuthenticatedUser) {
+    window.localStorage.setItem(authStorageKey, JSON.stringify(user));
+    setCurrentUser(user);
+  }
+
+  function handleLogout() {
+    window.localStorage.removeItem(authStorageKey);
+    setSelectedPatient(null);
+    setActiveNavIndex(0);
+    setCurrentUser(null);
+  }
+
   function renderActiveModule() {
     if (activeModule === '患者队列管理') {
       return <PatientCohortPage onCreatePatient={createPatient} onEditPatient={openClinicalData} onViewPatient={openPatientJourney} />;
@@ -162,15 +192,21 @@ export default function App() {
     return <Dashboard selectedModule={activeModule === '首页工作台' ? undefined : activeModule} selectedPatient={selectedPatient} />;
   }
 
+  if (!currentUser) {
+    return <LoginPage onAuthenticated={handleAuthenticated} />;
+  }
+
   return (
     <div className="app-shell">
-      <Sidebar activeIndex={activeNavIndex} onSelect={setActiveNavIndex} />
+      <Sidebar activeIndex={activeNavIndex} onSelect={setActiveNavIndex} currentUser={currentUser} />
       <main className="main-panel">
         <Topbar
           aiPlaceholder={topbarCopy.aiPlaceholder}
           showAiPrompts={topbarCopy.showAiPrompts}
           title={topbarCopy.title}
           subtitle={topbarCopy.subtitle}
+          currentUser={currentUser}
+          onLogout={handleLogout}
         />
         {renderActiveModule()}
       </main>

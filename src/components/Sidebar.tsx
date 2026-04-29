@@ -1,13 +1,18 @@
 import linzightLogo from '../assets/linzight-logo.svg';
+import type { AuthenticatedUser } from '../data/auth';
 import { navItems, userProfile } from '../data/dashboard';
 import { Icon } from './Icon';
 
 interface SidebarProps {
   activeIndex: number;
   onSelect: (index: number) => void;
+  currentUser?: AuthenticatedUser;
 }
 
-export function Sidebar({ activeIndex, onSelect }: SidebarProps) {
+export function Sidebar({ activeIndex, onSelect, currentUser }: SidebarProps) {
+  const profile = currentUser ?? userProfile;
+  const roleLabel = currentUser ? currentUser.roleLabel : userProfile.role;
+
   return (
     <aside className="sidebar" aria-label="主导航">
       <div className="logo">
@@ -31,10 +36,10 @@ export function Sidebar({ activeIndex, onSelect }: SidebarProps) {
 
       <footer className="sidebar__footer">
         <div className="user-card">
-          <div className="avatar avatar--small">{userProfile.initials}</div>
+          <div className="avatar avatar--small">{profile.initials}</div>
           <div>
-            <strong>{userProfile.name}</strong>
-            <span>● {userProfile.role}</span>
+            <strong>{profile.name}</strong>
+            <span>● {roleLabel}</span>
           </div>
         </div>
       </footer>
