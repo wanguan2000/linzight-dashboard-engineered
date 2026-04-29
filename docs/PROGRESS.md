@@ -1,7 +1,7 @@
 # RWS EDC 开发进度
 
 ## 当前阶段
-阶段 3：定义 API 接口
+阶段 4：建立前后端联调的数据协议
 
 ## 已完成
 - [x] 1. 前端工程化改造
@@ -12,6 +12,9 @@
   - 扩展 SQLite schema：用户、角色权限、CRF、上传文件、导出任务、数据质控、审计日志。
   - 新增 `docs/01-database-schema.md`，记录核心实体、关系、角色范围、索引策略与 PostgreSQL 配置保留方式。
   - 新增 `backend/.env.example`，保留 SQLite、PostgreSQL、本地 uploads 配置入口。
+- [x] 3. 定义 API 接口
+  - 新增 `docs/02-api-contract.md`，定义登录、患者、CRF、样本、多组学、文件上传、Journey、分析、导出、审计接口。
+  - 扩展 `backend/schemas.py`，补齐认证、CRF、文件、导出、数据质控、审计、分析摘要的 Pydantic 模型。
 
 ## 待完成
 - [x] 1. 前端工程化改造
@@ -31,9 +34,12 @@
 - `npm run build`
 - `python3 -m py_compile backend/*.py`
 - `python3 -c "from backend.database import initialize_schema; initialize_schema(); print('schema ok')"`
+- `python3 -m py_compile backend/*.py`
+- `npm run lint`
+- `npm run build`
 
 ## 当前阻塞
 无
 
 ## 下一步
-阶段 3：定义 API 接口，补齐主链路所需的认证、CRF、文件上传、导出、Patient Journey 与分析接口协议。
+阶段 4：对齐前端 TypeScript 类型、后端 snake_case 响应和 Demo fallback 数据协议，为后端开发阶段接入主链路接口。
