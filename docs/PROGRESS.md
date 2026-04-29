@@ -1,7 +1,7 @@
 # RWS EDC 开发进度
 
 ## 当前阶段
-阶段 11：测试
+已完成 v1 主链路开发
 
 ## 已完成
 - [x] 1. 前端工程化改造
@@ -44,6 +44,10 @@
   - 新增统一 `insert_audit` helper。
   - 患者、样本、组学、CRF、文件上传、导入、导出、质控运行均已有审计记录覆盖。
   - `/audit-logs` 可按 `entity_type` 和 `entity_id` 查询操作轨迹。
+- [x] 11. 测试
+  - 完成主链路 API smoke：登录 → 患者列表 → CRF 录入 → 文件上传 → Patient Journey → 数据分析 → 导出下载。
+  - 完成后端 Python 编译、前端 `npm run check`、静态 HTML 导出。
+  - Smoke 后已清理上传/导出测试文件，并 reseed 回 50 名模拟患者状态。
 
 ## 待完成
 - [x] 1. 前端工程化改造
@@ -56,7 +60,7 @@
 - [ ] 8. 数据导入导出
 - [ ] 9. 数据完整性与校验
 - [ ] 10. 审计日志
-- [ ] 11. 测试
+- [x] 11. 测试
 
 ## 最近一次运行命令
 - `npm run lint`
@@ -73,6 +77,11 @@
 - `backend/.venv/bin/python` TestClient smoke：`/auth/login`、`/auth/me`、缺 token 401、CRC 导出 403、CRC 创建 CRF 201
 - `npm run lint`
 - `npm run build`
+- `backend/.venv/bin/python -m backend.seed`
+- `backend/.venv/bin/python` TestClient 主链路 smoke：登录、患者 50、CRF 201、上传 201、Journey 200、质控 200、分析 50、导出 201、下载 200
+- `python3 -m py_compile backend/*.py`
+- `npm run check`
+- `npm run export:html`
 - `backend/.venv/bin/python -m backend.seed`
 - `python3 -m py_compile backend/*.py`
 - `backend/.venv/bin/python` TestClient smoke：创建 CRF 201，按实体查询审计记录 1 条且 action=create
@@ -106,4 +115,4 @@
 无
 
 ## 下一步
-阶段 11：进行最终测试，包括后端 API smoke、前端 lint/build、静态导出和主链路状态确认。
+v1 主链路已完成。后续可继续做浏览器端人工回归、真实 PostgreSQL 迁移、电子签名/Query Management 等 v1 之外能力。
