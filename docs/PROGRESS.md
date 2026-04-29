@@ -1,7 +1,7 @@
 # RWS EDC 开发进度
 
 ## 当前阶段
-阶段 4：建立前后端联调的数据协议
+阶段 5：后端开发
 
 ## 已完成
 - [x] 1. 前端工程化改造
@@ -15,6 +15,10 @@
 - [x] 3. 定义 API 接口
   - 新增 `docs/02-api-contract.md`，定义登录、患者、CRF、样本、多组学、文件上传、Journey、分析、导出、审计接口。
   - 扩展 `backend/schemas.py`，补齐认证、CRF、文件、导出、数据质控、审计、分析摘要的 Pydantic 模型。
+- [x] 4. 建立前后端联调的数据协议
+  - 新增 `src/services/contracts.ts`，集中定义后端 snake_case 响应类型。
+  - 调整 `src/services/api.ts`，保持现有 fallback 行为，只负责后端响应到前端组件数据的转换。
+  - 新增 `docs/03-frontend-backend-protocol.md`，记录字段映射、fallback 规则、Journey 聚合结构与错误格式。
 
 ## 待完成
 - [x] 1. 前端工程化改造
@@ -37,9 +41,12 @@
 - `python3 -m py_compile backend/*.py`
 - `npm run lint`
 - `npm run build`
+- `npm run lint`
+- `npm run build`
+- `python3 -m py_compile backend/*.py`
 
 ## 当前阻塞
 无
 
 ## 下一步
-阶段 4：对齐前端 TypeScript 类型、后端 snake_case 响应和 Demo fallback 数据协议，为后端开发阶段接入主链路接口。
+阶段 5：开发 FastAPI 主链路接口，生成 50 个模拟患者数据，补齐 CRF、文件、Journey、分析与导出接口。

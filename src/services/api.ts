@@ -1,52 +1,6 @@
 import type { OmicsRecord, SampleRecord } from '../data/operations';
-import type { DiseaseType, OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
-
-type ApiPatient = {
-  id: string;
-  study_id: string;
-  name: string;
-  hospital_no: string;
-  sex: '男' | '女';
-  age: number;
-  disease_type: DiseaseType;
-  organs: string[];
-  note: string;
-  clinical_data: Record<string, string | number>;
-};
-
-type ApiSample = {
-  id: string;
-  patient_id: string;
-  patient_name: string;
-  hospital_no: string;
-  sample_type: SampleRecord['sampleType'];
-  visit: string;
-  collected_at: string;
-  storage: string;
-  status: SampleRecord['status'];
-  linked_omics: string[];
-};
-
-type ApiOmics = {
-  id: string;
-  patient_id: string;
-  patient_name: string;
-  sample_id: string;
-  sample_type: string;
-  assay: OmicsRecord['assay'];
-  platform: string;
-  run_id: string;
-  status: OmicsRecord['status'];
-  qc: OmicsRecord['qc'];
-  sent_at: string;
-  completed_at: string;
-};
-
-type ApiPanorama = {
-  patient: ApiPatient;
-  samples: ApiSample[];
-  omics_records: ApiOmics[];
-};
+import type { OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
+import type { ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
 
 export type DemoDataset = {
   patients: PatientRecord[];
