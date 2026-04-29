@@ -17,7 +17,7 @@ import {
   type VisitRecord
 } from '../data/operations';
 import { patientRecords, type PatientRecord } from '../data/patientCohort';
-import { fetchDemoDataset, fetchOmicsRecords, fetchSamples, uploadFileToBackend } from '../services/api';
+import { createExportJob, fetchDemoDataset, fetchOmicsRecords, fetchSamples, uploadFileToBackend } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 import { PatientListModule } from './PatientCohortPage';
@@ -2091,6 +2091,18 @@ export function SystemManagementPage() {
 }
 
 export function ReportsPage() {
+  const [exportStatus, setExportStatus] = useState('等待导出任务');
+
+  async function handleCreateExport(record: ReportRecord) {
+    setExportStatus(`${record.name} 生成中...`);
+    try {
+      const job = await createExportJob(record.type.toLowerCase());
+      setExportStatus(`${record.name} 已生成：${job.id}`);
+    } catch {
+      setExportStatus('导出失败：请确认已登录且当前角色具备导出权限');
+    }
+  }
+
   return (
     <div className="content workspace-page">
       <section className="module-kpis">
@@ -2101,11 +2113,15 @@ export function ReportsPage() {
       </section>
 
       <div className="report-grid">
-        {reportRecords.map((record) => <ReportCard record={record} key={record.id} />)}
+        {reportRecords.map((record) => <ReportCard record={record} key={record.id} onExport={handleCreateExport} />)}
       </div>
 
       <section className="module-card">
         <header className="module-card__header"><h2>数据导出流水线</h2><span>用于 Demo 后端 API 联调</span></header>
+        <div className="module-upload-status">
+          <Icon name="reports" />
+          <span>{exportStatus}</span>
+        </div>
         <div className="pipeline-grid">
           {['患者主数据', '临床 CRF', '样本台账', '多组学结果', '知情同意审计', '数据包归档'].map((item, index) => (
             <div className="pipeline-step" key={item}>
@@ -2120,7 +2136,7 @@ export function ReportsPage() {
   );
 }
 
-function ReportCard({ record }: { record: ReportRecord }) {
+function ReportCard({ record, onExport }: { record: ReportRecord; onExport: (record: ReportRecord) => void }) {
   return (
     <article className="module-card report-card">
       <Icon name="reports" />
@@ -2129,7 +2145,7 @@ function ReportCard({ record }: { record: ReportRecord }) {
         <p>{record.scope}</p>
       </div>
       <DetailList rows={[['格式', record.type], ['状态', record.status], ['更新时间', record.updatedAt]]} />
-      <button className="module-primary-button" type="button"><Icon name="file" />导出</button>
+      <button className="module-primary-button" type="button" onClick={() => onExport(record)}><Icon name="file" />导出</button>
     </article>
   );
 }

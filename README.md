@@ -138,6 +138,12 @@ curl -X POST http://localhost:8000/auth/login \
 - `clinical`、`omics_result`、`analysis_export` 必须显式标记 `is_deidentified=true`
 - 上传成功后文件保存到本地 `uploads/{category}/`，并写入审计日志
 
+导入导出：
+
+- `POST /exports` 创建导出任务并生成队列 CSV
+- `GET /exports/{export_id}/download` 下载导出文件
+- `POST /imports/patients` 支持 CSV 患者导入，字段至少包含 `name,hospital_no,sex,age,disease_type`
+
 ## 数据说明
 
 `backend/seed.py` 会初始化 SQLite schema 并写入：

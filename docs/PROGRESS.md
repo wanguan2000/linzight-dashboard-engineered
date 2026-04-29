@@ -1,7 +1,7 @@
 # RWS EDC 开发进度
 
 ## 当前阶段
-阶段 8：数据导入导出
+阶段 9：数据完整性与校验
 
 ## 已完成
 - [x] 1. 前端工程化改造
@@ -32,6 +32,10 @@
   - 后端文件上传增加分类白名单和去标识化校验，`clinical`、`omics_result`、`analysis_export` 必须标记 `is_deidentified=true`。
   - 上传成功后自动写入 `audit_logs`。
   - 前端“样本及检测”页面新增结果文件上传入口，默认按组学结果文件标记去标识化。
+- [x] 8. 数据导入导出
+  - 后端新增 `GET /exports/{export_id}/download`，支持下载导出任务生成的 CSV 文件。
+  - 后端新增 `POST /imports/patients`，支持最小患者 CSV 导入并写入审计。
+  - 前端数据分析页的导出按钮已接入 `/exports`，默认登录角色调整为项目管理员以便主链路可直接试跑导出。
 
 ## 待完成
 - [x] 1. 前端工程化改造
@@ -63,6 +67,11 @@
 - `npm run build`
 - `backend/.venv/bin/python -m backend.seed`
 - `python3 -m py_compile backend/*.py`
+- `backend/.venv/bin/python` TestClient smoke：创建导出 201、下载导出 200、CSV 导入 201
+- `npm run lint`
+- `npm run build`
+- `backend/.venv/bin/python -m backend.seed`
+- `python3 -m py_compile backend/*.py`
 - `backend/.venv/bin/python` TestClient smoke：非法文件分类 400、未去标识化 400、合法上传 201、上传审计写入
 - `npm run lint`
 - `npm run build`
@@ -79,4 +88,4 @@
 无
 
 ## 下一步
-阶段 8：完善数据导入导出，包括后端导出下载、前端导出触发和导入模板入口。
+阶段 9：补齐数据完整性与校验，包括缺失字段扫描、质控问题生成、前端展示和 API smoke。

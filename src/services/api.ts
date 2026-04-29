@@ -1,7 +1,7 @@
 import type { OmicsRecord, SampleRecord } from '../data/operations';
 import { roleLabels, type AuthenticatedUser } from '../data/auth';
 import type { OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
-import type { ApiFileMetadata, ApiLoginResponse, ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
+import type { ApiExportJob, ApiFileMetadata, ApiLoginResponse, ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
 
 export type DemoDataset = {
   patients: PatientRecord[];
@@ -17,10 +17,10 @@ async function getJson<T>(path: string): Promise<T> {
   return requestJson<T>(path);
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
+async function postJson<T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> {
   return requestJson<T>(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body)
   });
 }
@@ -90,6 +90,19 @@ export async function uploadFileToBackend(
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData
   });
+}
+
+export async function createExportJob(exportType = 'cohort_csv'): Promise<ApiExportJob> {
+  const token = window.localStorage.getItem('linzight-demo-token');
+  return postJson<ApiExportJob>(
+    '/exports',
+    {
+      export_type: exportType,
+      scope: { study_id: 'LGL-1111' },
+      requested_by: null
+    },
+    token ? { Authorization: `Bearer ${token}` } : undefined
+  );
 }
 
 function toSamplesByType(records: ApiSample[]): SampleCollection[] {

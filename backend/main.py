@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 try:
     from .database import (
@@ -655,6 +657,94 @@ def create_export_job(payload: ExportJobCreate, authorization: str | None = Head
 def list_export_jobs() -> list[dict[str, Any]]:
     with connect() as conn:
         return [row_to_export_job(row) for row in conn.execute("SELECT * FROM export_jobs ORDER BY created_at DESC").fetchall()]
+
+
+@app.get("/exports/{export_id}/download")
+def download_export(export_id: str, authorization: str | None = Header(default=None)) -> FileResponse:
+    authorize(authorization, "exports", "read")
+    with connect() as conn:
+        try:
+            job = row_to_export_job(fetch_one(conn, "SELECT * FROM export_jobs WHERE id = ?", (export_id,)))
+            file_row = row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (job["file_id"],)))
+        except KeyError as exc:
+            raise not_found() from exc
+    return FileResponse(file_row["storage_path"], media_type=file_row["content_type"], filename=file_row["original_filename"])
+
+
+@app.post("/imports/patients", status_code=status.HTTP_201_CREATED)
+async def import_patients(file: UploadFile = File(...), authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = authorize(authorization, "patients")
+    content = (await file.read()).decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(content))
+    required = {"name", "hospital_no", "sex", "age", "disease_type"}
+    if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
+        raise HTTPException(status_code=400, detail="CSV must include name,hospital_no,sex,age,disease_type")
+    now = utc_now()
+    imported = 0
+    with connect() as conn:
+        for row in reader:
+            patient_id = row.get("id") or f"PAT-IMP-{uuid4().hex[:6].upper()}"
+            organs = [item.strip() for item in (row.get("organs") or "").replace("/", "、").split("、") if item.strip()]
+            clinical_data = {
+                "患者编号": row["name"],
+                "姓名": row["name"],
+                "住院号": row["hospital_no"],
+                "性别": row["sex"],
+                "年龄": int(row["age"]),
+                "疾病类型": row["disease_type"],
+                "受累脏器": "、".join(organs),
+                "数据完整度": 70,
+            }
+            conn.execute(
+                """
+                INSERT INTO patients
+                  (id, study_id, name, hospital_no, sex, age, disease_type, organs_json, note, clinical_data_json, created_at, updated_at)
+                VALUES (?, 'LGL-1111', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  name = excluded.name,
+                  hospital_no = excluded.hospital_no,
+                  sex = excluded.sex,
+                  age = excluded.age,
+                  disease_type = excluded.disease_type,
+                  organs_json = excluded.organs_json,
+                  note = excluded.note,
+                  clinical_data_json = excluded.clinical_data_json,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    patient_id,
+                    row["name"],
+                    row["hospital_no"],
+                    row["sex"],
+                    int(row["age"]),
+                    row["disease_type"],
+                    encode_json(organs),
+                    row.get("note") or "CSV 导入",
+                    encode_json(clinical_data),
+                    now,
+                    now,
+                ),
+            )
+            imported += 1
+        conn.execute(
+            """
+            INSERT INTO audit_logs (id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, ip_address, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"AUD-{uuid4().hex[:10].upper()}",
+                user["id"],
+                user["role"],
+                "import",
+                "patients",
+                file.filename or "patients.csv",
+                None,
+                encode_json({"imported": imported}),
+                None,
+                now,
+            ),
+        )
+    return {"status": "imported", "count": imported}
 
 
 @app.get("/audit-logs")

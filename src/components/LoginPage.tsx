@@ -9,13 +9,13 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onAuthenticated }: LoginPageProps) {
-  const [username, setUsername] = useState(demoUsers[1].username);
+  const [username, setUsername] = useState(demoUsers[3].username);
   const [password, setPassword] = useState('demo123');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedUser = useMemo(
-    () => demoUsers.find((user) => user.username === username) ?? demoUsers[1],
+    () => demoUsers.find((user) => user.username === username) ?? demoUsers[3],
     [username]
   );
 
