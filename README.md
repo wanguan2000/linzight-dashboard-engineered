@@ -132,6 +132,12 @@ curl -X POST http://localhost:8000/auth/login \
 
 写接口使用返回的 `access_token` 作为 Bearer token。前端登录会优先调用后端认证；后端不可用时回退到本地 Demo 账号。
 
+文件上传：
+
+- `category` 支持 `consent`、`clinical`、`sample`、`omics_result`、`analysis_export`、`other`
+- `clinical`、`omics_result`、`analysis_export` 必须显式标记 `is_deidentified=true`
+- 上传成功后文件保存到本地 `uploads/{category}/`，并写入审计日志
+
 ## 数据说明
 
 `backend/seed.py` 会初始化 SQLite schema 并写入：

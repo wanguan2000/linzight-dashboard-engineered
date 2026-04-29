@@ -17,7 +17,7 @@ import {
   type VisitRecord
 } from '../data/operations';
 import { patientRecords, type PatientRecord } from '../data/patientCohort';
-import { fetchDemoDataset, fetchOmicsRecords, fetchSamples } from '../services/api';
+import { fetchDemoDataset, fetchOmicsRecords, fetchSamples, uploadFileToBackend } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 import { PatientListModule } from './PatientCohortPage';
@@ -1539,6 +1539,7 @@ export function SampleTestingPage() {
   const [omicsPatientQuery, setOmicsPatientQuery] = useState('');
   const [omicsSampleQuery, setOmicsSampleQuery] = useState('');
   const [omicsPage, setOmicsPage] = useState(1);
+  const [uploadStatus, setUploadStatus] = useState('未上传文件');
   const detectionRows = useMemo(() => buildSampleDetectionRows(sampleRows, records), [sampleRows, records]);
   const sampleLedgerRows = useMemo(() => buildSampleLedgerRows(sampleRows), [sampleRows]);
   const sampleTypeOptions = useMemo(() => ['全部', ...Array.from(new Set(sampleLedgerRows.map((row) => row.sampleType)))], [sampleLedgerRows]);
@@ -1644,6 +1645,22 @@ export function SampleTestingPage() {
     setOmicsPage(1);
   }, [omicsAssayFilter, omicsPatientQuery, omicsSampleQuery, omicsStatusFilter]);
 
+  async function handleResultFileUpload(file: globalThis.File) {
+    const linkedSample = sampleRows[0];
+    setUploadStatus('上传中...');
+    try {
+      const uploaded = await uploadFileToBackend(file, {
+        category: 'omics_result',
+        patientId: linkedSample?.patientId,
+        sampleId: linkedSample?.id,
+        isDeidentified: true
+      });
+      setUploadStatus(`已上传 ${uploaded.original_filename}，去标识化已确认`);
+    } catch {
+      setUploadStatus('上传失败：请确认已登录且后端 API 可用');
+    }
+  }
+
   return (
     <div className="content workspace-page">
       <section className="module-kpis">
@@ -1696,8 +1713,26 @@ export function SampleTestingPage() {
             <h2>多组学检测列表</h2>
             <span>按检测项目追踪平台、批次、QC 和结果归档</span>
           </div>
-          <button className="module-primary-button" type="button"><Icon name="filePlus" />新增检测</button>
+          <div className="module-header-actions">
+            <label className="module-file-button">
+              <Icon name="filePlus" />
+              上传结果
+              <input
+                type="file"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file) void handleResultFileUpload(file);
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+            <button className="module-primary-button" type="button"><Icon name="filePlus" />新增检测</button>
+          </div>
         </header>
+        <div className="module-upload-status">
+          <Icon name="shield" />
+          <span>{uploadStatus}</span>
+        </div>
         <SampleTestingStatTiles items={omicsStatItems} />
         <div className="sample-testing-filter-bar sample-testing-filter-bar--omics">
           <label>

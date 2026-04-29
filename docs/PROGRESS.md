@@ -1,7 +1,7 @@
 # RWS EDC 开发进度
 
 ## 当前阶段
-阶段 7：文件上传与隐私处理
+阶段 8：数据导入导出
 
 ## 已完成
 - [x] 1. 前端工程化改造
@@ -28,6 +28,10 @@
   - 后端新增 Demo Bearer token 解析和角色权限校验，写接口缺 token 返回 401，无权限返回 403。
   - 写接口已接入权限校验：患者、CRF、样本、组学、文件、导出。
   - 前端登录优先调用后端 `/auth/login`，后端不可用时回退本地 Demo 认证。
+- [x] 7. 文件上传与隐私处理
+  - 后端文件上传增加分类白名单和去标识化校验，`clinical`、`omics_result`、`analysis_export` 必须标记 `is_deidentified=true`。
+  - 上传成功后自动写入 `audit_logs`。
+  - 前端“样本及检测”页面新增结果文件上传入口，默认按组学结果文件标记去标识化。
 
 ## 待完成
 - [x] 1. 前端工程化改造
@@ -58,6 +62,11 @@
 - `npm run lint`
 - `npm run build`
 - `backend/.venv/bin/python -m backend.seed`
+- `python3 -m py_compile backend/*.py`
+- `backend/.venv/bin/python` TestClient smoke：非法文件分类 400、未去标识化 400、合法上传 201、上传审计写入
+- `npm run lint`
+- `npm run build`
+- `backend/.venv/bin/python -m backend.seed`
 - `python3 -c "from backend.database import initialize_schema; initialize_schema(); print('schema ok')"`
 - `python3 -m py_compile backend/*.py`
 - `npm run lint`
@@ -70,4 +79,4 @@
 无
 
 ## 下一步
-阶段 7：完善文件上传隐私处理，包括去标识化标记、文件分类校验、上传审计和前端文件上传入口。
+阶段 8：完善数据导入导出，包括后端导出下载、前端导出触发和导入模板入口。

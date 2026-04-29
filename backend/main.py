@@ -520,6 +520,11 @@ async def upload_file(
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     user = authorize(authorization, "files")
+    allowed_categories = {"consent", "clinical", "sample", "omics_result", "analysis_export", "other"}
+    if category not in allowed_categories:
+        raise HTTPException(status_code=400, detail="invalid file category")
+    if category in {"clinical", "omics_result", "analysis_export"} and not is_deidentified:
+        raise HTTPException(status_code=400, detail="file must be marked as deidentified")
     file_id = f"FIL-{uuid4().hex[:10].upper()}"
     content = await file.read()
     digest = hashlib.sha256(content).hexdigest()
@@ -553,6 +558,24 @@ async def upload_file(
                 uploaded_by or user["id"],
                 now,
                 1 if is_deidentified else 0,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO audit_logs (id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, ip_address, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"AUD-{uuid4().hex[:10].upper()}",
+                user["id"],
+                user["role"],
+                "upload",
+                "uploaded_files",
+                file_id,
+                None,
+                encode_json({"category": category, "original_filename": file.filename or stored_filename, "is_deidentified": is_deidentified}),
+                None,
+                now,
             ),
         )
         return row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)))

@@ -1,7 +1,7 @@
 import type { OmicsRecord, SampleRecord } from '../data/operations';
 import { roleLabels, type AuthenticatedUser } from '../data/auth';
 import type { OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
-import type { ApiLoginResponse, ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
+import type { ApiFileMetadata, ApiLoginResponse, ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
 
 export type DemoDataset = {
   patients: PatientRecord[];
@@ -62,6 +62,34 @@ export async function loginWithBackend(username: string, password: string): Prom
       .join('')
       .toUpperCase()
   };
+}
+
+export async function uploadFileToBackend(
+  file: globalThis.File,
+  metadata: {
+    category: ApiFileMetadata['category'];
+    patientId?: string;
+    sampleId?: string;
+    omicsId?: string;
+    consentId?: string;
+    isDeidentified?: boolean;
+  }
+): Promise<ApiFileMetadata> {
+  const formData = new window.FormData();
+  formData.append('file', file);
+  formData.append('category', metadata.category);
+  formData.append('is_deidentified', metadata.isDeidentified ? 'true' : 'false');
+  if (metadata.patientId) formData.append('patient_id', metadata.patientId);
+  if (metadata.sampleId) formData.append('sample_id', metadata.sampleId);
+  if (metadata.omicsId) formData.append('omics_id', metadata.omicsId);
+  if (metadata.consentId) formData.append('consent_id', metadata.consentId);
+
+  const token = window.localStorage.getItem('linzight-demo-token');
+  return requestJson<ApiFileMetadata>('/files', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData
+  });
 }
 
 function toSamplesByType(records: ApiSample[]): SampleCollection[] {
