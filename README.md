@@ -35,6 +35,8 @@
 
 - `GET /health`
 - `POST /seed`
+- `POST /auth/login`
+- `GET /auth/me`
 - `GET /patients`
 - `POST /patients`
 - `GET /patients/{patient_id}`
@@ -50,7 +52,17 @@
 - `GET /omics/{record_id}`
 - `PUT /omics/{record_id}`
 - `DELETE /omics/{record_id}`
+- `GET /crf`
+- `POST /crf`
+- `PUT /crf/{entry_id}`
+- `POST /files`
+- `GET /files`
 - `GET /patients/{patient_id}/panorama`
+- `GET /patients/{patient_id}/journey`
+- `GET /analytics/summary`
+- `POST /exports`
+- `GET /exports`
+- `GET /audit-logs`
 - 前端默认依次尝试 `VITE_API_BASE_URL`、`http://127.0.0.1:8000`、`http://127.0.0.1:8001`，接口不可用时回退到本地 mock 数据。
 
 ## 启动方式
@@ -114,11 +126,10 @@ curl http://localhost:8000/patients/PAT-001/panorama
 
 `backend/seed.py` 会初始化 SQLite schema 并写入：
 
-- 6 个患者
-- 10 个样本
-- 10 条多组学检测记录
+- 50 个患者，均匀覆盖 NPSLE、Non-NPSLE、MS、NMOSD、HC
+- 关联样本、CRF、访视、多组学检测记录
 - 知情同意记录
-- 单患者随访记录
+- 6 个 Demo 账号角色：sys_admin、project_admin、investigator、crc、data_manager、viewer
 
 前端核心业务页已接入 `backend` API：
 

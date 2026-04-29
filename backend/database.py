@@ -248,6 +248,41 @@ def row_to_omics(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 
 
+def row_to_user(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    item.pop("password_hash", None)
+    return item
+
+
+def row_to_crf_entry(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    item["payload"] = decode_json(item.pop("payload_json"), {})
+    return item
+
+
+def row_to_file(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    item["is_deidentified"] = bool(item["is_deidentified"])
+    return item
+
+
+def row_to_export_job(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    item["scope"] = decode_json(item.pop("scope_json"), {})
+    return item
+
+
+def row_to_quality_issue(row: sqlite3.Row) -> dict[str, Any]:
+    return dict(row)
+
+
+def row_to_audit_log(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    item["before"] = decode_json(item.pop("before_json"), None)
+    item["after"] = decode_json(item.pop("after_json"), None)
+    return item
+
+
 def fetch_one(conn: sqlite3.Connection, query: str, args: tuple[Any, ...]) -> sqlite3.Row:
     row = conn.execute(query, args).fetchone()
     if row is None:
