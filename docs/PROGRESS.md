@@ -1,7 +1,7 @@
 # RWS EDC 开发进度
 
 ## 当前阶段
-阶段 6：权限与账户体系
+阶段 7：文件上传与隐私处理
 
 ## 已完成
 - [x] 1. 前端工程化改造
@@ -24,6 +24,10 @@
   - 补齐 FastAPI 主链路接口：登录、CRF、文件上传、Patient Journey、分析摘要、导出、审计查询。
   - 文件上传使用本地 `uploads/` 目录，导出任务可生成队列 CSV。
   - 更新 README 后端接口和数据说明。
+- [x] 6. 权限与账户体系
+  - 后端新增 Demo Bearer token 解析和角色权限校验，写接口缺 token 返回 401，无权限返回 403。
+  - 写接口已接入权限校验：患者、CRF、样本、组学、文件、导出。
+  - 前端登录优先调用后端 `/auth/login`，后端不可用时回退本地 Demo 认证。
 
 ## 待完成
 - [x] 1. 前端工程化改造
@@ -49,6 +53,11 @@
 - `python3 -m py_compile backend/*.py`
 - `npm run lint`
 - `npm run build`
+- `python3 -m py_compile backend/*.py`
+- `backend/.venv/bin/python` TestClient smoke：`/auth/login`、`/auth/me`、缺 token 401、CRC 导出 403、CRC 创建 CRF 201
+- `npm run lint`
+- `npm run build`
+- `backend/.venv/bin/python -m backend.seed`
 - `python3 -c "from backend.database import initialize_schema; initialize_schema(); print('schema ok')"`
 - `python3 -m py_compile backend/*.py`
 - `npm run lint`
@@ -61,4 +70,4 @@
 无
 
 ## 下一步
-阶段 6：完善权限与账户体系，把 Demo token、角色权限矩阵和关键写接口校验串起来。
+阶段 7：完善文件上传隐私处理，包括去标识化标记、文件分类校验、上传审计和前端文件上传入口。

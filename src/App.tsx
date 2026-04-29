@@ -174,6 +174,7 @@ export default function App() {
 
   function handleLogout() {
     window.localStorage.removeItem(authStorageKey);
+    window.localStorage.removeItem('linzight-demo-token');
     setSelectedPatient(null);
     setActiveNavIndex(0);
     setCurrentUser(null);

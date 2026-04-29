@@ -11,6 +11,12 @@ export type ApiUser = {
   status: string;
 };
 
+export type ApiLoginResponse = {
+  access_token: string;
+  token_type: 'bearer';
+  user: ApiUser;
+};
+
 export type ApiPatient = {
   id: string;
   study_id: string;

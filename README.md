@@ -122,6 +122,16 @@ curl http://localhost:8000/patients
 curl http://localhost:8000/patients/PAT-001/panorama
 ```
 
+Demo 登录：
+
+```bash
+curl -X POST http://localhost:8000/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"crc@demo.linzight","password":"demo123"}'
+```
+
+写接口使用返回的 `access_token` 作为 Bearer token。前端登录会优先调用后端认证；后端不可用时回退到本地 Demo 账号。
+
 ## 数据说明
 
 `backend/seed.py` 会初始化 SQLite schema 并写入：

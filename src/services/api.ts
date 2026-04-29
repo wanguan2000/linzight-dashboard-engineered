@@ -1,6 +1,7 @@
 import type { OmicsRecord, SampleRecord } from '../data/operations';
+import { roleLabels, type AuthenticatedUser } from '../data/auth';
 import type { OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
-import type { ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
+import type { ApiLoginResponse, ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
 
 export type DemoDataset = {
   patients: PatientRecord[];
@@ -10,8 +11,21 @@ export type DemoDataset = {
 
 const configuredBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
 const apiBases = Array.from(new Set([configuredBase, 'http://127.0.0.1:8000', 'http://127.0.0.1:8001'].filter(Boolean))) as string[];
+type FetchInit = Parameters<typeof window.fetch>[1];
 
 async function getJson<T>(path: string): Promise<T> {
+  return requestJson<T>(path);
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  return requestJson<T>(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+async function requestJson<T>(path: string, init?: FetchInit): Promise<T> {
   let lastError: unknown;
 
   for (const base of apiBases) {
@@ -19,7 +33,7 @@ async function getJson<T>(path: string): Promise<T> {
     const timeout = window.setTimeout(() => controller.abort(), 900);
 
     try {
-      const response = await window.fetch(`${base}${path}`, { signal: controller.signal });
+      const response = await window.fetch(`${base}${path}`, { ...init, signal: controller.signal });
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
       return (await response.json()) as T;
     } catch (error) {
@@ -30,6 +44,24 @@ async function getJson<T>(path: string): Promise<T> {
   }
 
   throw lastError instanceof Error ? lastError : new Error('API request failed');
+}
+
+export async function loginWithBackend(username: string, password: string): Promise<AuthenticatedUser> {
+  const response = await postJson<ApiLoginResponse>('/auth/login', { username, password });
+  window.localStorage.setItem('linzight-demo-token', response.access_token);
+  return {
+    id: response.user.id,
+    username: response.user.username,
+    name: response.user.display_name,
+    role: response.user.role,
+    roleLabel: roleLabels[response.user.role],
+    initials: response.user.display_name
+      .split('')
+      .filter((char) => /[A-Za-z\u4e00-\u9fa5]/.test(char))
+      .slice(0, 2)
+      .join('')
+      .toUpperCase()
+  };
 }
 
 function toSamplesByType(records: ApiSample[]): SampleCollection[] {

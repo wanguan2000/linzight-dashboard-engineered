@@ -6,7 +6,7 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 
 try:
@@ -85,6 +85,45 @@ def demo_token(user_id: str) -> str:
     return f"demo-token-{user_id}"
 
 
+def token_to_user_id(authorization: str | None = None, token: str | None = None) -> str | None:
+    raw_token = token
+    if authorization:
+        scheme, _, value = authorization.partition(" ")
+        raw_token = value if scheme.lower() == "bearer" else authorization
+    if not raw_token or not raw_token.startswith("demo-token-"):
+        return None
+    return raw_token.replace("demo-token-", "", 1)
+
+
+def role_can(role: str, resource: str, action: str) -> bool:
+    if role == "sys_admin":
+        return True
+    if action == "read":
+        return True
+    allowed: dict[str, set[str]] = {
+        "project_admin": {"patients", "crf", "samples", "omics", "files", "exports"},
+        "investigator": {"crf", "files"},
+        "crc": {"patients", "crf", "samples", "omics", "files"},
+        "data_manager": {"crf", "exports", "quality"},
+        "viewer": set(),
+    }
+    return resource in allowed.get(role, set())
+
+
+def authorize(authorization: str | None, resource: str, action: str = "write") -> dict[str, Any]:
+    user_id = token_to_user_id(authorization=authorization)
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")
+    with connect() as conn:
+        try:
+            user = row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ? AND status = 'active'", (user_id,)))
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid bearer token") from exc
+    if not role_can(user["role"], resource, action):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission denied")
+    return user
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "linzight-demo-api"}
@@ -107,10 +146,10 @@ def login(payload: LoginRequest) -> dict[str, Any]:
 
 
 @app.get("/auth/me")
-def me(token: str | None = Query(default=None)) -> dict[str, Any]:
-    if not token or not token.startswith("demo-token-"):
+def me(token: str | None = Query(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user_id = token_to_user_id(authorization=authorization, token=token)
+    if user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing demo token")
-    user_id = token.replace("demo-token-", "", 1)
     with connect() as conn:
         try:
             return row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,)))
@@ -137,7 +176,8 @@ def list_patients(q: str | None = Query(default=None), disease_type: str | None 
 
 
 @app.post("/patients", status_code=status.HTTP_201_CREATED)
-def create_patient(payload: PatientCreate) -> dict[str, Any]:
+def create_patient(payload: PatientCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    authorize(authorization, "patients")
     data = dump_model(payload)
     patient_id = data.pop("id") or f"PAT-{uuid4().hex[:8].upper()}"
     now = utc_now()
@@ -180,7 +220,8 @@ def get_patient(patient_id: str) -> dict[str, Any]:
 
 
 @app.put("/patients/{patient_id}")
-def update_patient(patient_id: str, payload: PatientUpdate) -> dict[str, Any]:
+def update_patient(patient_id: str, payload: PatientUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    authorize(authorization, "patients")
     data = dump_model(payload, exclude_unset=True)
     columns: list[str] = []
     values: list[Any] = []
@@ -200,7 +241,8 @@ def update_patient(patient_id: str, payload: PatientUpdate) -> dict[str, Any]:
 
 
 @app.delete("/patients/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_patient(patient_id: str) -> None:
+def delete_patient(patient_id: str, authorization: str | None = Header(default=None)) -> None:
+    authorize(authorization, "patients")
     with connect() as conn:
         result = conn.execute("DELETE FROM patients WHERE id = ?", (patient_id,))
         if result.rowcount == 0:
@@ -220,7 +262,8 @@ def list_samples(patient_id: str | None = None) -> list[dict[str, Any]]:
 
 
 @app.post("/samples", status_code=status.HTTP_201_CREATED)
-def create_sample(payload: SampleCreate) -> dict[str, Any]:
+def create_sample(payload: SampleCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    authorize(authorization, "samples")
     data = dump_model(payload)
     sample_id = data.pop("id") or f"SPL-{uuid4().hex[:10].upper()}"
     now = utc_now()
@@ -262,7 +305,8 @@ def get_sample(sample_id: str) -> dict[str, Any]:
 
 
 @app.put("/samples/{sample_id}")
-def update_sample(sample_id: str, payload: SampleUpdate) -> dict[str, Any]:
+def update_sample(sample_id: str, payload: SampleUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    authorize(authorization, "samples")
     data = dump_model(payload, exclude_unset=True)
     columns: list[str] = []
     values: list[Any] = []
@@ -282,7 +326,8 @@ def update_sample(sample_id: str, payload: SampleUpdate) -> dict[str, Any]:
 
 
 @app.delete("/samples/{sample_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_sample(sample_id: str) -> None:
+def delete_sample(sample_id: str, authorization: str | None = Header(default=None)) -> None:
+    authorize(authorization, "samples")
     with connect() as conn:
         result = conn.execute("DELETE FROM samples WHERE id = ?", (sample_id,))
         if result.rowcount == 0:
@@ -308,7 +353,8 @@ def list_omics(patient_id: str | None = None, sample_id: str | None = None) -> l
 
 
 @app.post("/omics", status_code=status.HTTP_201_CREATED)
-def create_omics(payload: OmicsCreate) -> dict[str, Any]:
+def create_omics(payload: OmicsCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    authorize(authorization, "omics")
     data = dump_model(payload)
     record_id = data.pop("id") or f"OMX-{uuid4().hex[:8].upper()}"
     now = utc_now()
@@ -352,7 +398,8 @@ def get_omics(record_id: str) -> dict[str, Any]:
 
 
 @app.put("/omics/{record_id}")
-def update_omics(record_id: str, payload: OmicsUpdate) -> dict[str, Any]:
+def update_omics(record_id: str, payload: OmicsUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    authorize(authorization, "omics")
     data = dump_model(payload, exclude_unset=True)
     if not data:
         return get_omics(record_id)
@@ -368,7 +415,8 @@ def update_omics(record_id: str, payload: OmicsUpdate) -> dict[str, Any]:
 
 
 @app.delete("/omics/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_omics(record_id: str) -> None:
+def delete_omics(record_id: str, authorization: str | None = Header(default=None)) -> None:
+    authorize(authorization, "omics")
     with connect() as conn:
         result = conn.execute("DELETE FROM omics_records WHERE id = ?", (record_id,))
         if result.rowcount == 0:
@@ -394,7 +442,8 @@ def list_crf_entries(patient_id: str | None = None, status_filter: str | None = 
 
 
 @app.post("/crf", status_code=status.HTTP_201_CREATED)
-def create_crf_entry(payload: CrfEntryCreate) -> dict[str, Any]:
+def create_crf_entry(payload: CrfEntryCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    authorize(authorization, "crf")
     data = dump_model(payload)
     entry_id = data.pop("id") or f"CRF-{uuid4().hex[:8].upper()}"
     now = utc_now()
@@ -425,7 +474,8 @@ def create_crf_entry(payload: CrfEntryCreate) -> dict[str, Any]:
 
 
 @app.put("/crf/{entry_id}")
-def update_crf_entry(entry_id: str, payload: CrfEntryUpdate) -> dict[str, Any]:
+def update_crf_entry(entry_id: str, payload: CrfEntryUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    authorize(authorization, "crf")
     data = dump_model(payload, exclude_unset=True)
     columns: list[str] = []
     values: list[Any] = []
@@ -467,7 +517,9 @@ async def upload_file(
     consent_id: str | None = Form(default=None),
     uploaded_by: str | None = Form(default=None),
     is_deidentified: bool = Form(default=False),
+    authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    user = authorize(authorization, "files")
     file_id = f"FIL-{uuid4().hex[:10].upper()}"
     content = await file.read()
     digest = hashlib.sha256(content).hexdigest()
@@ -498,7 +550,7 @@ async def upload_file(
                 file.content_type or "application/octet-stream",
                 len(content),
                 digest,
-                uploaded_by,
+                uploaded_by or user["id"],
                 now,
                 1 if is_deidentified else 0,
             ),
@@ -531,7 +583,8 @@ def analytics_summary() -> dict[str, Any]:
 
 
 @app.post("/exports", status_code=status.HTTP_201_CREATED)
-def create_export_job(payload: ExportJobCreate) -> dict[str, Any]:
+def create_export_job(payload: ExportJobCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = authorize(authorization, "exports")
     data = dump_model(payload)
     export_id = f"EXP-{uuid4().hex[:8].upper()}"
     file_id = f"FIL-{uuid4().hex[:10].upper()}"
@@ -561,7 +614,7 @@ def create_export_job(payload: ExportJobCreate) -> dict[str, Any]:
                 "text/csv",
                 len(content),
                 hashlib.sha256(content).hexdigest(),
-                data["requested_by"],
+                data["requested_by"] or user["id"],
                 now,
             ),
         )
@@ -570,7 +623,7 @@ def create_export_job(payload: ExportJobCreate) -> dict[str, Any]:
             INSERT INTO export_jobs (id, requested_by, export_type, scope_json, status, file_id, created_at, completed_at)
             VALUES (?, ?, ?, ?, 'ready', ?, ?, ?)
             """,
-            (export_id, data["requested_by"], data["export_type"], encode_json(data["scope"]), file_id, now, now),
+            (export_id, data["requested_by"] or user["id"], data["export_type"], encode_json(data["scope"]), file_id, now, now),
         )
         return row_to_export_job(fetch_one(conn, "SELECT * FROM export_jobs WHERE id = ?", (export_id,)))
 

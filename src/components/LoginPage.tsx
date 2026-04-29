@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import linzightLogo from '../assets/linzight-logo.svg';
 import { authenticateDemoUser, demoUsers, type AuthenticatedUser } from '../data/auth';
+import { loginWithBackend } from '../services/api';
 import { Icon } from './Icon';
 
 interface LoginPageProps {
@@ -11,15 +12,18 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
   const [username, setUsername] = useState(demoUsers[1].username);
   const [password, setPassword] = useState('demo123');
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedUser = useMemo(
     () => demoUsers.find((user) => user.username === username) ?? demoUsers[1],
     [username]
   );
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    const user = authenticateDemoUser(username, password);
+    setIsSubmitting(true);
+    const user = await loginWithBackend(username, password).catch(() => authenticateDemoUser(username, password));
+    setIsSubmitting(false);
     if (!user) {
       setError('账号或密码不正确');
       return;
@@ -89,9 +93,9 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
 
         {error ? <p className="login-error">{error}</p> : null}
 
-        <button className="login-submit" type="submit">
+        <button className="login-submit" type="submit" disabled={isSubmitting}>
           <Icon name="lock" />
-          进入系统
+          {isSubmitting ? '登录中' : '进入系统'}
         </button>
       </form>
     </main>
