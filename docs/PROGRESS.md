@@ -1,7 +1,7 @@
 # RWS EDC 开发进度
 
 ## 当前阶段
-阶段 10：审计日志
+阶段 11：测试
 
 ## 已完成
 - [x] 1. 前端工程化改造
@@ -40,6 +40,10 @@
   - 后端新增 `/quality/run` 和 `/quality/issues`，可扫描临床完整度、样本缺失和知情同意状态并生成 `data_quality_issues`。
   - 质控运行写入审计日志。
   - 前端数据分析页新增“运行校验”入口和结果状态展示。
+- [x] 10. 审计日志
+  - 新增统一 `insert_audit` helper。
+  - 患者、样本、组学、CRF、文件上传、导入、导出、质控运行均已有审计记录覆盖。
+  - `/audit-logs` 可按 `entity_type` 和 `entity_id` 查询操作轨迹。
 
 ## 待完成
 - [x] 1. 前端工程化改造
@@ -71,6 +75,11 @@
 - `npm run build`
 - `backend/.venv/bin/python -m backend.seed`
 - `python3 -m py_compile backend/*.py`
+- `backend/.venv/bin/python` TestClient smoke：创建 CRF 201，按实体查询审计记录 1 条且 action=create
+- `npm run lint`
+- `npm run build`
+- `backend/.venv/bin/python -m backend.seed`
+- `python3 -m py_compile backend/*.py`
 - `backend/.venv/bin/python` TestClient smoke：`/quality/run` 200、生成 27 条 open issue、`/quality/issues` 查询一致
 - `npm run lint`
 - `npm run build`
@@ -97,4 +106,4 @@
 无
 
 ## 下一步
-阶段 10：完善审计日志覆盖范围，为患者、CRF、样本、组学、导入导出和质控操作补充统一审计记录。
+阶段 11：进行最终测试，包括后端 API smoke、前端 lint/build、静态导出和主链路状态确认。

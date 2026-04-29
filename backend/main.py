@@ -126,6 +126,35 @@ def authorize(authorization: str | None, resource: str, action: str = "write") -
     return user
 
 
+def insert_audit(
+    conn: Any,
+    actor: dict[str, Any] | None,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    before: Any = None,
+    after: Any = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO audit_logs (id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, ip_address, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            f"AUD-{uuid4().hex[:10].upper()}",
+            actor["id"] if actor else None,
+            actor["role"] if actor else None,
+            action,
+            entity_type,
+            entity_id,
+            encode_json(before) if before is not None else None,
+            encode_json(after) if after is not None else None,
+            None,
+            utc_now(),
+        ),
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "linzight-demo-api"}
@@ -179,7 +208,7 @@ def list_patients(q: str | None = Query(default=None), disease_type: str | None 
 
 @app.post("/patients", status_code=status.HTTP_201_CREATED)
 def create_patient(payload: PatientCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    authorize(authorization, "patients")
+    user = authorize(authorization, "patients")
     data = dump_model(payload)
     patient_id = data.pop("id") or f"PAT-{uuid4().hex[:8].upper()}"
     now = utc_now()
@@ -206,8 +235,9 @@ def create_patient(payload: PatientCreate, authorization: str | None = Header(de
                     now,
                 ),
             )
-            row = fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,))
-            return row_to_patient(row)
+            row = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
+            insert_audit(conn, user, "create", "patients", patient_id, after=row)
+            return row
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -223,7 +253,7 @@ def get_patient(patient_id: str) -> dict[str, Any]:
 
 @app.put("/patients/{patient_id}")
 def update_patient(patient_id: str, payload: PatientUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    authorize(authorization, "patients")
+    user = authorize(authorization, "patients")
     data = dump_model(payload, exclude_unset=True)
     columns: list[str] = []
     values: list[Any] = []
@@ -236,10 +266,13 @@ def update_patient(patient_id: str, payload: PatientUpdate, authorization: str |
     columns.append("updated_at = ?")
     values.extend([utc_now(), patient_id])
     with connect() as conn:
+        before = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
         result = conn.execute(f"UPDATE patients SET {', '.join(columns)} WHERE id = ?", values)
         if result.rowcount == 0:
             raise not_found()
-        return row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
+        after = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
+        insert_audit(conn, user, "update", "patients", patient_id, before=before, after=after)
+        return after
 
 
 @app.delete("/patients/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -265,7 +298,7 @@ def list_samples(patient_id: str | None = None) -> list[dict[str, Any]]:
 
 @app.post("/samples", status_code=status.HTTP_201_CREATED)
 def create_sample(payload: SampleCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    authorize(authorization, "samples")
+    user = authorize(authorization, "samples")
     data = dump_model(payload)
     sample_id = data.pop("id") or f"SPL-{uuid4().hex[:10].upper()}"
     now = utc_now()
@@ -292,7 +325,9 @@ def create_sample(payload: SampleCreate, authorization: str | None = Header(defa
                     now,
                 ),
             )
-            return row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
+            row = row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
+            insert_audit(conn, user, "create", "samples", sample_id, after=row)
+            return row
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -356,7 +391,7 @@ def list_omics(patient_id: str | None = None, sample_id: str | None = None) -> l
 
 @app.post("/omics", status_code=status.HTTP_201_CREATED)
 def create_omics(payload: OmicsCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    authorize(authorization, "omics")
+    user = authorize(authorization, "omics")
     data = dump_model(payload)
     record_id = data.pop("id") or f"OMX-{uuid4().hex[:8].upper()}"
     now = utc_now()
@@ -385,7 +420,9 @@ def create_omics(payload: OmicsCreate, authorization: str | None = Header(defaul
                     now,
                 ),
             )
-            return row_to_omics(fetch_one(conn, "SELECT * FROM omics_records WHERE id = ?", (record_id,)))
+            row = row_to_omics(fetch_one(conn, "SELECT * FROM omics_records WHERE id = ?", (record_id,)))
+            insert_audit(conn, user, "create", "omics_records", record_id, after=row)
+            return row
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -445,7 +482,7 @@ def list_crf_entries(patient_id: str | None = None, status_filter: str | None = 
 
 @app.post("/crf", status_code=status.HTTP_201_CREATED)
 def create_crf_entry(payload: CrfEntryCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    authorize(authorization, "crf")
+    user = authorize(authorization, "crf")
     data = dump_model(payload)
     entry_id = data.pop("id") or f"CRF-{uuid4().hex[:8].upper()}"
     now = utc_now()
@@ -470,14 +507,16 @@ def create_crf_entry(payload: CrfEntryCreate, authorization: str | None = Header
                     now,
                 ),
             )
-            return row_to_crf_entry(fetch_one(conn, "SELECT * FROM crf_entries WHERE id = ?", (entry_id,)))
+            row = row_to_crf_entry(fetch_one(conn, "SELECT * FROM crf_entries WHERE id = ?", (entry_id,)))
+            insert_audit(conn, user, "create", "crf_entries", entry_id, after=row)
+            return row
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.put("/crf/{entry_id}")
 def update_crf_entry(entry_id: str, payload: CrfEntryUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    authorize(authorization, "crf")
+    user = authorize(authorization, "crf")
     data = dump_model(payload, exclude_unset=True)
     columns: list[str] = []
     values: list[Any] = []
@@ -491,10 +530,13 @@ def update_crf_entry(entry_id: str, payload: CrfEntryUpdate, authorization: str 
     columns.append("updated_at = ?")
     values.extend([utc_now(), entry_id])
     with connect() as conn:
+        before = row_to_crf_entry(fetch_one(conn, "SELECT * FROM crf_entries WHERE id = ?", (entry_id,)))
         result = conn.execute(f"UPDATE crf_entries SET {', '.join(columns)} WHERE id = ?", values)
         if result.rowcount == 0:
             raise not_found()
-        return row_to_crf_entry(fetch_one(conn, "SELECT * FROM crf_entries WHERE id = ?", (entry_id,)))
+        after = row_to_crf_entry(fetch_one(conn, "SELECT * FROM crf_entries WHERE id = ?", (entry_id,)))
+        insert_audit(conn, user, "update", "crf_entries", entry_id, before=before, after=after)
+        return after
 
 
 @app.get("/files")
@@ -759,7 +801,9 @@ def create_export_job(payload: ExportJobCreate, authorization: str | None = Head
             """,
             (export_id, data["requested_by"] or user["id"], data["export_type"], encode_json(data["scope"]), file_id, now, now),
         )
-        return row_to_export_job(fetch_one(conn, "SELECT * FROM export_jobs WHERE id = ?", (export_id,)))
+        job = row_to_export_job(fetch_one(conn, "SELECT * FROM export_jobs WHERE id = ?", (export_id,)))
+        insert_audit(conn, user, "export", "export_jobs", export_id, after=job)
+        return job
 
 
 @app.get("/exports")
