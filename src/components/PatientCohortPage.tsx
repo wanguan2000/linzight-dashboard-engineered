@@ -14,7 +14,7 @@ import { KpiProgress } from './MetricGrid';
 import { fetchDemoDataset } from '../services/api';
 
 const diseaseOptions: Array<'全部' | DiseaseType> = ['全部', 'NPSLE', 'Non-NPSLE', 'MS', 'NMOSD', 'HC'];
-const patientPageSize = 10;
+const patientPageSize = 5;
 
 function sampleText(patient: PatientRecord) {
   return patient.samples.map((sample) => `${sample.type}${sample.count > 1 ? ` x${sample.count}` : ''}`).join(' / ');

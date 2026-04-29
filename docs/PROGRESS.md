@@ -48,6 +48,7 @@
   - 完成主链路 API smoke：登录 → 患者列表 → CRF 录入 → 文件上传 → Patient Journey → 数据分析 → 导出下载。
   - 完成后端 Python 编译、前端 `npm run check`、静态 HTML 导出。
   - Smoke 后已清理上传/导出测试文件，并 reseed 回 50 名模拟患者状态。
+  - 2026-04-30：患者旅程新增患者查找/切换入口；患者队列列表默认分页调整为 5 条，并完成浏览器回归。
 
 ## 待完成
 - [x] 1. 前端工程化改造
@@ -63,6 +64,9 @@
 - [x] 11. 测试
 
 ## 最近一次运行命令
+- `npm run lint`
+- `npm run build`
+- in-app browser smoke：患者旅程默认 5 个候选患者、搜索 `NMOSD` 并切换 `CJY-104`、患者队列表格默认 5 行
 - `npm run lint`
 - `npm run build`
 - `python3 -m py_compile backend/*.py`

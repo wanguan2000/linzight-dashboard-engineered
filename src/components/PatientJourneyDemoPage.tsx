@@ -12,7 +12,8 @@ import {
   type JourneyEventCategory
 } from '../data/patientJourneyDemo';
 import { getSelectedPatient } from '../data/operations';
-import type { PatientRecord } from '../data/patientCohort';
+import { patientRecords, type PatientRecord } from '../data/patientCohort';
+import { fetchDemoDataset } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 
@@ -284,7 +285,10 @@ function getChartLegendItems() {
 }
 
 export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: PatientRecord | null }) {
-  const patient = getSelectedPatient(selectedPatient);
+  const initialPatient = getSelectedPatient(selectedPatient);
+  const [patients, setPatients] = useState<PatientRecord[]>(patientRecords);
+  const [activePatient, setActivePatient] = useState<PatientRecord>(initialPatient);
+  const [patientQuery, setPatientQuery] = useState('');
   const [enabledCategories, setEnabledCategories] = useState<JourneyEventCategory[]>(categoryOrder);
   const [query, setQuery] = useState('');
   const [selectedEventId, setSelectedEventId] = useState<string | null>('evt-v2');
@@ -292,6 +296,45 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
   const [streamPage, setStreamPage] = useState(1);
   const [zoomRange, setZoomRange] = useState<TimelineZoomRange>({ start: 0, end: 100 });
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
+  const patient = activePatient;
+
+  useEffect(() => {
+    let ignore = false;
+
+    void fetchDemoDataset()
+      .then((dataset) => {
+        if (ignore || !dataset.patients.length) return;
+        setPatients(dataset.patients);
+        setActivePatient((current) => {
+          if (selectedPatient) return selectedPatient;
+          return dataset.patients.find((item) => item.name === current.name) ?? dataset.patients[0];
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      ignore = true;
+    };
+  }, [selectedPatient]);
+
+  useEffect(() => {
+    if (selectedPatient) {
+      setActivePatient(selectedPatient);
+      setPatientQuery('');
+    }
+  }, [selectedPatient]);
+
+  const patientMatches = useMemo(() => {
+    const normalized = patientQuery.trim().toLowerCase();
+    if (!normalized) return patients.slice(0, 5);
+
+    return patients
+      .filter((item) =>
+        [item.name, item.hospitalNo, item.diseaseType, item.sex, item.organs.join(' ')]
+          .some((value) => value.toLowerCase().includes(normalized))
+      )
+      .slice(0, 6);
+  }, [patientQuery, patients]);
 
   const filteredEvents = useMemo(
     () => journeyDemoEvents.filter((event) => enabledCategories.includes(event.category) && matchesEventQuery(event, query)),
@@ -354,6 +397,33 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
             <p>
               LGL-1111 / {patient.name} · {patient.sex} · {patient.age}岁 · {patient.diseaseType}
             </p>
+          </div>
+        </div>
+        <div className="journey-demo-patient-picker">
+          <label className="journey-demo-search journey-demo-patient-search">
+            <Icon name="search" />
+            <input
+              onChange={(event) => setPatientQuery(event.target.value)}
+              placeholder="查找患者编号、住院号或疾病类型"
+              value={patientQuery}
+            />
+          </label>
+          <div className="journey-demo-patient-results" aria-label="患者查找结果">
+            {patientMatches.map((item) => (
+              <button
+                className={item.name === patient.name ? 'is-active' : undefined}
+                key={`${item.studyId}-${item.name}`}
+                onClick={() => {
+                  setActivePatient(item);
+                  setPatientQuery('');
+                }}
+                type="button"
+              >
+                <strong>{item.name}</strong>
+                <span>{item.hospitalNo} · {item.diseaseType}</span>
+              </button>
+            ))}
+            {!patientMatches.length ? <span className="journey-demo-patient-empty">无匹配患者</span> : null}
           </div>
         </div>
         <div className="journey-demo-categories" aria-label="旅程事件分类筛选">

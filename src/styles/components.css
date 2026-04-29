@@ -4182,7 +4182,7 @@
 
 .journey-demo-toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(380px, 1.3fr) minmax(300px, 0.9fr);
+  grid-template-columns: minmax(240px, 0.9fr) minmax(260px, 0.9fr) minmax(360px, 1.25fr) minmax(300px, 1fr);
   gap: 12px;
   align-items: center;
   padding: 14px;
@@ -4219,6 +4219,81 @@
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
+}
+
+.journey-demo-patient-picker {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.journey-demo-patient-search {
+  width: 100%;
+  min-width: 0;
+}
+
+.journey-demo-patient-results {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 6px;
+}
+
+.journey-demo-patient-results button {
+  min-width: 0;
+  min-height: 48px;
+  display: grid;
+  gap: 2px;
+  align-content: center;
+  padding: 7px 9px;
+  border: 1px solid rgba(178, 201, 230, 0.78);
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.66);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease, background 0.16s ease;
+}
+
+.journey-demo-patient-results button:hover,
+.journey-demo-patient-results button.is-active {
+  border-color: rgba(58, 123, 213, 0.42);
+  background: rgba(232, 242, 255, 0.92);
+  box-shadow: 0 8px 18px rgba(58, 123, 213, 0.1);
+}
+
+.journey-demo-patient-results button:active {
+  transform: translateY(1px);
+}
+
+.journey-demo-patient-results strong,
+.journey-demo-patient-results span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.journey-demo-patient-results strong {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.journey-demo-patient-results span {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.journey-demo-patient-empty {
+  min-height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(178, 201, 230, 0.78);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .journey-demo-categories,
