@@ -1,0 +1,38 @@
+{
+  "generatedAt": "2026-04-29T14:45:56.490Z",
+  "entry": "index.html",
+  "pages": [
+    {
+      "module": "首页工作台",
+      "file": "home-workbench.html"
+    },
+    {
+      "module": "患者队列管理",
+      "file": "patient-cohort-management.html"
+    },
+    {
+      "module": "知情同意",
+      "file": "informed-consent.html"
+    },
+    {
+      "module": "临床数据采集",
+      "file": "clinical-data-capture.html"
+    },
+    {
+      "module": "样本及检测",
+      "file": "sample-testing.html"
+    },
+    {
+      "module": "患者旅程",
+      "file": "patient-journey.html"
+    },
+    {
+      "module": "数据分析",
+      "file": "data-analysis.html"
+    },
+    {
+      "module": "系统管理",
+      "file": "system-management.html"
+    }
+  ]
+}

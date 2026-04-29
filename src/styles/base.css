@@ -1,0 +1,96 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 1180px;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  color: var(--text-primary);
+  background:
+    radial-gradient(circle at 82% 8%, rgba(45, 191, 184, 0.18), transparent 25%),
+    radial-gradient(circle at 62% 0%, rgba(58, 123, 213, 0.14), transparent 24%),
+    var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+}
+
+button:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+select:focus:not(:focus-visible) {
+  outline: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid rgba(58, 123, 213, 0.34);
+  outline-offset: 2px;
+}
+
+input,
+select {
+  color: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+svg {
+  flex-shrink: 0;
+  display: block;
+}
+
+button svg,
+a svg {
+  pointer-events: none;
+}
+
+::selection {
+  color: #fff;
+  background: rgba(58, 123, 213, 0.78);
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #dde4ee;
+  border-radius: 999px;
+}

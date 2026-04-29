@@ -1,0 +1,179 @@
+import type { OmicsRecord, SampleRecord } from '../data/operations';
+import type { DiseaseType, OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
+
+type ApiPatient = {
+  id: string;
+  study_id: string;
+  name: string;
+  hospital_no: string;
+  sex: '男' | '女';
+  age: number;
+  disease_type: DiseaseType;
+  organs: string[];
+  note: string;
+  clinical_data: Record<string, string | number>;
+};
+
+type ApiSample = {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  hospital_no: string;
+  sample_type: SampleRecord['sampleType'];
+  visit: string;
+  collected_at: string;
+  storage: string;
+  status: SampleRecord['status'];
+  linked_omics: string[];
+};
+
+type ApiOmics = {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  sample_id: string;
+  sample_type: string;
+  assay: OmicsRecord['assay'];
+  platform: string;
+  run_id: string;
+  status: OmicsRecord['status'];
+  qc: OmicsRecord['qc'];
+  sent_at: string;
+  completed_at: string;
+};
+
+type ApiPanorama = {
+  patient: ApiPatient;
+  samples: ApiSample[];
+  omics_records: ApiOmics[];
+};
+
+export type DemoDataset = {
+  patients: PatientRecord[];
+  samples: SampleRecord[];
+  omics: OmicsRecord[];
+};
+
+const configuredBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
+const apiBases = Array.from(new Set([configuredBase, 'http://127.0.0.1:8000', 'http://127.0.0.1:8001'].filter(Boolean))) as string[];
+
+async function getJson<T>(path: string): Promise<T> {
+  let lastError: unknown;
+
+  for (const base of apiBases) {
+    const controller = new window.AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 900);
+
+    try {
+      const response = await window.fetch(`${base}${path}`, { signal: controller.signal });
+      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      return (await response.json()) as T;
+    } catch (error) {
+      lastError = error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('API request failed');
+}
+
+function toSamplesByType(records: ApiSample[]): SampleCollection[] {
+  const counts = records.reduce<Record<string, number>>((acc, sample) => {
+    acc[sample.sample_type] = (acc[sample.sample_type] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return Object.entries(counts)
+    .filter(([type]) => ['血液', 'CSF', '肾'].includes(type))
+    .map(([type, count]) => ({ type: type as SampleCollection['type'], count }));
+}
+
+function toPatientOmicsStatus(patientSamples: ApiSample[], patientOmics: ApiOmics[]): OmicsStatus {
+  if (!patientSamples.length) return '样本采集';
+  if (!patientOmics.length) return '样本采集';
+  return patientOmics.every((record) => record.status === '结果归档') ? '完成' : '进行中';
+}
+
+function toPatientRecord(patient: ApiPatient, allSamples: ApiSample[], allOmics: ApiOmics[]): PatientRecord {
+  const patientSamples = allSamples.filter((sample) => sample.patient_id === patient.id);
+  const patientOmics = allOmics.filter((record) => record.patient_id === patient.id);
+
+  return {
+    id: patient.id,
+    studyId: patient.study_id as 'LGL-1111',
+    name: patient.name,
+    hospitalNo: patient.hospital_no,
+    sex: patient.sex,
+    age: patient.age,
+    diseaseType: patient.disease_type,
+    organs: patient.organs,
+    samples: toSamplesByType(patientSamples),
+    omicsStatus: toPatientOmicsStatus(patientSamples, patientOmics),
+    note: patient.note,
+    clinicalData: patient.clinical_data
+  };
+}
+
+function toSampleRecord(sample: ApiSample): SampleRecord {
+  return {
+    id: sample.id,
+    patientId: sample.patient_id,
+    patientName: sample.patient_name,
+    hospitalNo: sample.hospital_no,
+    sampleType: sample.sample_type,
+    visit: sample.visit,
+    collectedAt: sample.collected_at,
+    storage: sample.storage,
+    status: sample.status,
+    linkedOmics: sample.linked_omics
+  };
+}
+
+function toOmicsRecord(record: ApiOmics): OmicsRecord {
+  return {
+    id: record.id,
+    patientId: record.patient_id,
+    patientName: record.patient_name,
+    sampleId: record.sample_id,
+    sampleType: record.sample_type,
+    assay: record.assay,
+    platform: record.platform,
+    runId: record.run_id,
+    status: record.status,
+    qc: record.qc,
+    sentAt: record.sent_at,
+    completedAt: record.completed_at
+  };
+}
+
+export async function fetchDemoDataset(): Promise<DemoDataset> {
+  const [patients, samples, omics] = await Promise.all([
+    getJson<ApiPatient[]>('/patients'),
+    getJson<ApiSample[]>('/samples'),
+    getJson<ApiOmics[]>('/omics')
+  ]);
+
+  return {
+    patients: patients.map((patient) => toPatientRecord(patient, samples, omics)),
+    samples: samples.map(toSampleRecord),
+    omics: omics.map(toOmicsRecord)
+  };
+}
+
+export async function fetchSamples(): Promise<SampleRecord[]> {
+  return (await getJson<ApiSample[]>('/samples')).map(toSampleRecord);
+}
+
+export async function fetchOmicsRecords(): Promise<OmicsRecord[]> {
+  return (await getJson<ApiOmics[]>('/omics')).map(toOmicsRecord);
+}
+
+export async function fetchPatientPanorama(patientId: string): Promise<DemoDataset> {
+  const panorama = await getJson<ApiPanorama>(`/patients/${patientId}/panorama`);
+  return {
+    patients: [toPatientRecord(panorama.patient, panorama.samples, panorama.omics_records)],
+    samples: panorama.samples.map(toSampleRecord),
+    omics: panorama.omics_records.map(toOmicsRecord)
+  };
+}

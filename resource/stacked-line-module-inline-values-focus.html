@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stacked Line Module</title>
+  <script src="https://code.highcharts.com/highcharts.js"></script>
+  <script src="https://code.highcharts.com/modules/accessibility.js"></script>
+  <style>
+    :root {
+      --page-bg: #f6f7fb;
+      --card-bg: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--page-bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .page {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 32px auto;
+    }
+
+    .chart-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+      padding: 20px 20px 12px;
+    }
+
+    .chart-title {
+      margin: 0 0 4px;
+      font-size: 20px;
+      line-height: 1.25;
+      font-weight: 750;
+      letter-spacing: -0.02em;
+    }
+
+    .chart-desc {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    #stacked-line-chart {
+      width: 100%;
+      height: 560px;
+    }
+
+    /* 数值标签直接替代 marker，需要让鼠标事件穿透到线条/点上 */
+    .highcharts-data-label,
+    .highcharts-data-label span,
+    .highcharts-data-label text,
+    .highcharts-data-label-box {
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="chart-card">
+      <h1 class="chart-title">Stacked Line 模块</h1>
+      <p class="chart-desc">颜色与图例一一对应；每条线使用不同虚线；数值直接替换圆点、方块、三角、菱形等 marker；鼠标移入时仅突出当前系列。</p>
+      <div id="stacked-line-chart"></div>
+    </section>
+  </main>
+
+  <script>
+    const StackedLineModule = (() => {
+      const PALETTE = [
+        "#2563EB", "#DC2626", "#16A34A", "#9333EA",
+        "#F97316", "#0891B2", "#DB2777", "#4B5563"
+      ];
+
+      const DASH_STYLES = [
+        "Solid", "ShortDash", "ShortDot", "ShortDashDot",
+        "Dash", "Dot", "DashDot", "LongDash", "LongDashDot", "LongDashDotDot"
+      ];
+
+      const hasOwn = (target, key) => Object.prototype.hasOwnProperty.call(target, key);
+
+      function parseX(value) {
+        if (value instanceof Date) return value.getTime();
+        if (typeof value === "string") {
+          const time = new Date(value).getTime();
+          if (Number.isNaN(time)) throw new Error(`Invalid date string: ${value}`);
+          return time;
+        }
+        return Number(value);
+      }
+
+      function formatValue(value, decimals = 0, unit = "") {
+        if (value === null || value === undefined || Number.isNaN(Number(value))) return "";
+        return `${Highcharts.numberFormat(Number(value), decimals, ".", ",")}${unit}`;
+      }
+
+      function normalizeSeries(series, config) {
+        return series.map((item, index) => {
+          const color = item.color || PALETTE[index % PALETTE.length];
+          const dashStyle = item.dashStyle || DASH_STYLES[index % DASH_STYLES.length];
+          const data = (item.data || [])
+            .map(([x, y]) => ({ x: parseX(x), y: y === null ? null : Number(y), missing: false }))
+            .filter((point) => Number.isFinite(point.x) && (point.y === null || Number.isFinite(point.y)))
+            .sort((a, b) => a.x - b.x);
+
+          return { ...item, color, dashStyle, data };
+        });
+      }
+
+      function alignSeriesOnX(series, config) {
+        const stackingEnabled = config.stacking !== null && config.stacking !== undefined;
+        const alignX = hasOwn(config, "alignX") ? config.alignX : stackingEnabled;
+        const missingValue = hasOwn(config, "missingValue") ? config.missingValue : (stackingEnabled ? 0 : null);
+
+        if (!alignX) {
+          return series.map((item) => {
+            const lastActualX = item.data.length ? item.data[item.data.length - 1].x : null;
+            return {
+              ...item,
+              data: item.data.map((point) => ({
+                ...point,
+                custom: { missing: false, isLastPoint: point.x === lastActualX }
+              }))
+            };
+          });
+        }
+
+        const xValues = Array.from(new Set(series.flatMap((item) => item.data.map((point) => point.x))))
+          .sort((a, b) => a - b);
+
+        return series.map((item) => {
+          const pointMap = new Map(item.data.map((point) => [point.x, point.y]));
+          const lastActualX = item.data.length ? item.data[item.data.length - 1].x : null;
+
+          return {
+            ...item,
+            data: xValues.map((x) => {
+              const exists = pointMap.has(x);
+              return {
+                x,
+                y: exists ? pointMap.get(x) : missingValue,
+                custom: {
+                  missing: !exists,
+                  isLastPoint: x === lastActualX
+                }
+              };
+            })
+          };
+        });
+      }
+
+      function setSeriesFocus(chart, activeSeries) {
+        const inactiveOpacity = chart.options.custom?.inactiveOpacity ?? 0.1;
+        const inactiveLabelOpacity = chart.options.custom?.inactiveLabelOpacity ?? 0.08;
+        const animation = { duration: 120 };
+
+        chart.series.forEach((series) => {
+          const isActive = !activeSeries || series === activeSeries;
+          const lineOpacity = isActive ? 1 : inactiveOpacity;
+          const labelOpacity = isActive ? 1 : inactiveLabelOpacity;
+
+          [series.group, series.graph, series.markerGroup].forEach((node) => {
+            if (node) node.animate({ opacity: lineOpacity }, animation);
+          });
+
+          if (series.dataLabelsGroup) {
+            series.dataLabelsGroup.animate({ opacity: labelOpacity }, animation);
+          }
+        });
+      }
+
+      function buildOptions(config) {
+        const stacking = hasOwn(config, "stacking") ? config.stacking : "normal";
+        const unit = config.unit || "";
+        const decimals = config.valueDecimals ?? 0;
+        const showPointValues = config.showPointValues !== false;
+        const showInlineLastLabel = config.showInlineLastLabel !== false;
+        const hideMissingLabels = config.hideMissingLabels !== false;
+        const normalized = normalizeSeries(config.series || [], { ...config, stacking });
+        const aligned = alignSeriesOnX(normalized, { ...config, stacking });
+
+        return {
+          custom: {
+            inactiveOpacity: config.inactiveOpacity ?? 0.1,
+            inactiveLabelOpacity: config.inactiveLabelOpacity ?? 0.08
+          },
+          chart: {
+            type: "spline",
+            height: config.height || 520,
+            backgroundColor: "transparent",
+            spacing: [18, 40, 18, 18],
+            zoomType: "x",
+            events: {
+              load: function () {
+                const chart = this;
+                setSeriesFocus(chart, null);
+                chart.renderTo.addEventListener("mouseleave", () => setSeriesFocus(chart, null));
+              }
+            }
+          },
+          title: {
+            text: config.title || null,
+            align: "left",
+            style: { fontSize: "18px", fontWeight: "700", color: "#111827" }
+          },
+          subtitle: {
+            text: config.subtitle || null,
+            align: "left",
+            style: { color: "#6B7280" }
+          },
+          credits: { enabled: false },
+          colors: PALETTE,
+          legend: {
+            enabled: config.showLegend !== false,
+            align: "center",
+            verticalAlign: "bottom",
+            symbolWidth: 46,
+            symbolHeight: 14,
+            symbolRadius: 0,
+            itemDistance: 22,
+            useHTML: true,
+            labelFormatter: function () {
+              return `<span style="color:${this.color};font-weight:650">${this.name}</span>`;
+            }
+          },
+          xAxis: {
+            type: "datetime",
+            lineColor: "#D1D5DB",
+            tickColor: "#D1D5DB",
+            crosshair: { width: 1, color: "#9CA3AF", dashStyle: "Dash" },
+            labels: { style: { color: "#6B7280", fontSize: "12px" } }
+          },
+          yAxis: {
+            min: config.yMin,
+            title: { text: config.yAxisTitle || unit || null, style: { color: "#6B7280" } },
+            gridLineColor: "#EEF2F7",
+            gridLineDashStyle: "ShortDash",
+            labels: {
+              enabled: config.showYAxisLabels !== false,
+              formatter: function () { return formatValue(this.value, decimals, unit); },
+              style: { color: "#6B7280", fontSize: "12px" }
+            }
+          },
+          tooltip: {
+            shared: false,
+            useHTML: true,
+            borderColor: "#E5E7EB",
+            backgroundColor: "rgba(255,255,255,0.96)",
+            shadow: false,
+            formatter: function () {
+              return `<div style="min-width:170px">
+                <div style="font-weight:700;margin-bottom:6px">${Highcharts.dateFormat("%Y-%m-%d", this.x)}</div>
+                <div style="display:flex;gap:8px;align-items:center;line-height:1.7">
+                  <span style="width:22px;height:0;border-top:3px ${this.series.options.dashStyle === "Solid" ? "solid" : "dashed"} ${this.series.color};display:inline-block"></span>
+                  <span>${this.series.name}</span>
+                  <b style="margin-left:auto;color:${this.series.color}">${formatValue(this.y, decimals, unit)}</b>
+                </div>
+              </div>`;
+            }
+          },
+          plotOptions: {
+            series: {
+              animation: { duration: 600 },
+              turboThreshold: 0,
+              stickyTracking: false,
+              states: {
+                inactive: { opacity: config.inactiveOpacity ?? 0.1 },
+                hover: { halo: { size: 0 }, lineWidthPlus: 1 }
+              },
+              events: {
+                mouseOver: function () { setSeriesFocus(this.chart, this); },
+                mouseOut: function () { setSeriesFocus(this.chart, null); }
+              },
+              point: {
+                events: {
+                  mouseOver: function () { setSeriesFocus(this.series.chart, this.series); }
+                }
+              }
+            },
+            spline: {
+              stacking,
+              lineWidth: 3,
+              connectNulls: false,
+              marker: {
+                enabled: false,
+                states: {
+                  hover: { enabled: false },
+                  select: { enabled: false }
+                }
+              },
+              dataLabels: { enabled: false }
+            }
+          },
+          series: aligned.map((item) => ({
+            type: "spline",
+            name: item.name,
+            color: item.color,
+            dashStyle: item.dashStyle,
+            dataLabels: {
+              enabled: showPointValues,
+              allowOverlap: true,
+              crop: false,
+              overflow: "allow",
+              useHTML: true,
+              align: "center",
+              verticalAlign: "middle",
+              padding: 2,
+              x: 0,
+              y: 0,
+              backgroundColor: "rgba(255,255,255,0.92)",
+              borderWidth: 0,
+              shadow: false,
+              style: {
+                color: item.color,
+                fontSize: "12px",
+                fontWeight: "700",
+                textOutline: "none",
+                pointerEvents: "none",
+                whiteSpace: "nowrap"
+              },
+              formatter: function () {
+                const custom = this.point && this.point.custom ? this.point.custom : {};
+                if (hideMissingLabels && custom.missing) return "";
+                const value = formatValue(this.y, decimals, unit);
+                return showInlineLastLabel && custom.isLastPoint
+                  ? `${value} <span style="font-weight:800">${this.series.name}</span>`
+                  : value;
+              }
+            },
+            data: item.data
+          })),
+          responsive: {
+            rules: [{
+              condition: { maxWidth: 680 },
+              chartOptions: {
+                chart: { spacing: [12, 12, 12, 8] },
+                legend: { itemDistance: 10, symbolWidth: 34 },
+                yAxis: { labels: { enabled: false } },
+                plotOptions: {
+                  spline: {
+                    dataLabels: {
+                      style: { fontSize: "10px" }
+                    }
+                  }
+                }
+              }
+            }]
+          },
+          accessibility: {
+            enabled: true,
+            description: "Stacked spline line chart with matched legend colors, dash styles, numeric point labels replacing markers, and hover focus for the active series."
+          }
+        };
+      }
+
+      function render(container, config) {
+        return Highcharts.chart(container, buildOptions(config));
+      }
+
+      return { buildOptions, render };
+    })();
+
+    const demoSeries = [
+      {
+        name: "Organic",
+        data: [
+          ["2026-01-03", 34], ["2026-01-12", 42], ["2026-01-22", 50],
+          ["2026-02-01", 47], ["2026-02-14", 61], ["2026-03-03", 72],
+          ["2026-03-18", 68], ["2026-04-06", 82]
+        ]
+      },
+      {
+        name: "Paid",
+        data: [
+          ["2026-01-05", 18], ["2026-01-16", 25], ["2026-01-28", 22],
+          ["2026-02-11", 36], ["2026-02-27", 31], ["2026-03-08", 44],
+          ["2026-03-25", 39], ["2026-04-10", 55]
+        ]
+      },
+      {
+        name: "Referral",
+        data: [
+          ["2026-01-08", 12], ["2026-01-20", 16], ["2026-02-06", 14],
+          ["2026-02-18", 22], ["2026-03-01", 25], ["2026-03-20", 27],
+          ["2026-04-03", 34]
+        ]
+      },
+      {
+        name: "Direct",
+        data: [
+          ["2026-01-10", 21], ["2026-01-26", 19], ["2026-02-08", 23],
+          ["2026-02-22", 29], ["2026-03-13", 33], ["2026-03-28", 30],
+          ["2026-04-12", 38]
+        ]
+      }
+    ];
+
+    StackedLineModule.render("stacked-line-chart", {
+      title: "Acquisition by Channel",
+      subtitle: "Stacked spline with irregular time intervals; numeric values replace all point markers",
+      unit: "k",
+      valueDecimals: 0,
+      stacking: "normal",
+      alignX: true,
+      missingValue: 0,
+      inactiveOpacity: 0.08,
+      inactiveLabelOpacity: 0.06,
+      series: demoSeries
+    });
+  </script>
+</body>
+</html>

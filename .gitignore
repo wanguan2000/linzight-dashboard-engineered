@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+*.log
+.env
+.env.*
+backend/linzight_demo.db
+backend/.venv/
+backend/**/__pycache__/

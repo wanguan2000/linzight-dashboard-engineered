@@ -1,0 +1,28 @@
+{
+  "name": "clinical-patient-journey-nextjs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Clinical Patient Journey front-end page with Next.js, TypeScript, Ant Design v5, ECharts and Zustand.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.3.7",
+    "antd": "^5.19.4",
+    "dayjs": "^1.11.12",
+    "echarts": "^5.5.1",
+    "echarts-for-react": "^3.0.2",
+    "next": "^14.2.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.4"
+  }
+}
