@@ -1,7 +1,7 @@
 # RWS EDC 开发进度
 
 ## 当前阶段
-阶段 9：数据完整性与校验
+阶段 10：审计日志
 
 ## 已完成
 - [x] 1. 前端工程化改造
@@ -36,6 +36,10 @@
   - 后端新增 `GET /exports/{export_id}/download`，支持下载导出任务生成的 CSV 文件。
   - 后端新增 `POST /imports/patients`，支持最小患者 CSV 导入并写入审计。
   - 前端数据分析页的导出按钮已接入 `/exports`，默认登录角色调整为项目管理员以便主链路可直接试跑导出。
+- [x] 9. 数据完整性与校验
+  - 后端新增 `/quality/run` 和 `/quality/issues`，可扫描临床完整度、样本缺失和知情同意状态并生成 `data_quality_issues`。
+  - 质控运行写入审计日志。
+  - 前端数据分析页新增“运行校验”入口和结果状态展示。
 
 ## 待完成
 - [x] 1. 前端工程化改造
@@ -67,6 +71,11 @@
 - `npm run build`
 - `backend/.venv/bin/python -m backend.seed`
 - `python3 -m py_compile backend/*.py`
+- `backend/.venv/bin/python` TestClient smoke：`/quality/run` 200、生成 27 条 open issue、`/quality/issues` 查询一致
+- `npm run lint`
+- `npm run build`
+- `backend/.venv/bin/python -m backend.seed`
+- `python3 -m py_compile backend/*.py`
 - `backend/.venv/bin/python` TestClient smoke：创建导出 201、下载导出 200、CSV 导入 201
 - `npm run lint`
 - `npm run build`
@@ -88,4 +97,4 @@
 无
 
 ## 下一步
-阶段 9：补齐数据完整性与校验，包括缺失字段扫描、质控问题生成、前端展示和 API smoke。
+阶段 10：完善审计日志覆盖范围，为患者、CRF、样本、组学、导入导出和质控操作补充统一审计记录。

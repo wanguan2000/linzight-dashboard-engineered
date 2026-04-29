@@ -105,6 +105,11 @@ export async function createExportJob(exportType = 'cohort_csv'): Promise<ApiExp
   );
 }
 
+export async function runQualityChecks(): Promise<{ status: string; created: number }> {
+  const token = window.localStorage.getItem('linzight-demo-token');
+  return postJson<{ status: string; created: number }>('/quality/run', {}, token ? { Authorization: `Bearer ${token}` } : undefined);
+}
+
 function toSamplesByType(records: ApiSample[]): SampleCollection[] {
   const counts = records.reduce<Record<string, number>>((acc, sample) => {
     acc[sample.sample_type] = (acc[sample.sample_type] ?? 0) + 1;

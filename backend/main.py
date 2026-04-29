@@ -103,7 +103,7 @@ def role_can(role: str, resource: str, action: str) -> bool:
     if action == "read":
         return True
     allowed: dict[str, set[str]] = {
-        "project_admin": {"patients", "crf", "samples", "omics", "files", "exports"},
+        "project_admin": {"patients", "crf", "samples", "omics", "files", "exports", "quality"},
         "investigator": {"crf", "files"},
         "crc": {"patients", "crf", "samples", "omics", "files"},
         "data_manager": {"crf", "exports", "quality"},
@@ -605,6 +605,115 @@ def analytics_summary() -> dict[str, Any]:
             "completed_omics_count": conn.execute("SELECT COUNT(*) AS count FROM omics_records WHERE status = '结果归档'").fetchone()["count"],
             "data_completeness_avg": round(sum(completeness_values) / len(completeness_values), 1) if completeness_values else 0,
         }
+
+
+@app.get("/quality/issues")
+def list_quality_issues(patient_id: str | None = None, status_filter: str | None = Query(default=None, alias="status")) -> list[dict[str, Any]]:
+    sql = "SELECT * FROM data_quality_issues"
+    params: list[Any] = []
+    where: list[str] = []
+    if patient_id:
+        where.append("patient_id = ?")
+        params.append(patient_id)
+    if status_filter:
+        where.append("status = ?")
+        params.append(status_filter)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY created_at DESC"
+    with connect() as conn:
+        return [row_to_quality_issue(row) for row in conn.execute(sql, params).fetchall()]
+
+
+@app.post("/quality/run")
+def run_quality_checks(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = authorize(authorization, "quality")
+    now = utc_now()
+    issue_rows: list[tuple[Any, ...]] = []
+    with connect() as conn:
+        patients = [row_to_patient(row) for row in conn.execute("SELECT * FROM patients ORDER BY id").fetchall()]
+        for patient in patients:
+            clinical_data = patient["clinical_data"]
+            completeness = clinical_data.get("数据完整度", 0)
+            try:
+                completeness_value = float(completeness)
+            except (TypeError, ValueError):
+                completeness_value = 0
+            sample_count = conn.execute("SELECT COUNT(*) AS count FROM samples WHERE patient_id = ?", (patient["id"],)).fetchone()["count"]
+            consent = conn.execute("SELECT status FROM consents WHERE patient_id = ? ORDER BY id LIMIT 1", (patient["id"],)).fetchone()
+            if completeness_value < 80:
+                issue_rows.append(
+                    (
+                        f"DQI-{uuid4().hex[:10].upper()}",
+                        patient["id"],
+                        "patients",
+                        patient["id"],
+                        "clinical_data.数据完整度",
+                        "warning",
+                        f"临床数据完整度低于 80%：{completeness_value:.0f}%",
+                        "open",
+                        now,
+                        None,
+                    )
+                )
+            if sample_count == 0 and patient["disease_type"] != "HC":
+                issue_rows.append(
+                    (
+                        f"DQI-{uuid4().hex[:10].upper()}",
+                        patient["id"],
+                        "samples",
+                        patient["id"],
+                        "sample_count",
+                        "critical",
+                        "非 HC 患者缺少样本登记",
+                        "open",
+                        now,
+                        None,
+                    )
+                )
+            if consent is None or consent["status"] != "已签署":
+                issue_rows.append(
+                    (
+                        f"DQI-{uuid4().hex[:10].upper()}",
+                        patient["id"],
+                        "consents",
+                        patient["id"],
+                        "status",
+                        "warning",
+                        "知情同意未签署或已撤回",
+                        "open",
+                        now,
+                        None,
+                    )
+                )
+        conn.execute("DELETE FROM data_quality_issues WHERE status = 'open'")
+        conn.executemany(
+            """
+            INSERT INTO data_quality_issues
+              (id, patient_id, source_table, source_id, field_name, severity, message, status, created_at, resolved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            issue_rows,
+        )
+        conn.execute(
+            """
+            INSERT INTO audit_logs (id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, ip_address, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"AUD-{uuid4().hex[:10].upper()}",
+                user["id"],
+                user["role"],
+                "quality_run",
+                "data_quality_issues",
+                "open",
+                None,
+                encode_json({"created": len(issue_rows)}),
+                None,
+                now,
+            ),
+        )
+    return {"status": "completed", "created": len(issue_rows)}
 
 
 @app.post("/exports", status_code=status.HTTP_201_CREATED)

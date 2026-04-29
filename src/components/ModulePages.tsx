@@ -17,7 +17,7 @@ import {
   type VisitRecord
 } from '../data/operations';
 import { patientRecords, type PatientRecord } from '../data/patientCohort';
-import { createExportJob, fetchDemoDataset, fetchOmicsRecords, fetchSamples, uploadFileToBackend } from '../services/api';
+import { createExportJob, fetchDemoDataset, fetchOmicsRecords, fetchSamples, runQualityChecks, uploadFileToBackend } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 import { PatientListModule } from './PatientCohortPage';
@@ -2092,6 +2092,7 @@ export function SystemManagementPage() {
 
 export function ReportsPage() {
   const [exportStatus, setExportStatus] = useState('等待导出任务');
+  const [qualityStatus, setQualityStatus] = useState('等待数据校验');
 
   async function handleCreateExport(record: ReportRecord) {
     setExportStatus(`${record.name} 生成中...`);
@@ -2100,6 +2101,16 @@ export function ReportsPage() {
       setExportStatus(`${record.name} 已生成：${job.id}`);
     } catch {
       setExportStatus('导出失败：请确认已登录且当前角色具备导出权限');
+    }
+  }
+
+  async function handleRunQualityChecks() {
+    setQualityStatus('数据校验运行中...');
+    try {
+      const result = await runQualityChecks();
+      setQualityStatus(`校验完成：发现 ${result.created} 条待处理问题`);
+    } catch {
+      setQualityStatus('校验失败：请确认当前角色具备质控权限');
     }
   }
 
@@ -2117,10 +2128,20 @@ export function ReportsPage() {
       </div>
 
       <section className="module-card">
-        <header className="module-card__header"><h2>数据导出流水线</h2><span>用于 Demo 后端 API 联调</span></header>
+        <header className="module-card__header">
+          <div>
+            <h2>数据导出流水线</h2>
+            <span>用于 Demo 后端 API 联调</span>
+          </div>
+          <button className="module-link-button module-link-button--primary" type="button" onClick={handleRunQualityChecks}><Icon name="check" />运行校验</button>
+        </header>
         <div className="module-upload-status">
           <Icon name="reports" />
           <span>{exportStatus}</span>
+        </div>
+        <div className="module-upload-status">
+          <Icon name="shield" />
+          <span>{qualityStatus}</span>
         </div>
         <div className="pipeline-grid">
           {['患者主数据', '临床 CRF', '样本台账', '多组学结果', '知情同意审计', '数据包归档'].map((item, index) => (
