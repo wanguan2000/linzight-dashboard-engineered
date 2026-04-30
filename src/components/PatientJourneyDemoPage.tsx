@@ -392,6 +392,11 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
     setHoveredEventId(null);
   };
 
+  const updateEventQuery = (value: string) => {
+    setQuery(value);
+    setStreamPage(1);
+  };
+
   return (
     <div className="content workspace-page patient-journey-demo">
       <section className="journey-demo-toolbar">
@@ -458,55 +463,21 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
             </div>
           ) : null}
         </div>
-        <div className="journey-demo-categories" aria-label="旅程事件分类筛选">
-          {categoryOrder.map((category) => {
-            const config = journeyCategoryConfig[category];
-            const active = enabledCategories.includes(category);
-            return (
-              <button
-                className={active ? 'journey-demo-category is-active' : 'journey-demo-category'}
-                key={category}
-                onClick={() => toggleCategory(category)}
-                style={{
-                  color: active ? config.color : undefined,
-                  backgroundColor: active ? config.softColor : undefined,
-                  borderColor: active ? config.borderColor : undefined
-                }}
-                type="button"
-              >
-                <Icon name={categoryIcons[category]} />
-                {config.label}
-              </button>
-            );
-          })}
-        </div>
-        <div className="journey-demo-actions">
-          <label className="journey-demo-search">
-            <Icon name="search" />
-            <input
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setStreamPage(1);
-              }}
-              placeholder="搜索事件、治疗或样本"
-              value={query}
-            />
-          </label>
-          <button className="module-link-button" onClick={resetView} type="button">
-            <Icon name="clock" />
-            重置视图
-          </button>
-        </div>
       </section>
 
       <section className="journey-demo-grid">
         <div className="journey-demo-main">
           <JourneyTimeline
+            enabledCategories={enabledCategories}
             events={filteredEvents}
             hoveredEventId={hoveredEventId}
             onHover={setHoveredEventId}
+            onQueryChange={updateEventQuery}
+            onResetView={resetView}
             onSelect={selectEvent}
+            onToggleCategory={toggleCategory}
             onZoomChange={setZoomRange}
+            query={query}
             selectedDate={selectedDate}
             selectedEventId={selectedEvent.id}
             zoomRange={zoomRange}
@@ -535,20 +506,30 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
 }
 
 function JourneyTimeline({
+  enabledCategories,
   events,
   hoveredEventId,
   onHover,
+  onQueryChange,
+  onResetView,
   onSelect,
+  onToggleCategory,
   onZoomChange,
+  query,
   selectedDate,
   selectedEventId,
   zoomRange
 }: {
+  enabledCategories: JourneyEventCategory[];
   events: JourneyDemoEvent[];
   hoveredEventId: string | null;
   onHover: (eventId: string | null) => void;
+  onQueryChange: (value: string) => void;
+  onResetView: () => void;
   onSelect: (event: JourneyDemoEvent) => void;
+  onToggleCategory: (category: JourneyEventCategory) => void;
   onZoomChange: (range: TimelineZoomRange) => void;
+  query: string;
   selectedDate: string;
   selectedEventId: string;
   zoomRange: TimelineZoomRange;
@@ -565,8 +546,41 @@ function JourneyTimeline({
           <span>Multi-track Event Timeline</span>
           <h2>多轨临床事件轴</h2>
         </div>
-        <strong>{visibleEvents.length}</strong>
       </header>
+      <div className="journey-demo-timeline-controls">
+        <div className="journey-demo-categories journey-demo-timeline-categories" aria-label="旅程事件分类筛选">
+          {categoryOrder.map((category) => {
+            const config = journeyCategoryConfig[category];
+            const active = enabledCategories.includes(category);
+            return (
+              <button
+                className={active ? 'journey-demo-category is-active' : 'journey-demo-category'}
+                key={category}
+                onClick={() => onToggleCategory(category)}
+                style={{
+                  color: active ? config.color : undefined,
+                  backgroundColor: active ? config.softColor : undefined,
+                  borderColor: active ? config.borderColor : undefined
+                }}
+                type="button"
+              >
+                <Icon name={categoryIcons[category]} />
+                {config.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="journey-demo-actions journey-demo-timeline-actions">
+          <label className="journey-demo-search journey-demo-timeline-search">
+            <Icon name="search" />
+            <input onChange={(event) => onQueryChange(event.target.value)} placeholder="搜索事件、治疗或样本" value={query} />
+          </label>
+          <button className="module-link-button" onClick={onResetView} type="button">
+            <Icon name="clock" />
+            重置视图
+          </button>
+        </div>
+      </div>
       <div className="journey-demo-timeline-scale">
         <div className="journey-demo-track-label" />
         <div className="journey-demo-scale-axis">
