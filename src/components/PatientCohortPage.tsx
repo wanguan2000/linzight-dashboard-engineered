@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   calculateClinicalCompleteness,
-  cohortStats,
-  diseaseDistribution,
   patientRecords,
-  sampleSummary,
   type DiseaseType,
   type OmicsStatus,
   type PatientRecord
@@ -12,9 +9,46 @@ import {
 import { Icon } from './Icon';
 import { KpiProgress } from './MetricGrid';
 import { fetchDemoDataset } from '../services/api';
+import type { IconName } from '../types';
 
 const diseaseOptions: Array<'全部' | DiseaseType> = ['全部', 'NPSLE', 'Non-NPSLE', 'MS', 'NMOSD', 'HC'];
 const patientPageSize = 5;
+const diseasePalette: Record<DiseaseType, string> = {
+  NPSLE: 'var(--blue)',
+  'Non-NPSLE': '#7d71db',
+  NMOSD: '#35a7c8',
+  MS: '#329bd3',
+  HC: 'var(--green)'
+};
+
+type CohortKpiMetric = {
+  label: string;
+  value: string;
+  helper: string;
+  delta?: string;
+  icon: IconName;
+  progress?: number;
+};
+
+type DiseaseDistributionItem = {
+  label: DiseaseType;
+  value: number;
+  percent: string;
+  color: string;
+};
+
+type SampleSummaryItem = {
+  label: string;
+  value: string;
+  helper: string;
+};
+
+type CompletenessTrend = {
+  areaPath: string;
+  linePath: string;
+  label: string;
+  axis: [string, string, string];
+};
 
 function sampleText(patient: PatientRecord) {
   return patient.samples.map((sample) => `${sample.type}${sample.count > 1 ? ` x${sample.count}` : ''}`).join(' / ');
@@ -46,21 +80,131 @@ function completenessClass(value: number) {
   return 'is-low';
 }
 
-function PatientKpiGrid() {
+function formatCount(value: number) {
+  return new Intl.NumberFormat('en-US').format(value);
+}
+
+function formatPercent(value: number, total: number) {
+  if (!total) return '0%';
+  return `${((value / total) * 100).toFixed(1)}%`;
+}
+
+function average(values: number[]) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function getCompletenessValues(patients: PatientRecord[]) {
+  return patients.map((patient) => calculateClinicalCompleteness(patient.clinicalData));
+}
+
+function buildDiseaseDistribution(patients: PatientRecord[]): DiseaseDistributionItem[] {
+  const total = patients.length;
+  return diseaseOptions
+    .filter((option): option is DiseaseType => option !== '全部')
+    .map((label) => {
+      const value = patients.filter((patient) => patient.diseaseType === label).length;
+      return {
+        label,
+        value,
+        percent: formatPercent(value, total),
+        color: diseasePalette[label]
+      };
+    });
+}
+
+function buildDonutGradient(distribution: DiseaseDistributionItem[]) {
+  let cursor = 0;
+  const segments = distribution.map((item) => {
+    const start = cursor;
+    cursor += Number.parseFloat(item.percent) || 0;
+    return `${item.color} ${start}% ${cursor}%`;
+  });
+
+  return `radial-gradient(circle, rgba(255, 255, 255, 0.96) 0 48%, transparent 49%), conic-gradient(${segments.join(', ')})`;
+}
+
+function buildSampleSummary(patients: PatientRecord[]): SampleSummaryItem[] {
+  const counts = patients.reduce<Record<string, number>>((acc, patient) => {
+    patient.samples.forEach((sample) => {
+      acc[sample.type] = (acc[sample.type] ?? 0) + sample.count;
+    });
+    return acc;
+  }, {});
+  const totalSamples = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  const patientCount = patients.length;
+
+  return [
+    { label: '血液', value: formatCount(counts['血液'] ?? 0), helper: formatPercent(counts['血液'] ?? 0, patientCount) },
+    { label: 'CSF', value: formatCount(counts.CSF ?? 0), helper: formatPercent(counts.CSF ?? 0, patientCount) },
+    { label: '肾', value: formatCount(counts['肾'] ?? 0), helper: formatPercent(counts['肾'] ?? 0, patientCount) },
+    { label: '总样本数', value: formatCount(totalSamples), helper: '数据库实时' }
+  ];
+}
+
+function buildKpiMetrics(patients: PatientRecord[]): CohortKpiMetric[] {
+  const patientCount = patients.length;
+  const countByDisease = patients.reduce<Record<string, number>>((acc, patient) => {
+    acc[patient.diseaseType] = (acc[patient.diseaseType] ?? 0) + 1;
+    return acc;
+  }, {});
+  const npsleCount = countByDisease.NPSLE ?? 0;
+  const neuroInflammatoryCount = (countByDisease.NMOSD ?? 0) + (countByDisease.MS ?? 0);
+  const hcCount = countByDisease.HC ?? 0;
+  const completeness = Number(average(getCompletenessValues(patients)).toFixed(1));
+
+  return [
+    { label: '总患者数', value: formatCount(patientCount), helper: '数据库实时', icon: 'patients' },
+    { label: 'NPSLE', value: formatCount(npsleCount), delta: formatPercent(npsleCount, patientCount), helper: '占总数', icon: 'check' },
+    { label: 'NMOSD / MS', value: formatCount(neuroInflammatoryCount), delta: formatPercent(neuroInflammatoryCount, patientCount), helper: '占总数', icon: 'dna' },
+    { label: 'HC', value: formatCount(hcCount), delta: formatPercent(hcCount, patientCount), helper: '占总数', icon: 'userPlus' },
+    { label: '数据完整性', value: `${completeness}%`, delta: `${patientCount}例`, helper: '平均完整度', icon: 'check', progress: completeness }
+  ];
+}
+
+function buildCompletenessTrend(patients: PatientRecord[]): CompletenessTrend {
+  const values = getCompletenessValues(patients);
+  const bucketSize = Math.max(1, Math.ceil(values.length / 3));
+  const buckets = [0, 1, 2].map((bucket) => {
+    const slice = values.slice(bucket * bucketSize, bucket * bucketSize + bucketSize);
+    return slice.length ? average(slice) : average(values);
+  });
+  const points = buckets.map((value, index) => {
+    const x = index * 110;
+    const y = 108 - Math.max(0, Math.min(100, value));
+    return { x, y };
+  });
+  const fallback = points[0] ?? { x: 0, y: 108 };
+  const [first = fallback, middle = fallback, last = fallback] = points;
+  const linePath = `M ${first.x} ${first.y} C 44 ${first.y} 66 ${middle.y} ${middle.x} ${middle.y} C 154 ${middle.y} 176 ${last.y} ${last.x} ${last.y}`;
+  const areaPath = `${linePath} L 220 118 L 0 118 Z`;
+  const current = Number(average(values).toFixed(1));
+
+  return {
+    areaPath,
+    linePath,
+    label: `${current}%`,
+    axis: ['前段', '中段', '当前']
+  };
+}
+
+function PatientKpiGrid({ patients }: { patients: PatientRecord[] }) {
+  const metrics = buildKpiMetrics(patients);
+
   return (
     <section className="patient-kpis" aria-label="患者队列关键指标">
-      {cohortStats.map((metric) => (
+      {metrics.map((metric) => (
         <article className="kpi-card patient-kpi" key={metric.label}>
           <div>
             <p className="kpi-card__label">{metric.label}</p>
             <strong className="kpi-card__value">{metric.value}</strong>
-            <p className="kpi-card__delta is-up">
-              <span className="delta-arrow">↑</span>
-              <span>{metric.delta}</span>
+            <p className={`kpi-card__delta${metric.delta ? ' is-up' : ''}`}>
+              {metric.delta ? <span className="delta-arrow">↑</span> : null}
+              {metric.delta ? <span>{metric.delta}</span> : null}
               <span>{metric.helper}</span>
             </p>
           </div>
-          {'progress' in metric && typeof metric.progress === 'number' ? (
+          {typeof metric.progress === 'number' ? (
             <KpiProgress progress={metric.progress} />
           ) : (
             <Icon className="kpi-card__icon" name={metric.icon} size={44} />
@@ -71,19 +215,21 @@ function PatientKpiGrid() {
   );
 }
 
-function CohortOverviewPanel() {
+function CohortOverviewPanel({ patients }: { patients: PatientRecord[] }) {
+  const distribution = buildDiseaseDistribution(patients);
+
   return (
     <section className="cohort-side-card" aria-label="队列概览">
       <header className="cohort-side-card__header">
         <h2>队列概览</h2>
       </header>
       <div className="cohort-overview">
-        <div className="cohort-donut">
-          <strong>1,248</strong>
+        <div className="cohort-donut" style={{ background: buildDonutGradient(distribution) }}>
+          <strong>{formatCount(patients.length)}</strong>
           <span>总计</span>
         </div>
         <div className="cohort-legend">
-          {diseaseDistribution.map((item) => (
+          {distribution.map((item) => (
             <div className="cohort-legend__row" key={item.label}>
               <span className={`cohort-legend__dot cohort-legend__dot--${item.label.toLowerCase().replace('/', '-')}`} />
               <span>{item.label}</span>
@@ -96,36 +242,40 @@ function CohortOverviewPanel() {
   );
 }
 
-function CompletenessTrendPanel() {
+function CompletenessTrendPanel({ patients }: { patients: PatientRecord[] }) {
+  const trend = buildCompletenessTrend(patients);
+
   return (
     <section className="cohort-side-card" aria-label="数据完整性趋势">
       <header className="cohort-side-card__header">
         <h2>数据完整性趋势</h2>
-        <span>本月</span>
+        <span>当前</span>
       </header>
       <div className="cohort-mini-chart">
         <svg viewBox="0 0 220 118" preserveAspectRatio="none" aria-hidden="true">
           <line x1="0" y1="20" x2="220" y2="20" className="chart-grid" />
           <line x1="0" y1="52" x2="220" y2="52" className="chart-grid" />
           <line x1="0" y1="84" x2="220" y2="84" className="chart-grid" />
-          <path d="M 0 82 C 22 74 34 82 48 66 C 64 50 82 70 102 55 C 122 40 138 55 160 43 C 178 35 196 42 220 28 L 220 118 L 0 118 Z" fill="rgba(45,191,184,.18)" />
-          <path d="M 0 82 C 22 74 34 82 48 66 C 64 50 82 70 102 55 C 122 40 138 55 160 43 C 178 35 196 42 220 28" fill="none" stroke="#48b99b" strokeWidth="3" strokeLinecap="round" />
-          <text x="184" y="23" className="chart-label">88.6%</text>
+          <path d={trend.areaPath} fill="rgba(45,191,184,.18)" />
+          <path d={trend.linePath} fill="none" stroke="#48b99b" strokeWidth="3" strokeLinecap="round" />
+          <text x="178" y="23" className="chart-label">{trend.label}</text>
         </svg>
-        <div className="cohort-chart-axis"><span>5月1日</span><span>5月15日</span><span>5月29日</span></div>
+        <div className="cohort-chart-axis">{trend.axis.map((label) => <span key={label}>{label}</span>)}</div>
       </div>
     </section>
   );
 }
 
-function SampleSummaryPanel() {
+function SampleSummaryPanel({ patients }: { patients: PatientRecord[] }) {
+  const summary = buildSampleSummary(patients);
+
   return (
     <section className="cohort-side-card" aria-label="样本采集汇总">
       <header className="cohort-side-card__header">
         <h2>样本采集汇总</h2>
       </header>
       <div className="sample-summary">
-        {sampleSummary.map((item) => (
+        {summary.map((item) => (
           <div className={`sample-summary__item ${sampleSummaryClass(item.label)}`} key={item.label}>
             <Icon name={sampleSummaryIcon(item.label)} />
             <strong>{item.value}</strong>
@@ -397,7 +547,7 @@ export function PatientCohortPage({
 
     void fetchDemoDataset()
       .then((dataset) => {
-        if (!ignore && dataset.patients.length >= patientPageSize * 3) {
+        if (!ignore && dataset.patients.length) {
           setPatients(dataset.patients);
         }
       })
@@ -479,7 +629,7 @@ export function PatientCohortPage({
         </button>
       </section>
 
-      <PatientKpiGrid />
+      <PatientKpiGrid patients={patients} />
 
       <div className="patient-main-grid">
         <section className="patient-list-card">
@@ -581,10 +731,10 @@ export function PatientCohortPage({
         </section>
 
         <aside className="patient-side-stack">
-          <CohortOverviewPanel />
-          <CompletenessTrendPanel />
-          <SampleSummaryPanel />
-          <p className="patient-update-time">数据更新于 2024-05-29 14:30</p>
+          <CohortOverviewPanel patients={patients} />
+          <CompletenessTrendPanel patients={patients} />
+          <SampleSummaryPanel patients={patients} />
+          <p className="patient-update-time">数据源：数据库实时同步</p>
         </aside>
       </div>
     </div>
