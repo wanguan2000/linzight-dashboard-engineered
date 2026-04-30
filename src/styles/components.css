@@ -4183,10 +4183,12 @@
 }
 
 .journey-demo-toolbar {
+  position: relative;
+  z-index: 10;
   display: grid;
-  grid-template-columns: minmax(250px, 0.75fr) minmax(440px, 1.35fr) minmax(330px, 1fr) minmax(300px, 0.95fr);
+  grid-template-columns: minmax(260px, 0.9fr) minmax(440px, 1.15fr) minmax(340px, 1fr) minmax(300px, 0.95fr);
   gap: 12px;
-  align-items: start;
+  align-items: center;
   padding: 14px;
 }
 
@@ -4224,6 +4226,7 @@
 }
 
 .journey-demo-patient-picker {
+  position: relative;
   min-width: 0;
   display: grid;
   gap: 8px;
@@ -4272,38 +4275,23 @@
   min-width: 0;
 }
 
-.journey-demo-patient-quick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.journey-demo-patient-quick button {
-  min-height: 26px;
-  padding: 0 9px;
-  border: 1px solid rgba(178, 201, 230, 0.78);
-  border-radius: 999px;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.66);
-  font-size: 10.5px;
-  font-weight: 900;
-}
-
-.journey-demo-patient-quick button:hover,
-.journey-demo-patient-quick button.is-active {
-  border-color: rgba(58, 123, 213, 0.32);
-  color: var(--blue);
-  background: rgba(232, 242, 255, 0.92);
-}
-
 .journey-demo-patient-results {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  max-height: 156px;
+  max-height: 220px;
   overflow: auto;
-  padding-right: 3px;
+  padding: 8px;
+  border: 1px solid rgba(178, 201, 230, 0.82);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 30px rgba(82, 120, 170, 0.18);
   scrollbar-color: rgba(58, 123, 213, 0.3) transparent;
 }
 
@@ -4317,7 +4305,7 @@
   border: 1px solid rgba(178, 201, 230, 0.78);
   border-radius: 8px;
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.66);
+  background: rgba(248, 251, 255, 0.82);
   text-align: left;
   cursor: pointer;
   transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease, background 0.16s ease;
