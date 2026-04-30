@@ -324,17 +324,28 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
     }
   }, [selectedPatient]);
 
-  const patientMatches = useMemo(() => {
-    const normalized = patientQuery.trim().toLowerCase();
-    if (!normalized) return patients.slice(0, 5);
+  const normalizedPatientQuery = patientQuery.trim().toLowerCase();
+  const patientSearchMatches = useMemo(() => {
+    if (!normalizedPatientQuery) return patients;
 
-    return patients
-      .filter((item) =>
-        [item.name, item.hospitalNo, item.diseaseType, item.sex, item.organs.join(' ')]
-          .some((value) => value.toLowerCase().includes(normalized))
-      )
-      .slice(0, 6);
-  }, [patientQuery, patients]);
+    return patients.filter((item) =>
+      [item.name, item.hospitalNo, item.diseaseType, item.sex, item.organs.join(' ')]
+        .some((value) => value.toLowerCase().includes(normalizedPatientQuery))
+    );
+  }, [normalizedPatientQuery, patients]);
+  const patientMatches = normalizedPatientQuery ? patientSearchMatches : patientSearchMatches.slice(0, 8);
+  const patientResultSummary = normalizedPatientQuery
+    ? `匹配 ${patientSearchMatches.length} / ${patients.length} 名患者`
+    : `共 ${patients.length} 名患者，输入关键字筛选`;
+
+  const diseaseQuickFilters = useMemo(() => {
+    const diseases = Array.from(new Set(patients.map((item) => item.diseaseType)));
+    return diseases.slice(0, 5);
+  }, [patients]);
+
+  const setPatientDiseaseQuery = (disease: string) => {
+    setPatientQuery(disease);
+  };
 
   const filteredEvents = useMemo(
     () => journeyDemoEvents.filter((event) => enabledCategories.includes(event.category) && matchesEventQuery(event, query)),
@@ -400,14 +411,37 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
           </div>
         </div>
         <div className="journey-demo-patient-picker">
+          <div className="journey-demo-patient-picker__header">
+            <div>
+              <strong>查找患者</strong>
+              <span>{patientResultSummary}</span>
+            </div>
+            {patientQuery ? (
+              <button className="journey-demo-patient-clear" onClick={() => setPatientQuery('')} type="button">
+                清空
+              </button>
+            ) : null}
+          </div>
           <label className="journey-demo-search journey-demo-patient-search">
             <Icon name="search" />
             <input
               onChange={(event) => setPatientQuery(event.target.value)}
-              placeholder="查找患者编号、住院号或疾病类型"
+              placeholder="搜索患者编号、住院号、疾病类型、性别或受累脏器"
               value={patientQuery}
             />
           </label>
+          <div className="journey-demo-patient-quick" aria-label="疾病快速筛选">
+            {diseaseQuickFilters.map((disease) => (
+              <button
+                className={patientQuery === disease ? 'is-active' : undefined}
+                key={disease}
+                onClick={() => setPatientDiseaseQuery(disease)}
+                type="button"
+              >
+                {disease}
+              </button>
+            ))}
+          </div>
           <div className="journey-demo-patient-results" aria-label="患者查找结果">
             {patientMatches.map((item) => (
               <button
@@ -415,12 +449,12 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
                 key={`${item.studyId}-${item.name}`}
                 onClick={() => {
                   setActivePatient(item);
-                  setPatientQuery('');
+                  setPatientQuery(item.name);
                 }}
                 type="button"
               >
                 <strong>{item.name}</strong>
-                <span>{item.hospitalNo} · {item.diseaseType}</span>
+                <span>{item.hospitalNo} · {item.sex} · {item.age}岁 · {item.diseaseType}</span>
               </button>
             ))}
             {!patientMatches.length ? <span className="journey-demo-patient-empty">无匹配患者</span> : null}
