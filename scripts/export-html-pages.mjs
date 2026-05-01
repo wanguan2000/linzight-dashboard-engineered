@@ -83,7 +83,7 @@ writeFileSync(
   join(exportDir, 'README.md'),
   `# LinZight 静态 HTML 导出\n\n这些页面由 \`npm run export:html\` 生成，可直接打开，也可以放到任意静态文件服务器中浏览。\n\n## 页面\n\n${pages
     .map((page) => `- ${page.label}: \`${page.slug}.html\``)
-    .join('\n')}\n\n## 说明\n\n- \`index.html\` 默认进入首页工作台。\n- 各模块 HTML 已内联前端 CSS 与 JS；Logo 和知情同意 PDF 仍作为相邻静态资源保留。\n- 未连接后端时，前端自动使用本地 Demo 数据，交互仍可浏览。\n`
+    .join('\n')}\n\n## 说明\n\n- \`index.html\` 默认进入首页工作台。\n- 各模块 HTML 已内联前端 CSS 与 JS；Logo 和知情同意 PDF 仍作为相邻静态资源保留。\n- 未连接后端时，前端自动使用本地 Demo 数据，交互仍可浏览。\n- 页面默认中文，可点击 \`中 / EN\` 切换语言；也可追加 \`?locale=en-US\` 或 \`?lang=en-US\` 直接以英文打开。\n`
 );
 
 console.log(`Exported ${pages.length} interactive HTML pages to ${exportDir}`);

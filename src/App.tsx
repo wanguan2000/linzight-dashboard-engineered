@@ -15,6 +15,7 @@ import { Topbar } from './components/Topbar';
 import type { AuthenticatedUser } from './data/auth';
 import { navItems } from './data/dashboard';
 import type { PatientRecord } from './data/patientCohort';
+import { useI18n } from './i18n/I18nProvider';
 
 declare global {
   interface Window {
@@ -137,6 +138,7 @@ function getTopbarCopy(activeModule: string) {
 }
 
 export default function App() {
+  useI18n();
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(getInitialUser);
   const [activeNavIndex, setActiveNavIndex] = useState(getInitialNavIndex);
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);

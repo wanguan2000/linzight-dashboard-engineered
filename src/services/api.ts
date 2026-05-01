@@ -1,12 +1,13 @@
-import type { ConsentRecord, OmicsRecord, SampleRecord } from '../data/operations';
+import type { ConsentRecord, OmicsRecord, SampleRecord, VisitRecord } from '../data/operations';
 import { roleLabels, type AuthenticatedUser } from '../data/auth';
 import type { OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
-import type { ApiAnalysisSummary, ApiConsent, ApiExportJob, ApiFileMetadata, ApiLoginResponse, ApiOmics, ApiPanorama, ApiPatient, ApiSample } from './contracts';
+import type { ApiAnalysisSummary, ApiConsent, ApiExportJob, ApiFileMetadata, ApiLoginResponse, ApiOmics, ApiPanorama, ApiPatient, ApiSample, ApiVisit } from './contracts';
 
 export type DemoDataset = {
   patients: PatientRecord[];
   samples: SampleRecord[];
   omics: OmicsRecord[];
+  visits: VisitRecord[];
 };
 
 const configuredBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
@@ -219,17 +220,34 @@ function toOmicsRecord(record: ApiOmics): OmicsRecord {
   };
 }
 
+function toVisitRecord(record: ApiVisit): VisitRecord {
+  return {
+    id: record.id,
+    patientName: record.patient_name,
+    visit: record.visit,
+    visitDate: record.visit_date,
+    visitType: record.visit_type,
+    sleDai: record.sle_dai,
+    medication: record.medication,
+    sampleCollection: record.sample_collection,
+    completeness: record.completeness,
+    status: record.status
+  };
+}
+
 export async function fetchDemoDataset(): Promise<DemoDataset> {
-  const [patients, samples, omics] = await Promise.all([
+  const [patients, samples, omics, visits] = await Promise.all([
     getJson<ApiPatient[]>('/patients'),
     getJson<ApiSample[]>('/samples'),
-    getJson<ApiOmics[]>('/omics')
+    getJson<ApiOmics[]>('/omics'),
+    getJson<ApiVisit[]>('/visits')
   ]);
 
   return {
     patients: patients.map((patient) => toPatientRecord(patient, samples, omics)),
     samples: samples.map(toSampleRecord),
-    omics: omics.map(toOmicsRecord)
+    omics: omics.map(toOmicsRecord),
+    visits: visits.map(toVisitRecord)
   };
 }
 
@@ -241,11 +259,16 @@ export async function fetchOmicsRecords(): Promise<OmicsRecord[]> {
   return (await getJson<ApiOmics[]>('/omics')).map(toOmicsRecord);
 }
 
+export async function fetchVisits(): Promise<VisitRecord[]> {
+  return (await getJson<ApiVisit[]>('/visits')).map(toVisitRecord);
+}
+
 export async function fetchPatientPanorama(patientId: string): Promise<DemoDataset> {
   const panorama = await getJson<ApiPanorama>(`/patients/${patientId}/panorama`);
   return {
     patients: [toPatientRecord(panorama.patient, panorama.samples, panorama.omics_records)],
     samples: panorama.samples.map(toSampleRecord),
-    omics: panorama.omics_records.map(toOmicsRecord)
+    omics: panorama.omics_records.map(toOmicsRecord),
+    visits: (panorama.visits ?? []).map(toVisitRecord)
   };
 }

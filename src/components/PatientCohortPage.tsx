@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   calculateClinicalCompleteness,
-  patientRecords,
   type DiseaseType,
   type OmicsStatus,
   type PatientRecord
@@ -534,7 +533,7 @@ export function PatientCohortPage({
   onEditPatient = () => undefined,
   onViewPatient = () => undefined
 }: PatientCohortPageProps) {
-  const [patients, setPatients] = useState(patientRecords);
+  const [patients, setPatients] = useState<PatientRecord[]>([]);
   const [search, setSearch] = useState('');
   const [sex, setSex] = useState('全部');
   const [ageRange, setAgeRange] = useState('全部');

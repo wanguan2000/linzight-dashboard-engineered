@@ -3,6 +3,7 @@ import linzightLogo from '../assets/linzight-logo.svg';
 import { authenticateDemoUser, demoUsers, type AuthenticatedUser } from '../data/auth';
 import { loginWithBackend } from '../services/api';
 import { Icon } from './Icon';
+import { LanguageToggle } from './LanguageToggle';
 
 interface LoginPageProps {
   onAuthenticated: (user: AuthenticatedUser) => void;
@@ -38,7 +39,10 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
       <section className="login-panel" aria-label="LinZight 登录">
         <div className="login-panel__brand">
           <img src={linzightLogo} alt="LinZight" />
-          <span>RWS EDC Demo</span>
+          <div className="login-panel__tools">
+            <span>RWS EDC Demo</span>
+            <LanguageToggle />
+          </div>
         </div>
         <div className="login-panel__copy">
           <h1>真实世界研究工作台</h1>

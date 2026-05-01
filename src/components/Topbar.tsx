@@ -2,6 +2,7 @@ import { userProfile } from '../data/dashboard';
 import type { AuthenticatedUser } from '../data/auth';
 import { AiCommandBar } from './AiCommandBar';
 import { Icon } from './Icon';
+import { LanguageToggle } from './LanguageToggle';
 
 interface TopbarProps {
   aiPlaceholder?: string;
@@ -32,6 +33,7 @@ export function Topbar({
         </div>
 
         <div className="topbar__actions">
+          <LanguageToggle />
           <div className="study-badge" aria-label="研究编号：LGL-1111">
             <span>研究编号</span>
             <strong>LGL-1111</strong>

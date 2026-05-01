@@ -248,6 +248,10 @@ def row_to_omics(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 
 
+def row_to_visit(row: sqlite3.Row) -> dict[str, Any]:
+    return dict(row)
+
+
 def row_to_consent(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 

@@ -39,6 +39,14 @@
   height: auto;
 }
 
+.login-panel__tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .login-panel__brand span {
   display: inline-flex;
   align-items: center;
@@ -49,6 +57,29 @@
   background: rgba(226, 249, 245, 0.78);
   font-size: 12px;
   font-weight: 700;
+}
+
+.language-toggle {
+  min-width: 66px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border: 1px solid rgba(75, 173, 185, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #167286;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 8px 16px rgba(58, 123, 213, 0.08);
+}
+
+.language-toggle:hover {
+  border-color: rgba(75, 173, 185, 0.48);
+  background: rgba(226, 249, 245, 0.86);
 }
 
 .login-panel__copy {

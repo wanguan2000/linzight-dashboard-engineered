@@ -1,4 +1,29 @@
-# LinZight Demo 0.01beta
+# LinZight Demo Release Notes
+
+## v0.0.1-beta.0
+
+发布日期：2026-05-01
+
+### 范围
+
+- 整理为可上传 GitHub private 仓库的 beta 版本。
+- 补齐未来开发者和 AI 接手所需文档。
+- 统一版本号为 `0.0.1-beta.0`。
+- 保留 Vite + React + TypeScript 前端、FastAPI + SQLite Demo 后端和八模块静态 HTML 导出能力。
+
+### 文档
+
+- 新增 `AGENTS.md`、`AI_HANDOFF.md`、`ARCHITECTURE.md`、`DEVELOPMENT.md`、`SETUP.md`、`ROADMAP.md`、`CHANGELOG.md`、`API.md`、`DEPLOYMENT.md`、`SECURITY.md`。
+- 新增根目录 `.env.example` 和 `LICENSE`。
+- 更新 `README.md` 作为 GitHub 入口。
+
+### 已知限制
+
+- 尚未配置 `test` 脚本。
+- 后端仍是 Demo API，不是生产认证和生产数据库。
+- CI/CD、Docker 和自动化浏览器测试待补充。
+
+## 历史基线：0.01beta
 
 发布日期：2026-04-27
 
@@ -23,6 +48,7 @@
 - 样本管理、多组学检测、患者旅程和报表页面。
 - 样本及检测、系统管理页面纳入静态 HTML 导出范围。
 - 新增 `npm run export:html`，生成首页工作台、患者队列管理、知情同意、临床数据采集、样本及检测、患者旅程、数据分析、系统管理 8 个可交互 HTML 页面。
+- 新增中英双语显示层，支持登录页、全局导航、顶部栏和核心模块常见文案切换，默认中文并保存浏览器语言偏好。
 - FastAPI 后端：患者、样本、组学检测 CRUD，患者全景接口。
 - Seed 数据：6 个患者、10 个样本、10 条组学检测记录。
 

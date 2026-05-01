@@ -47,6 +47,13 @@ npm run export:html
 
 用户在侧边栏切换模块时，页面会同步更新 URL 参数和 hash，便于复制当前模块地址。
 
+## 双语支持
+
+- 默认语言为中文。
+- 页面内 `中 / EN` 按钮可切换中文/英文显示，偏好保存在 `localStorage.linzight-locale`。
+- 静态页面支持通过 `?locale=en-US` 或 `?lang=en-US` 直接打开英文显示。
+- 双语层只改变显示文案，不改变内部中文模块名、筛选状态、路由 slug 或导出文件名。
+
 ## 运行与部署
 
 - 本地查看：直接打开 `exports/html/*.html`。

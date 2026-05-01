@@ -1,0 +1,100 @@
+# ARCHITECTURE.md
+
+## 项目整体架构
+
+`linzight-dashboard-engineered` 是一个前端优先的真实世界研究 dashboard Demo，配套一个可选 FastAPI + SQLite 后端。前端既可以连接本地 Demo API，也可以在 API 不可用时使用内置 mock 数据，保证演示和静态导出可用。
+
+```text
+React/Vite UI
+  -> src/services/api.ts
+    -> VITE_API_BASE_URL or localhost API
+    -> fallback to src/data mock data
+  -> npm run export:html
+    -> dist/
+    -> exports/html/*.html
+
+FastAPI Demo API
+  -> backend/database.py
+  -> SQLite demo database
+  -> uploads/ local files
+```
+
+## 前端结构
+
+- `src/main.tsx`：React 入口，挂载 i18n provider 和 App。
+- `src/App.tsx`：登录状态、导航状态、模块路由和静态导出初始模块解析。
+- `src/components/`：页面级模块和复用 UI 组件。
+- `src/data/`：Dashboard、认证、患者、样本、组学、患者旅程等 Demo 数据。
+- `src/services/api.ts`：前端 API 请求、fallback、后端数据到前端类型的映射。
+- `src/services/contracts.ts`：后端 API 响应类型。
+- `src/i18n/`：轻量双语运行时和文案包。
+- `src/styles/`：设计 token、基础样式、布局样式和组件样式。
+
+## 后端结构
+
+后端存在，但当前定位是 Demo API，不是生产后端。
+
+- `backend/main.py`：FastAPI 路由、认证 demo token、CRUD、导出、导入、质量规则和患者全景接口。
+- `backend/database.py`：SQLite 连接、schema 初始化、row mapper、上传目录配置。
+- `backend/schemas.py`：Pydantic schema。
+- `backend/seed.py`：Demo 数据初始化。
+- `backend/requirements.txt`：后端依赖。
+
+## 数据流
+
+1. 页面组件触发数据读取。
+2. `src/services/api.ts` 依次尝试：
+   - `VITE_API_BASE_URL`
+   - `http://127.0.0.1:8000`
+   - `http://127.0.0.1:8001`
+3. API 请求超时或失败时，页面使用 `src/data/` 中的本地 Demo 数据。
+4. 登录 token 和语言偏好保存在 localStorage。
+5. 文件上传和导出仅在后端可用时走 API；后端保存到本地 `uploads/`。
+
+## 页面结构
+
+主应用由 `Sidebar`、`Topbar` 和活动模块组成。当前模块包括：
+
+- 首页工作台：`Dashboard`
+- 患者队列管理：`PatientCohortPage`
+- 知情同意：`ConsentManagementPage`
+- 临床数据采集：`ClinicalDataCapturePage`
+- 样本及检测：`SampleTestingPage`
+- 患者旅程：`PatientJourneyPage`
+- 数据分析：`ReportsPage`
+- 系统管理：`SystemManagementPage`
+
+## 组件结构
+
+- 页面级组件负责业务布局、筛选和模块交互。
+- 卡片、指标、趋势、流程、快捷操作、状态标签等 UI 复用组件位于 `src/components/`。
+- 图标由 `src/components/Icon.tsx` 管理。
+- 业务数据结构集中在 `src/types.ts` 和 `src/data/*`。
+
+## 状态管理方式
+
+当前不使用 Redux/Zustand 等外部状态管理。状态主要由 React `useState`、`useEffect` 和组件 props 传递完成：
+
+- 登录用户：`App.tsx` + localStorage。
+- 当前模块：`App.tsx`，并同步到 URL query/hash。
+- 选中患者：`App.tsx` 传入患者旅程和临床数据采集。
+- 语言：`src/i18n/I18nProvider.tsx` + localStorage。
+
+## Mock Data 和 API 数据来源
+
+- Mock data：`src/data/`。
+- Demo API：`backend/main.py`。
+- Seed 数据：`backend/seed.py`。
+- API 契约参考：`API.md`、`docs/02-api-contract.md`、`docs/03-frontend-backend-protocol.md`。
+
+## 静态 HTML 导出
+
+`scripts/export-html-pages.mjs` 先读取 `dist/index.html`，再为八个模块注入 `window.__LINZIGHT_INITIAL_MODULE__` 并生成独立 HTML。导出页面会根据注入值、URL 参数、hash 或文件名定位初始模块。
+
+## 后续可扩展方向
+
+- 将 Demo API 替换为生产 API，并保留 mock fallback 作为开发模式。
+- 将字段字典、CRF schema、权限策略和质量规则后端化。
+- 增加 OpenAPI schema 生成、API client 生成和契约测试。
+- 增加 CI、测试、Docker 和部署流水线。
+- 将静态导出纳入 release artifact 或 GitHub Pages/private preview 流程。

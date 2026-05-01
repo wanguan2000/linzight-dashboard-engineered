@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { summaryItems } from '../data/dashboard';
+import { useI18n } from '../i18n/I18nProvider';
 import { Card } from './Card';
 import { Icon } from './Icon';
 
@@ -18,6 +19,8 @@ function highlightText(text: string, emphasis: string[] = []): ReactNode[] {
 }
 
 export function SmartSummaryCard() {
+  const { locale, t } = useI18n();
+
   return (
     <Card
       title="智能摘要"
@@ -31,7 +34,7 @@ export function SmartSummaryCard() {
         {summaryItems.map((item) => (
           <div className="summary-list__row" key={item.text}>
             <span className={`summary-list__marker summary-list__marker--${item.theme}`}>{item.marker}</span>
-            <p>{highlightText(item.text, item.emphasis)}</p>
+            <p>{locale === 'zh-CN' ? highlightText(item.text, item.emphasis) : t(item.text)}</p>
           </div>
         ))}
       </div>

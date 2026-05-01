@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LinZight">
+  <defs>
+    <linearGradient id="brand-gradient" x1="12" y1="56" x2="52" y2="8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#314f93" />
+      <stop offset="0.55" stop-color="#2a9d8f" />
+      <stop offset="1" stop-color="#44c7a1" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#f8fbff" />
+  <path d="M32 7 53.7 19.5v25L32 57 10.3 44.5v-25L32 7Z" fill="url(#brand-gradient)" />
+  <path d="M22 18h8v24h14v7H22V18Z" fill="#ffffff" />
+  <circle cx="47" cy="18" r="5" fill="#ffffff" opacity="0.92" />
+  <circle cx="17" cy="46" r="4" fill="#ffffff" opacity="0.82" />
+</svg>

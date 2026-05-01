@@ -58,6 +58,20 @@ export type ApiOmics = {
   completed_at: string;
 };
 
+export type ApiVisit = {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  visit: string;
+  visit_date: string;
+  visit_type: string;
+  sle_dai: string;
+  medication: string;
+  sample_collection: string;
+  completeness: number;
+  status: '已完成' | '进行中' | '已预约';
+};
+
 export type ApiConsent = {
   id: string;
   patient_id: string;
@@ -131,6 +145,7 @@ export type ApiPanorama = {
   patient: ApiPatient;
   samples: ApiSample[];
   omics_records: ApiOmics[];
+  visits?: ApiVisit[];
   crf_entries?: ApiCrfEntry[];
   files?: ApiFileMetadata[];
 };

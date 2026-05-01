@@ -44,8 +44,8 @@ export function PatientJourneyCard({ stages = journeyStages, rates = journeyRate
       </div>
 
       <div className="journey__rates">
-        {rates.map((rate) => (
-          <span key={rate}>{rate}</span>
+        {rates.map((rate, index) => (
+          <span key={`${rate}-${index}`}>{rate}</span>
         ))}
       </div>
     </Card>

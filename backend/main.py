@@ -28,6 +28,7 @@ try:
         row_to_quality_issue,
         row_to_sample,
         row_to_user,
+        row_to_visit,
         utc_now,
     )
     from .schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate
@@ -49,6 +50,7 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         row_to_quality_issue,
         row_to_sample,
         row_to_user,
+        row_to_visit,
         utc_now,
     )
     from schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate
@@ -371,6 +373,33 @@ def delete_sample(sample_id: str, authorization: str | None = Header(default=Non
         result = conn.execute("DELETE FROM samples WHERE id = ?", (sample_id,))
         if result.rowcount == 0:
             raise not_found()
+
+
+@app.get("/visits")
+def list_visits(patient_id: str | None = None) -> list[dict[str, Any]]:
+    sql = """
+        SELECT
+          v.id,
+          v.patient_id,
+          p.name AS patient_name,
+          v.visit,
+          v.visit_date,
+          v.visit_type,
+          v.sle_dai,
+          v.medication,
+          v.sample_collection,
+          v.completeness,
+          v.status
+        FROM visits v
+        JOIN patients p ON p.id = v.patient_id
+    """
+    params: list[Any] = []
+    if patient_id:
+        sql += " WHERE v.patient_id = ?"
+        params.append(patient_id)
+    sql += " ORDER BY v.visit_date DESC"
+    with connect() as conn:
+        return [row_to_visit(row) for row in conn.execute(sql, params).fetchall()]
 
 
 @app.get("/omics")

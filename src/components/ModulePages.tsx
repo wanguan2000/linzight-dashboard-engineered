@@ -1,22 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { quickActions } from '../data/dashboard';
 import {
-  clinicalSections,
   consentRecords,
   formatSampleLibraryId,
   getCompleteness,
-  getSelectedPatient,
   omicsRecords,
   reportRecords,
   samples,
-  visits,
   type ConsentRecord,
   type OmicsRecord,
   type ReportRecord,
   type SampleRecord,
   type VisitRecord
 } from '../data/operations';
-import { patientRecords, type PatientRecord } from '../data/patientCohort';
+import type { PatientRecord } from '../data/patientCohort';
 import {
   createExportJob,
   fetchConsentRecords,
@@ -356,8 +353,8 @@ function SimpleTimeline({ items }: { items: Array<{ label: string; helper: strin
   );
 }
 
-function patientSamples(patient: PatientRecord) {
-  return samples.filter((sample) => sample.patientName === patient.name);
+function patientSamples(patient: PatientRecord, sampleRows: SampleRecord[] = samples) {
+  return sampleRows.filter((sample) => sample.patientName === patient.name);
 }
 
 function normalizeSampleStatus(status: SampleRecord['status']): '已采集' | '检测中' | '检测完成' {
@@ -480,6 +477,83 @@ function buildSampleLedgerRows(sampleRows: SampleRecord[]): SampleLedgerRow[] {
 
 const clinicalSectionUpdatedAt = ['2026-04-27', '2026-04-27', '2026-04-26', '2026-04-26', '2026-04-25', '2026-04-25', '2026-04-24', '2026-04-24'];
 
+const clinicalDataGroups = [
+  {
+    title: '基本信息',
+    fields: ['患者编号', '姓名', '性别', '年龄', '身高（cm）', '体重（Kg）', '住院号', '疾病类型', '出院诊断', '受累脏器']
+  },
+  {
+    title: '目前病情评估',
+    fields: ['SLEDAI评分', 'RSLEDAI', 'PGA评分', 'LN病理分型（如有）', 'AI', 'CI', '神经系统症状', '关节肿胀', '关节疼痛', '皮疹', '口腔溃疡', '脱发', '其他']
+  },
+  {
+    title: '目前用药情况',
+    fields: ['MP mg/d', '免疫抑制剂1', '免疫制剂2', '其他合并用药']
+  },
+  {
+    title: '常规生化',
+    fields: ['WBC', 'N绝对值10^9/L', '淋巴绝对值', '单核绝对值', 'HB(g/L)', 'PLT(^10*9/L)', 'TB（g/L）', 'ALB(g/l)', 'ALT(U/L)', 'AST(U/L)', 'LDH(U/L)', 'AKP U/L', '总胆红素 umol/L', 'EPI-GFR（mmol/l*min）', 'Cr（ummol/l)', 'BUN(mg/l)', 'UA', '甘油三酯', '胆固醇', 'CRP(mg/l)', 'ESR(mm)']
+  },
+  {
+    title: '尿蛋白',
+    fields: ['24小时尿蛋白 g/24h', '尿白细胞/Hp', '尿红细胞/Hp', '尿蛋白/Cr']
+  },
+  {
+    title: '免疫球蛋白及补体',
+    fields: ['总补体CH50 （U/mL)', 'C1抑制剂 (g/l)', 'C3(g/l)', 'C4(g/l)', 'IgG(g/l)', 'IgA(g/l)', 'IgM(g/l)']
+  },
+  {
+    title: '自身抗体',
+    fields: ['ANA1:80为阳性（1-yes，0-none）', '滴度', '核型', 'ENA1', 'ENA2', 'ENA3', 'ds-DNA（ELISA）', 'ds-DNA(放免法iu/ml)', '其他阳性抗体']
+  },
+  {
+    title: '特殊检查',
+    fields: ['胸膜炎', '心包炎', '肺动脉高压', '其他异常结果']
+  }
+];
+
+function formatClinicalValue(value: string | number | undefined) {
+  if (value === undefined || value === null || value === '') return '-';
+  return String(value);
+}
+
+function buildClinicalSectionsFromPatient(patient: PatientRecord) {
+  const consumedFields = new Set<string>();
+  const sections = clinicalDataGroups
+    .map((group) => {
+      const items = group.fields
+        .filter((field) => field in patient.clinicalData)
+        .map((field) => {
+          consumedFields.add(field);
+          return [field, formatClinicalValue(patient.clinicalData[field])] as [string, string];
+        });
+      return { title: group.title, items };
+    })
+    .filter((section) => section.items.length);
+
+  const otherItems = Object.entries(patient.clinicalData)
+    .filter(([field]) => field !== '数据完整度' && !consumedFields.has(field))
+    .map(([field, value]) => [field, formatClinicalValue(value)] as [string, string]);
+
+  if (otherItems.length) sections.push({ title: '其他已录入字段', items: otherItems });
+
+  return sections.length ? sections : [{ title: '等待 API 数据', items: [['数据源', '等待 FastAPI / SQLite']] }];
+}
+
+const emptyClinicalPatient: PatientRecord = {
+  studyId: 'LGL-1111',
+  name: '等待 API',
+  hospitalNo: '-',
+  sex: '男',
+  age: 0,
+  diseaseType: 'NPSLE',
+  organs: [],
+  samples: [],
+  omicsStatus: '样本采集',
+  note: '等待 FastAPI / SQLite',
+  clinicalData: {}
+};
+
 export function ClinicalDataCapturePage({
   selectedPatient,
   onOpenPatientJourney
@@ -488,18 +562,13 @@ export function ClinicalDataCapturePage({
   onOpenPatientJourney?: (patient: PatientRecord) => void;
 }) {
   const pageRef = useRef<HTMLDivElement | null>(null);
-  const [patients, setPatients] = useState(patientRecords);
-  const [activePatientName, setActivePatientName] = useState(() => getSelectedPatient(selectedPatient).name);
-  const [visitRows, setVisitRows] = useState(visits);
-  const [sampleRows, setSampleRows] = useState(() => patientSamples(getSelectedPatient(selectedPatient)));
+  const [patients, setPatients] = useState<PatientRecord[]>(selectedPatient ? [selectedPatient] : []);
+  const [activePatientName, setActivePatientName] = useState(() => selectedPatient?.name ?? '');
+  const [visitRows, setVisitRows] = useState<VisitRecord[]>([]);
+  const [sampleRows, setSampleRows] = useState<SampleRecord[]>([]);
   const [newVisitEditId, setNewVisitEditId] = useState<string | null>(null);
   const [newSampleEditId, setNewSampleEditId] = useState<string | null>(null);
-  const [clinicalFormSections, setClinicalFormSections] = useState(() =>
-    clinicalSections.map((section) => ({
-      title: section.title,
-      items: section.items.map(([label, value]) => [label, value] as [string, string])
-    }))
-  );
+  const [clinicalFormSections, setClinicalFormSections] = useState(() => buildClinicalSectionsFromPatient(selectedPatient ?? emptyClinicalPatient));
   const [editingSection, setEditingSection] = useState<string | null>(null);
   const [sectionBackups, setSectionBackups] = useState<Record<string, Array<[string, string]>>>({});
 
@@ -508,7 +577,10 @@ export function ClinicalDataCapturePage({
 
     void fetchDemoDataset()
       .then((dataset) => {
-        if (!ignore && dataset.patients.length >= patientRecords.length) setPatients(dataset.patients);
+        if (ignore) return;
+        if (dataset.patients.length) setPatients(dataset.patients);
+        setSampleRows(dataset.samples);
+        setVisitRows(dataset.visits);
       })
       .catch(() => undefined);
 
@@ -522,14 +594,23 @@ export function ClinicalDataCapturePage({
   }, [selectedPatient]);
 
   useEffect(() => {
+    if (!selectedPatient && patients.length && (!activePatientName || !patients.some((record) => record.name === activePatientName))) {
+      setActivePatientName(patients[0].name);
+    }
+  }, [activePatientName, patients, selectedPatient]);
+
+  useEffect(() => {
     pageRef.current?.scrollTo({ top: 0, left: 0 });
     window.requestAnimationFrame(() => pageRef.current?.scrollTo({ top: 0, left: 0 }));
   }, []);
 
-  const patient = patients.find((record) => record.name === activePatientName) ?? getSelectedPatient(selectedPatient);
+  const patient = patients.find((record) => record.name === activePatientName) ?? selectedPatient ?? patients[0] ?? emptyClinicalPatient;
+  const patientVisitRows = useMemo(() => visitRows.filter((record) => record.patientName === patient.name), [patient.name, visitRows]);
+  const patientSampleRows = useMemo(() => patientSamples(patient, sampleRows), [patient, sampleRows]);
 
   useEffect(() => {
-    setSampleRows(patientSamples(patient));
+    setClinicalFormSections(buildClinicalSectionsFromPatient(patient));
+    setEditingSection(null);
   }, [patient]);
 
   function startClinicalSectionEdit(sectionTitle: string) {
@@ -596,7 +677,7 @@ export function ClinicalDataCapturePage({
   }
 
   function addSampleRow() {
-    const nextIndex = sampleRows.length + 1;
+    const nextIndex = patientSampleRows.length + 1;
     const id = `SPL-NEW-${Date.now()}`;
     setSampleRows((rows) => [
       {
@@ -639,13 +720,13 @@ export function ClinicalDataCapturePage({
                   <span>患者ID</span>
                   <strong>{patient.name}</strong>
                 </div>
-                {[
-                  ['住院号', patient.hospitalNo],
-                  ['疾病类型', patient.diseaseType],
-                  ['已填字段', '246 / 268'],
-                  ['完整度', `${getCompleteness(patient)}%`],
-                  ['最近更新', '2026-04-27']
-                ].map(([label, value]) => (
+            {[
+              ['住院号', patient.hospitalNo],
+              ['疾病类型', patient.diseaseType],
+              ['已填字段', `${Object.keys(patient.clinicalData).filter((key) => key !== '数据完整度').length} / 动态字段`],
+              ['完整度', `${getCompleteness(patient)}%`],
+              ['最近更新', 'SQLite 实时']
+            ].map(([label, value]) => (
                   <div className="clinical-entry-metric" key={label}>
                     <span>{label}</span>
                     <strong>{value}</strong>
@@ -711,7 +792,7 @@ export function ClinicalDataCapturePage({
               <h2>多次随访模块</h2>
               <button className="module-link-button module-link-button--primary" type="button" onClick={addVisitRow}>新建随访</button>
             </header>
-            <VisitTable records={visitRows} onChange={setVisitRows} initialEditingId={newVisitEditId} onInitialEditingHandled={() => setNewVisitEditId(null)} />
+            <VisitTable records={patientVisitRows} onChange={(nextRows) => setVisitRows((rows) => [...rows.filter((record) => record.patientName !== patient.name), ...nextRows])} initialEditingId={newVisitEditId} onInitialEditingHandled={() => setNewVisitEditId(null)} />
           </section>
 
           <section className="module-card">
@@ -719,7 +800,7 @@ export function ClinicalDataCapturePage({
               <h2>样本采集模块</h2>
               <button className="module-link-button module-link-button--primary" type="button" onClick={addSampleRow}>样本录入</button>
             </header>
-            <SampleTable records={sampleRows} onChange={setSampleRows} initialEditingId={newSampleEditId} onInitialEditingHandled={() => setNewSampleEditId(null)} compact useLibraryCode />
+            <SampleTable records={patientSampleRows} onChange={(nextRows) => setSampleRows((rows) => [...rows.filter((record) => record.patientName !== patient.name), ...nextRows])} initialEditingId={newSampleEditId} onInitialEditingHandled={() => setNewSampleEditId(null)} compact useLibraryCode />
           </section>
         </div>
       </div>
