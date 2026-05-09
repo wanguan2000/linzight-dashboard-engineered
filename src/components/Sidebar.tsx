@@ -2,14 +2,16 @@ import linzightLogo from '../assets/linzight-logo.svg';
 import type { AuthenticatedUser } from '../data/auth';
 import { navItems, userProfile } from '../data/dashboard';
 import { Icon } from './Icon';
+import type { NavItem } from '../types';
 
 interface SidebarProps {
   activeIndex: number;
+  items?: NavItem[];
   onSelect: (index: number) => void;
   currentUser?: AuthenticatedUser;
 }
 
-export function Sidebar({ activeIndex, onSelect, currentUser }: SidebarProps) {
+export function Sidebar({ activeIndex, items = navItems, onSelect, currentUser }: SidebarProps) {
   const profile = currentUser ?? userProfile;
   const roleLabel = currentUser ? currentUser.roleLabel : userProfile.role;
 
@@ -20,7 +22,7 @@ export function Sidebar({ activeIndex, onSelect, currentUser }: SidebarProps) {
       </div>
 
       <nav className="sidebar__nav">
-        {navItems.map((item, index) => (
+        {items.map((item, index) => (
           <button
             key={`${item.label}-${index}`}
             className={`nav-item${activeIndex === index ? ' is-active' : ''}`}

@@ -40,6 +40,8 @@ python seed.py
 uvicorn main:app --reload --port 8000
 ```
 
+`python seed.py` 会生成三个 Demo Study（`LGL-1111`、`RWD-NMO-2026`、`LZXK-01`）、平台级/研究级角色、Study 成员、CRF 版本和按 `study_id` 隔离的患者、CRF、样本、组学、导出、质控、审计数据。`LZXK-01` 是真实世界肺癌耐药研究，默认 20 名患者。
+
 ## 构建
 
 ```bash

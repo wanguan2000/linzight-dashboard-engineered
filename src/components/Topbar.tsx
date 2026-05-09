@@ -1,5 +1,5 @@
 import { userProfile } from '../data/dashboard';
-import type { AuthenticatedUser } from '../data/auth';
+import { visibleStudyLabel, type AuthenticatedUser } from '../data/auth';
 import { AiCommandBar } from './AiCommandBar';
 import { Icon } from './Icon';
 import { LanguageToggle } from './LanguageToggle';
@@ -23,6 +23,7 @@ export function Topbar({
 }: TopbarProps) {
   const profile = currentUser ?? userProfile;
   const roleLabel = currentUser ? currentUser.roleLabel : userProfile.role;
+  const studyLabel = visibleStudyLabel(currentUser);
 
   return (
     <header className="topbar">
@@ -34,11 +35,11 @@ export function Topbar({
 
         <div className="topbar__actions">
           <LanguageToggle />
-          <div className="study-badge" aria-label="研究编号：LGL-1111">
-            <span>研究编号</span>
-            <strong>LGL-1111</strong>
+          <div className="study-badge" aria-label={`Study 范围：${studyLabel}`}>
+            <span>Study 范围</span>
+            <strong>{studyLabel}</strong>
           </div>
-          <div className="role-badge" aria-label="当前角色：PI研究者">
+          <div className="role-badge" aria-label={`当前角色：${roleLabel}`}>
             <span>当前角色</span>
             <strong>{roleLabel}</strong>
           </div>

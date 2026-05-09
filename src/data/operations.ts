@@ -1,4 +1,4 @@
-import { calculateClinicalCompleteness, patientRecords, type PatientRecord } from './patientCohort';
+import { calculateClinicalCompleteness, patientRecords, samplePlanForDisease, type PatientRecord } from './patientCohort';
 
 export type SampleStatus = '已采集' | '已送检' | '检测中' | '检测完成' | '结果回传' | '待处理';
 export type OmicsQcStatus = '通过' | '未通过' | '待确认';
@@ -18,7 +18,9 @@ export type SampleLibraryCode =
   | 'T12'
   | 'T13'
   | 'T14'
-  | 'T15';
+  | 'T15'
+  | 'T16'
+  | 'T17';
 
 export interface SampleLibraryCatalogItem {
   code: SampleLibraryCode;
@@ -31,6 +33,7 @@ export interface SampleLibraryCatalogItem {
 
 export interface SampleRecord {
   id: string;
+  studyId?: string;
   patientId?: string;
   patientName: string;
   hospitalNo: string;
@@ -44,6 +47,8 @@ export interface SampleRecord {
 
 export interface OmicsRecord {
   id: string;
+  studyId?: string;
+  testingProjectId?: string;
   patientId?: string;
   patientName: string;
   sampleId: string;
@@ -59,6 +64,7 @@ export interface OmicsRecord {
 
 export interface ConsentRecord {
   id: string;
+  studyId?: string;
   patientId?: string;
   patientName: string;
   hospitalNo: string;
@@ -71,6 +77,13 @@ export interface ConsentRecord {
 
 export interface VisitRecord {
   id: string;
+  studyId?: string;
+  patientId?: string;
+  visitPlanId?: string;
+  visitPlanCode?: string;
+  planDayOffset?: number;
+  windowBeforeDays?: number;
+  windowAfterDays?: number;
   patientName: string;
   visit: string;
   visitDate: string;
@@ -80,6 +93,42 @@ export interface VisitRecord {
   sampleCollection: string;
   completeness: number;
   status: '已完成' | '进行中' | '已预约';
+}
+
+export interface FollowUpRecord {
+  id: string;
+  studyId?: string;
+  patientId?: string;
+  visitId?: string;
+  patientName: string;
+  followUpDate: string;
+  followUpMethod: '门诊' | '电话' | '线上' | '家访' | '其他';
+  followedBy: string;
+  survivalStatus: '存活' | '死亡' | '未知';
+  diseaseStatus: string;
+  symptomsSigns: string;
+  imagingLabSummary: string;
+  efficacyAssessment: string;
+  metastasisStatus: string;
+  adverseEvents: string;
+  qualityOfLife: string;
+  lostToFollowUpReason: string;
+  recordedAt: string;
+}
+
+export interface StudyVisitPlanRecord {
+  id: string;
+  studyId: string;
+  code: string;
+  name: string;
+  visitType: string;
+  dayOffset: number;
+  windowBeforeDays: number;
+  windowAfterDays: number;
+  requiredForms: string[];
+  requiredSamples: string[];
+  status: 'active' | 'draft' | 'retired';
+  sortOrder: number;
 }
 
 export interface ReportRecord {
@@ -106,7 +155,9 @@ export const sampleLibraryCatalog: SampleLibraryCatalogItem[] = [
   { code: 'T12', nameCn: '粪便', nameEn: 'Stool/Feces', attribute: '微生态样本', scenario: '肠道菌群、免疫-肠脑轴探索，可选', aliases: ['粪便', 'Stool', 'Feces'] },
   { code: 'T13', nameCn: '口腔', nameEn: 'Buccal Swab', attribute: '黏膜/遗传样本', scenario: '生殖系DNA、口腔菌群，可选', aliases: ['口腔', 'Buccal Swab'] },
   { code: 'T14', nameCn: '鼻咽', nameEn: 'Nasopharyngeal/Oropharyngeal Swab', attribute: '黏膜样本', scenario: 'EBV/病毒感染背景、呼吸道感染排查，可选', aliases: ['鼻咽', 'Nasopharyngeal Swab', 'Oropharyngeal Swab'] },
-  { code: 'T15', nameCn: '脑组织', nameEn: 'Brain Tissue', attribute: '机会性神经组织', scenario: 'NPSLE、MS、NMOSD；脑活检/手术/尸检等特殊场景', aliases: ['脑组织', 'Brain Tissue'] }
+  { code: 'T15', nameCn: '脑组织', nameEn: 'Brain Tissue', attribute: '机会性神经组织', scenario: 'NPSLE、MS、NMOSD；脑活检/手术/尸检等特殊场景', aliases: ['脑组织', 'Brain Tissue'] },
+  { code: 'T16', nameCn: '肺癌组织', nameEn: 'Lung Cancer Tissue', attribute: '实体肿瘤组织', scenario: 'LZXK-01 肺癌耐药组织 NGS / 病理复核', aliases: ['肺癌组织', '组织', 'Lung Cancer Tissue'] },
+  { code: 'T17', nameCn: '胸水', nameEn: 'Pleural Effusion', attribute: '液体肿瘤样本', scenario: 'LZXK-01 肺癌耐药胸水细胞学与 ctDNA 检测', aliases: ['胸水', 'Pleural Effusion'] }
 ];
 
 export function getSampleLibraryCode(sampleType: string) {
@@ -123,33 +174,75 @@ export function formatSampleLibraryId(sample: Pick<SampleRecord, 'id' | 'patient
   return code ? `${sample.patientName}-${code}` : sample.id;
 }
 
-export const samples: SampleRecord[] = [
-  { id: 'SPL-2024-0501-001', patientName: 'LQH-023', hospitalNo: '23018456', sampleType: '血液', visit: 'V1 基线访视', collectedAt: '2024-05-01', storage: '-80℃冰箱A1', status: '结果回传', linkedOmics: ['WGS', '蛋白组'] },
-  { id: 'SPL-2024-0501-002', patientName: 'LQH-023', hospitalNo: '23018456', sampleType: '血液', visit: 'V1 基线访视', collectedAt: '2024-05-01', storage: '-80℃冰箱A2', status: '结果回传', linkedOmics: ['代谢组'] },
-  { id: 'SPL-2024-0501-003', patientName: 'LQH-023', hospitalNo: '23018456', sampleType: 'CSF', visit: 'V1 基线访视', collectedAt: '2024-05-01', storage: '液氮罐C1', status: '检测中', linkedOmics: ['Olink/Simoa'] },
-  { id: 'SPL-2024-0601-004', patientName: 'WYM-184', hospitalNo: '24002391', sampleType: '血液', visit: 'V2 1月随访', collectedAt: '2024-06-01', storage: '-80℃冰箱B1', status: '已送检', linkedOmics: ['TCR/BCR'] },
-  { id: 'SPL-2024-0601-005', patientName: 'ZXR-512', hospitalNo: '22091734', sampleType: 'CSF', visit: 'V2 1月随访', collectedAt: '2024-06-01', storage: '液氮罐C2', status: '结果回传', linkedOmics: ['Olink/Simoa'] },
-  { id: 'SPL-2024-0801-006', patientName: 'CJY-308', hospitalNo: '21056288', sampleType: '血液', visit: 'V3 3月随访', collectedAt: '2024-08-01', storage: '-80℃冰箱A3', status: '检测中', linkedOmics: ['WGS'] },
-  { id: 'SPL-2024-0801-007', patientName: 'CJY-308', hospitalNo: '21056288', sampleType: 'CSF', visit: 'V3 3月随访', collectedAt: '2024-08-01', storage: '液氮罐C3', status: '已采集', linkedOmics: ['Olink/Simoa'] },
-  { id: 'SPL-2024-0901-008', patientName: 'LYT-447', hospitalNo: '23047322', sampleType: '血液', visit: 'V3 3月随访', collectedAt: '2024-09-01', storage: '-80℃冰箱B2', status: '已送检', linkedOmics: ['蛋白组'] },
-  { id: 'SPL-2024-0901-009', patientName: 'HQN-065', hospitalNo: '24011873', sampleType: '肾', visit: 'V1 基线访视', collectedAt: '2024-09-01', storage: '病理库R1', status: '结果回传', linkedOmics: ['代谢组'] },
-  { id: 'SPL-2024-1001-010', patientName: 'QML-731', hospitalNo: '21083451', sampleType: '血液', visit: 'V4 6月随访', collectedAt: '2024-10-01', storage: '-80℃冰箱A4', status: '结果回传', linkedOmics: ['WGS', 'TCR/BCR'] },
-  { id: 'SPL-2024-1101-011', patientName: 'SYF-209', hospitalNo: '22030467', sampleType: '血液', visit: 'V1 基线访视', collectedAt: '2024-11-01', storage: '-80℃冰箱B3', status: '待处理', linkedOmics: ['蛋白组'] },
-  { id: 'SPL-2024-1101-012', patientName: 'ZYW-912', hospitalNo: '23099812', sampleType: 'CSF', visit: 'V4 6月随访', collectedAt: '2024-11-01', storage: '液氮罐C4', status: '检测中', linkedOmics: ['Olink/Simoa'] }
-];
+const assays: OmicsRecord['assay'][] = ['WGS', 'TCR/BCR', 'Olink/Simoa', '蛋白组', '代谢组'];
+const assayPlatforms: Record<OmicsRecord['assay'], string> = {
+  WGS: 'NovaSeq 6000',
+  'TCR/BCR': 'MiSeq',
+  'Olink/Simoa': 'Olink Explore',
+  蛋白组: 'Exploris 480',
+  代谢组: 'Q-Exactive'
+};
 
-export const omicsRecords: OmicsRecord[] = [
-  { id: 'OMX-001', patientName: 'LQH-023', sampleId: 'SPL-2024-0501-001', sampleType: '血液', assay: 'WGS', platform: 'NovaSeq 6000', runId: 'WGS-260423-A', status: '结果归档', qc: '通过', sentAt: '2024-04-20', completedAt: '2024-04-26' },
-  { id: 'OMX-002', patientName: 'LQH-023', sampleId: 'SPL-2024-0501-002', sampleType: '血液', assay: '蛋白组', platform: 'Exploris 480', runId: 'PRO-260423-B', status: '结果归档', qc: '通过', sentAt: '2024-04-20', completedAt: '2024-04-25' },
-  { id: 'OMX-003', patientName: 'LQH-023', sampleId: 'SPL-2024-0501-003', sampleType: 'CSF', assay: 'Olink/Simoa', platform: 'Olink Explore', runId: 'OL-260423-C', status: '数据分析', qc: '待确认', sentAt: '2024-04-22', completedAt: '-' },
-  { id: 'OMX-004', patientName: 'WYM-184', sampleId: 'SPL-2024-0601-004', sampleType: '血液', assay: 'TCR/BCR', platform: 'Illumina', runId: 'IR-260420-B', status: '测序完成', qc: '通过', sentAt: '2024-04-18', completedAt: '2024-04-24' },
-  { id: 'OMX-005', patientName: 'ZXR-512', sampleId: 'SPL-2024-0601-005', sampleType: 'CSF', assay: 'Olink/Simoa', platform: 'Simoa HD-X', runId: 'SM-260418-A', status: '结果归档', qc: '通过', sentAt: '2024-04-18', completedAt: '2024-04-22' },
-  { id: 'OMX-006', patientName: 'CJY-308', sampleId: 'SPL-2024-0801-006', sampleType: '血液', assay: 'WGS', platform: 'NovaSeq', runId: 'WGS-260416-F', status: '数据分析', qc: '待确认', sentAt: '2024-04-16', completedAt: '-' },
-  { id: 'OMX-007', patientName: 'CJY-308', sampleId: 'SPL-2024-0801-007', sampleType: 'CSF', assay: 'Olink/Simoa', platform: 'Olink Explore', runId: 'OL-260416-G', status: '文库构建', qc: '待确认', sentAt: '2024-04-16', completedAt: '-' },
-  { id: 'OMX-008', patientName: 'LYT-447', sampleId: 'SPL-2024-0901-008', sampleType: '血液', assay: '蛋白组', platform: 'Exploris 480', runId: 'PRO-260417-D', status: '样本接收', qc: '待确认', sentAt: '2024-04-17', completedAt: '-' },
-  { id: 'OMX-009', patientName: 'HQN-065', sampleId: 'SPL-2024-0901-009', sampleType: '肾', assay: '代谢组', platform: 'Q-Exactive', runId: 'MET-260418-E', status: '结果归档', qc: '通过', sentAt: '2024-04-18', completedAt: '2024-04-23' },
-  { id: 'OMX-010', patientName: 'QML-731', sampleId: 'SPL-2024-1001-010', sampleType: '血液', assay: 'TCR/BCR', platform: 'MiSeq', runId: 'IR-260419-H', status: '结果归档', qc: '通过', sentAt: '2024-04-19', completedAt: '2024-04-26' }
-];
+function isoDateFromSeed(index: number, dayOffset = 0) {
+  const date = new Date(Date.UTC(2024, 4, 1 + index * 3 + dayOffset));
+  return date.toISOString().slice(0, 10);
+}
+
+function linkedOmicsForSample(patientIndex: number, sampleIndex: number, isControl: boolean): OmicsRecord['assay'][] {
+  const primary = assays[(patientIndex + sampleIndex) % assays.length];
+  if (isControl || sampleIndex !== 1) return [primary];
+  return [primary, assays[(patientIndex + sampleIndex + 2) % assays.length]];
+}
+
+export const samples: SampleRecord[] = patientRecords.flatMap((patient, patientIndex) =>
+  samplePlanForDisease(patient.diseaseType, patientIndex).map((sampleType, sampleIndex) => {
+    const linkedOmics = linkedOmicsForSample(patientIndex, sampleIndex + 1, patient.diseaseType === 'HC');
+    return {
+      id: `SPL-2024-${String(patientIndex + 1).padStart(3, '0')}-${String(sampleIndex + 1).padStart(2, '0')}`,
+      studyId: patient.studyId,
+      patientId: patient.id,
+      patientName: patient.name,
+      hospitalNo: patient.hospitalNo,
+      sampleType,
+      visit: 'V1 基线访视',
+      collectedAt: isoDateFromSeed(patientIndex, sampleIndex),
+      storage:
+        sampleType === 'CSF'
+          ? '液氮罐C1'
+          : sampleType === '肾'
+            ? '病理库R1'
+            : sampleType === '组织'
+              ? '病理库-LUNG-T1'
+              : sampleType === '胸水'
+                ? '液氮罐-LUNG-P1'
+                : '-80℃冰箱A1',
+      status: patientIndex % 4 === 0 ? '检测中' : '结果回传',
+      linkedOmics
+    };
+  })
+);
+
+export const omicsRecords: OmicsRecord[] = samples.flatMap((sample, sampleIndex) =>
+  sample.linkedOmics.map((assay, assayIndex) => {
+    const status: OmicsRecord['status'] = sampleIndex % 4 === 0 ? '数据分析' : '结果归档';
+    return {
+      id: `OMX-${String(sampleIndex + 1).padStart(3, '0')}-${assayIndex + 1}`,
+      studyId: sample.studyId,
+      testingProjectId: sample.studyId === 'LZXK-01' ? 'TP-LUNG-RESIST-OMICS' : sample.studyId === 'RWD-NMO-2026' ? 'TP-NMO-OMICS' : 'TP-SLE-OMICS',
+      patientId: sample.patientId,
+      patientName: sample.patientName,
+      sampleId: sample.id,
+      sampleType: sample.sampleType,
+      assay: assay as OmicsRecord['assay'],
+      platform: assayPlatforms[assay as OmicsRecord['assay']],
+      runId: `${assay.replace('/', '')}-${260400 + sampleIndex}-${assayIndex + 1}`,
+      status,
+      qc: status === '结果归档' ? '通过' : '待确认',
+      sentAt: isoDateFromSeed(sampleIndex, 1),
+      completedAt: status === '结果归档' ? isoDateFromSeed(sampleIndex, 7) : '-'
+    };
+  })
+);
 
 const consentSignedDates = [
   '2026-04-23',
@@ -175,7 +268,9 @@ export const consentRecords: ConsentRecord[] = patientRecords.map((patient, inde
   const signedAt = status === '待签署' ? '-' : consentSignedDates[index % consentSignedDates.length];
 
   return {
-    id: `LGL-1111-${String(index + 1).padStart(3, '0')}`,
+    id: `${patient.studyId}-${String(index + 1).padStart(3, '0')}`,
+    studyId: patient.studyId,
+    patientId: patient.id,
     patientName: patient.name,
     hospitalNo: `RJ${patient.hospitalNo}`,
     diseaseType: patient.diseaseType,
@@ -186,12 +281,124 @@ export const consentRecords: ConsentRecord[] = patientRecords.map((patient, inde
   };
 });
 
-export const visits: VisitRecord[] = [
-  { id: 'V1', patientName: 'LQH-023', visit: 'V1 基线访视', visitDate: '2024-05-01', visitType: '基线访视', sleDai: '12', medication: 'MMF 1.0g/d', sampleCollection: '血液、尿液', completeness: 92, status: '已完成' },
-  { id: 'V2', patientName: 'LQH-023', visit: 'V2 1月随访', visitDate: '2024-06-01', visitType: '随访访视', sleDai: '8', medication: 'MMF 1.5g/d', sampleCollection: '血液、尿液', completeness: 90, status: '已完成' },
-  { id: 'V3', patientName: 'LQH-023', visit: 'V3 3月随访', visitDate: '2024-08-01', visitType: '随访访视', sleDai: '6', medication: 'MMF 1.5g/d + HCQ', sampleCollection: '血液、尿液、CSF', completeness: 86, status: '进行中' },
-  { id: 'V4', patientName: 'LQH-023', visit: 'V4 6月随访', visitDate: '2024-11-01', visitType: '随访访视', sleDai: '--', medication: '计划评估', sampleCollection: '血液、尿液', completeness: 0, status: '已预约' }
+export const studyVisitPlans: StudyVisitPlanRecord[] = [
+  { id: 'SVP-LGL-1111-V1', studyId: 'LGL-1111', code: 'V1', name: 'V1 基线访视', visitType: '基线访视', dayOffset: 0, windowBeforeDays: 0, windowAfterDays: 7, requiredForms: ['baseline'], requiredSamples: ['血液', 'CSF'], status: 'active', sortOrder: 1 },
+  { id: 'SVP-LGL-1111-V2', studyId: 'LGL-1111', code: 'V2', name: 'V2 1月随访', visitType: '随访访视', dayOffset: 32, windowBeforeDays: 7, windowAfterDays: 7, requiredForms: ['follow_up'], requiredSamples: ['血液'], status: 'active', sortOrder: 2 },
+  { id: 'SVP-LGL-1111-V3', studyId: 'LGL-1111', code: 'V3', name: 'V3 3月随访', visitType: '随访访视', dayOffset: 64, windowBeforeDays: 14, windowAfterDays: 14, requiredForms: ['follow_up'], requiredSamples: ['血液'], status: 'active', sortOrder: 3 },
+  { id: 'SVP-RWD-NMO-2026-V1', studyId: 'RWD-NMO-2026', code: 'V1', name: 'V1 基线访视', visitType: '基线访视', dayOffset: 0, windowBeforeDays: 0, windowAfterDays: 7, requiredForms: ['baseline'], requiredSamples: ['血液', 'CSF'], status: 'active', sortOrder: 1 },
+  { id: 'SVP-RWD-NMO-2026-V2', studyId: 'RWD-NMO-2026', code: 'V2', name: 'V2 1月随访', visitType: '随访访视', dayOffset: 32, windowBeforeDays: 7, windowAfterDays: 7, requiredForms: ['follow_up'], requiredSamples: ['血液'], status: 'active', sortOrder: 2 },
+  { id: 'SVP-RWD-NMO-2026-V3', studyId: 'RWD-NMO-2026', code: 'V3', name: 'V3 3月随访', visitType: '随访访视', dayOffset: 64, windowBeforeDays: 14, windowAfterDays: 14, requiredForms: ['follow_up'], requiredSamples: ['血液'], status: 'active', sortOrder: 3 },
+  { id: 'SVP-LZXK-01-V1', studyId: 'LZXK-01', code: 'V1', name: 'V1 基线访视', visitType: '基线访视', dayOffset: 0, windowBeforeDays: 0, windowAfterDays: 7, requiredForms: ['baseline'], requiredSamples: ['血液', '组织'], status: 'active', sortOrder: 1 },
+  { id: 'SVP-LZXK-01-V2', studyId: 'LZXK-01', code: 'V2', name: 'V2 1月耐药评估', visitType: '随访访视', dayOffset: 32, windowBeforeDays: 7, windowAfterDays: 7, requiredForms: ['follow_up'], requiredSamples: ['血液'], status: 'active', sortOrder: 2 },
+  { id: 'SVP-LZXK-01-V3', studyId: 'LZXK-01', code: 'V3', name: 'V3 3月疗效评估', visitType: '随访访视', dayOffset: 64, windowBeforeDays: 14, windowAfterDays: 14, requiredForms: ['follow_up'], requiredSamples: ['血液'], status: 'active', sortOrder: 3 }
 ];
+
+export function getStudyVisitPlans(studyId: string) {
+  return studyVisitPlans
+    .filter((plan) => plan.studyId === studyId && plan.status === 'active')
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.dayOffset - b.dayOffset);
+}
+
+export const visits: VisitRecord[] = patientRecords.flatMap((patient, patientIndex) =>
+  getStudyVisitPlans(patient.studyId).map((plan, visitIndex) => {
+    const baselineSledai = Number(patient.clinicalData['SLEDAI评分'] ?? 0);
+    const completeness = Math.max(0, calculateClinicalCompleteness(patient.clinicalData) - visitIndex * 4);
+    return {
+      id: `VIS-${String(patientIndex + 1).padStart(3, '0')}-${visitIndex + 1}`,
+      studyId: patient.studyId,
+      patientId: patient.id,
+      visitPlanId: plan.id,
+      visitPlanCode: plan.code,
+      planDayOffset: plan.dayOffset,
+      windowBeforeDays: plan.windowBeforeDays,
+      windowAfterDays: plan.windowAfterDays,
+      patientName: patient.name,
+      visit: plan.name,
+      visitDate: isoDateFromSeed(patientIndex, plan.dayOffset),
+      visitType: plan.visitType,
+      sleDai: String(Math.max(0, baselineSledai - visitIndex * 2)),
+      medication:
+        patient.diseaseType === 'HC'
+          ? '无'
+          : patient.studyId === 'LZXK-01'
+            ? String(patient.clinicalData['免疫抑制剂1'] ?? '靶向 / 免疫治疗')
+            : 'HCQ',
+      sampleCollection: plan.code === 'V1' ? samplePlanForDisease(patient.diseaseType, patientIndex).join('、') : plan.requiredSamples.join('、'),
+      completeness,
+      status: visitIndex < 2 || patientIndex % 3 ? '已完成' : '进行中'
+    };
+  })
+);
+
+function followUpSummaryForPatient(patient: PatientRecord, patientIndex: number, visitIndex: number) {
+  const efficacyCycle = ['缓解', '稳定', '进展'];
+  const followUpOrgans = patient.organs.filter((organ) => organ !== '肺' && organ !== '健康对照');
+
+  if (patient.studyId === 'LZXK-01') {
+    const efficacy = efficacyCycle[(patientIndex + visitIndex) % efficacyCycle.length];
+    return {
+      diseaseStatus: followUpOrgans.length && visitIndex >= 2 ? '转移' : efficacy === '进展' ? '进展' : '稳定',
+      symptomsSigns: `咳嗽/胸痛较前稳定，ECOG ${patientIndex % 3}，耐药相关症状继续观察。`,
+      imagingLabSummary: '胸部CT提示靶病灶稳定；ctDNA 动态监测与 NGS 结果已同步复核。',
+      efficacyAssessment: efficacy,
+      metastasisStatus: followUpOrgans.length ? followUpOrgans.join('、') : '未见新增转移',
+      adverseEvents: patientIndex % 4 === 0 ? '1级乏力' : '无明显不良事件',
+      qualityOfLife: `ECOG ${patientIndex % 3}；日常活动基本可维持。`,
+      lostToFollowUpReason: patientIndex % 29 === 0 && visitIndex >= 2 ? '电话未接通，待二次联系' : '-'
+    };
+  }
+
+  if (patient.diseaseType === 'HC') {
+    return {
+      diseaseStatus: '无病',
+      symptomsSigns: '无明显症状与体征。',
+      imagingLabSummary: '常规检验关键指标无明显异常。',
+      efficacyAssessment: '未评估',
+      metastasisStatus: '-',
+      adverseEvents: '无',
+      qualityOfLife: '生活质量稳定。',
+      lostToFollowUpReason: '-'
+    };
+  }
+
+  const efficacy = efficacyCycle[(patientIndex + visitIndex + 1) % efficacyCycle.length];
+  return {
+    diseaseStatus: efficacy === '进展' && patientIndex % 5 === 0 ? '复发' : '稳定',
+    symptomsSigns: `神经系统症状${patient.organs.includes('神经系统') ? '仍需观察' : '未见新发'}，疲乏程度可耐受。`,
+    imagingLabSummary: '影像/检验关键结论已复核，未见紧急安全风险。',
+    efficacyAssessment: efficacy,
+    metastasisStatus: '-',
+    adverseEvents: patientIndex % 6 === 0 ? '轻度胃肠道反应' : '无',
+    qualityOfLife: `EQ-5D 0.${82 + (patientIndex % 12)}；生活质量较前稳定。`,
+    lostToFollowUpReason: patientIndex % 31 === 0 && visitIndex >= 2 ? '电话未接通，待二次联系' : '-'
+  };
+}
+
+export const followUpRecords: FollowUpRecord[] = visits
+  .filter((visit) => visit.visitPlanCode !== 'V1')
+  .map((visit) => {
+    const patientIndex = patientRecords.findIndex((patient) => patient.id === visit.patientId || patient.name === visit.patientName);
+    const patient = patientRecords[Math.max(0, patientIndex)];
+    const visitIndex = getStudyVisitPlans(visit.studyId ?? patient.studyId).findIndex((plan) => plan.id === visit.visitPlanId);
+    const summary = followUpSummaryForPatient(patient, Math.max(0, patientIndex), Math.max(1, visitIndex));
+    const followUpMethod: FollowUpRecord['followUpMethod'] = (['门诊', '电话', '线上', '家访'] as const)[
+      (Math.max(0, patientIndex) + Math.max(1, visitIndex)) % 4
+    ];
+
+    return {
+      id: `FUP-${String(Math.max(0, patientIndex) + 1).padStart(3, '0')}-${Math.max(1, visitIndex) + 1}`,
+      studyId: visit.studyId,
+      patientId: visit.patientId,
+      visitId: visit.id,
+      patientName: visit.patientName,
+      followUpDate: visit.visitDate,
+      followUpMethod,
+      followedBy: visit.studyId === 'LZXK-01' ? '肺癌 CRC' : '林清妍',
+      survivalStatus: '存活',
+      recordedAt: `${visit.visitDate}T10:00:00+00:00`,
+      ...summary
+    };
+  });
 
 export const reportRecords: ReportRecord[] = [
   { id: 'RPT-001', name: '患者全景数据包', type: 'PDF', scope: '单患者 / Journey', status: '可导出', updatedAt: '2026-04-27 09:20' },

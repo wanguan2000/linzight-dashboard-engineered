@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   calculateClinicalCompleteness,
+  diseases,
+  lungResistanceDiseases,
   type DiseaseType,
   type OmicsStatus,
   type PatientRecord
@@ -10,14 +12,19 @@ import { KpiProgress } from './MetricGrid';
 import { fetchDemoDataset } from '../services/api';
 import type { IconName } from '../types';
 
-const diseaseOptions: Array<'全部' | DiseaseType> = ['全部', 'NPSLE', 'Non-NPSLE', 'MS', 'NMOSD', 'HC'];
+const diseaseOptions: Array<'全部' | DiseaseType> = ['全部', ...diseases, ...lungResistanceDiseases];
 const patientPageSize = 5;
 const diseasePalette: Record<DiseaseType, string> = {
   NPSLE: 'var(--blue)',
   'Non-NPSLE': '#7d71db',
   NMOSD: '#35a7c8',
   MS: '#329bd3',
-  HC: 'var(--green)'
+  HC: 'var(--green)',
+  NSCLC: '#2f855a',
+  LUAD: '#c05621',
+  LUSC: '#9f7aea',
+  'EGFR-TKI耐药': '#d69e2e',
+  ALK耐药: '#dd6b20'
 };
 
 type CohortKpiMetric = {
@@ -57,6 +64,8 @@ function sampleSummaryIcon(label: string) {
   if (label === '血液') return 'blood';
   if (label === 'CSF') return 'csf';
   if (label === '肾') return 'kidney';
+  if (label === '组织') return 'sampleTube';
+  if (label === '胸水') return 'sampleBank';
   return 'sampleBank';
 }
 
@@ -64,6 +73,7 @@ function sampleSummaryClass(label: string) {
   if (label === '血液') return 'sample-summary__item--blood';
   if (label === 'CSF') return 'sample-summary__item--csf';
   if (label === '肾') return 'sample-summary__item--kidney';
+  if (label === '组织' || label === '胸水') return 'sample-summary__item--sample';
   return 'sample-summary__item--total';
 }
 
@@ -134,9 +144,9 @@ function buildSampleSummary(patients: PatientRecord[]): SampleSummaryItem[] {
   const patientCount = patients.length;
 
   return [
-    { label: '血液', value: formatCount(counts['血液'] ?? 0), helper: formatPercent(counts['血液'] ?? 0, patientCount) },
-    { label: 'CSF', value: formatCount(counts.CSF ?? 0), helper: formatPercent(counts.CSF ?? 0, patientCount) },
-    { label: '肾', value: formatCount(counts['肾'] ?? 0), helper: formatPercent(counts['肾'] ?? 0, patientCount) },
+    ...['血液', 'CSF', '肾', '组织', '胸水']
+      .filter((label) => counts[label])
+      .map((label) => ({ label, value: formatCount(counts[label] ?? 0), helper: formatPercent(counts[label] ?? 0, patientCount) })),
     { label: '总样本数', value: formatCount(totalSamples), helper: '数据库实时' }
   ];
 }
@@ -149,14 +159,14 @@ function buildKpiMetrics(patients: PatientRecord[]): CohortKpiMetric[] {
   }, {});
   const npsleCount = countByDisease.NPSLE ?? 0;
   const neuroInflammatoryCount = (countByDisease.NMOSD ?? 0) + (countByDisease.MS ?? 0);
-  const hcCount = countByDisease.HC ?? 0;
+  const lungResistanceCount = lungResistanceDiseases.reduce((sum, disease) => sum + (countByDisease[disease] ?? 0), 0);
   const completeness = Number(average(getCompletenessValues(patients)).toFixed(1));
 
   return [
     { label: '总患者数', value: formatCount(patientCount), helper: '数据库实时', icon: 'patients' },
     { label: 'NPSLE', value: formatCount(npsleCount), delta: formatPercent(npsleCount, patientCount), helper: '占总数', icon: 'check' },
     { label: 'NMOSD / MS', value: formatCount(neuroInflammatoryCount), delta: formatPercent(neuroInflammatoryCount, patientCount), helper: '占总数', icon: 'dna' },
-    { label: 'HC', value: formatCount(hcCount), delta: formatPercent(hcCount, patientCount), helper: '占总数', icon: 'userPlus' },
+    { label: '肺癌耐药', value: formatCount(lungResistanceCount), delta: formatPercent(lungResistanceCount, patientCount), helper: 'LZXK-01', icon: 'dna' },
     { label: '数据完整性', value: `${completeness}%`, delta: `${patientCount}例`, helper: '平均完整度', icon: 'check', progress: completeness }
   ];
 }

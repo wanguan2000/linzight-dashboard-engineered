@@ -1,4 +1,4 @@
-# RWS EDC v1 API 接口协议
+# RWD EDC v1 API 接口协议
 
 ## 约定
 
@@ -7,6 +7,10 @@
 - 认证：`POST /auth/login` 返回 Bearer token；开发阶段可使用 Demo token，后续可替换 JWT
 - 文件上传：`multipart/form-data`，文件落本地 `uploads/`
 - 患者中心主键：`patient_id`
+- RWD EDC 研究隔离字段：`study_id`
+- 样本检测项目字段：`testing_project_id`
+- RWD EDC 不使用 `project_id`
+- 当前 Demo Study：`LGL-1111`、`RWD-NMO-2026`、`LZXK-01`；`LZXK-01` 为真实世界肺癌耐药研究，默认 20 名患者。
 
 ## 主链路接口
 
@@ -14,9 +18,20 @@
 | --- | --- | --- | --- |
 | 登录 | `POST` | `/auth/login` | 用户登录，返回 token 与用户角色 |
 | 登录 | `GET` | `/auth/me` | 当前用户信息 |
+| Study | `GET` | `/studies` | 当前用户可访问 Study |
+| Study 成员 | `GET` | `/studies/{study_id}/members` | 查询 Study 成员 |
+| Study 成员 | `POST` | `/studies/{study_id}/members` | 分配研究级角色 |
+| Study 访视计划 | `GET` | `/studies/{study_id}/visit-plans` | 查询 Study 访视计划配置 |
+| Study 访视计划 | `POST` | `/studies/{study_id}/visit-plans` | 新增或按 code 更新 Study 访视计划 |
+| Study 访视计划 | `PUT` | `/studies/{study_id}/visit-plans/{plan_id}` | 更新指定访视计划 |
+| Study CRF | `GET` | `/studies/{study_id}/crf-versions` | 查询 Study CRF 版本 |
+| Study CRF | `POST` | `/studies/{study_id}/crf-versions` | 创建 Study CRF 版本 |
 | 患者列表 | `GET` | `/patients` | 搜索、筛选患者 |
 | 患者详情 | `GET` | `/patients/{patient_id}` | 患者主档 |
 | 患者详情 | `GET` | `/patients/{patient_id}/panorama` | 患者全景数据 |
+| 随访记录 | `GET` | `/follow-up-records` | 查询患者或 Study 随访记录 |
+| 随访记录 | `POST` | `/follow-up-records` | 新增随访记录 |
+| 随访记录 | `PUT` | `/follow-up-records/{record_id}` | 更新随访记录 |
 | CRF 录入 | `GET` | `/crf?patient_id=...` | 查询患者 CRF |
 | CRF 录入 | `POST` | `/crf` | 新增 CRF 模块记录 |
 | CRF 录入 | `PUT` | `/crf/{entry_id}` | 更新 CRF 草稿、提交或锁定 |
@@ -34,14 +49,24 @@
 
 ## 角色权限矩阵
 
-| 角色 | 患者 | CRF | 样本 | 组学 | 文件 | 导出 | 系统 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `sys_admin` | 全部 | 全部 | 全部 | 全部 | 全部 | 全部 | 全部 |
-| `project_admin` | 全部 | 审核 | 全部 | 全部 | 全部 | 全部 | 项目配置 |
-| `investigator` | 读取/审核 | 提交/审核 | 读取 | 读取 | 上传/读取 | 读取 | 无 |
-| `crc` | 新增/更新 | 草稿/提交 | 新增/更新 | 登记 | 上传/读取 | 读取 | 无 |
-| `data_manager` | 读取 | 锁定/质控 | 读取 | 读取/质控 | 读取 | 全部 | 字典配置 |
-| `viewer` | 读取 | 读取 | 读取 | 读取 | 读取 | 读取 | 无 |
+平台级角色：
+
+| 角色 | Study 范围 | 患者/CRF 数据 | CRF 配置 | 质控/Query | 导出/分析 | 审计 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `LZ_ADMIN` | 全部 | 全部 | 全部 | 全部 | 全部 | 全部 |
+| `LZ_CRC` | 授权 Study | 录入/修改未锁定数据 | 默认不管理结构 | 核查/回复 | 默认无导出 | 无 |
+| `LZ_CRF_ADMIN` | 授权 Study | 默认只读 | 配置/发布版本 | 无 | 无 | 无 |
+| `LZ_DATA_MANAGER` | 授权 Study | 只读/核查 | 默认无 | 发起/关闭/冻结 | 可导出 | 可读 |
+| `LZ_AUDITOR` | 授权 Study | 只读 | 只读 | 只读 | 只读 | 可读 |
+
+研究级角色：
+
+| 角色 | Study 范围 | 患者/CRF 数据 | CRF 配置 | 质控/Query | 导出/分析 | 成员管理 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `STUDY_PI` | 所属 Study | 查看/医学审核 | 无 | 查看 | 按配置可读 | 无 |
+| `STUDY_CRC` | 所属 Study | 新建/录入/回复 Query | 无 | 回复 | 无 | 无 |
+| `STUDY_CONFIG_ADMIN` | 所属 Study | 默认只读 | 配置/发布 | 无 | 无 | 可管理本 Study |
+| `STUDY_DATA_MANAGER` | 所属 Study | 只读/核查 | 无 | 发起/关闭/冻结 | 可导出 | 无 |
 
 ## 核心请求示例
 
@@ -58,14 +83,78 @@ CRF 创建：
 
 ```json
 {
+  "study_id": "LGL-1111",
   "patient_id": "PAT-001",
   "visit_id": "VIS-001",
+  "crf_version_id": "CRFV-LGL-1111-V0.1",
+  "form_id": "baseline",
   "module": "baseline",
   "payload": {
+    "CRF版本": "V0.1",
     "SLEDAI评分": 12,
     "PGA评分": 2,
     "WBC": 10.73
   },
+  "status": "draft"
+}
+```
+
+Study 访视计划创建：
+
+```json
+{
+  "code": "V4",
+  "name": "V4 6月随访",
+  "visit_type": "随访访视",
+  "day_offset": 180,
+  "window_before_days": 14,
+  "window_after_days": 14,
+  "required_forms": ["follow_up"],
+  "required_samples": ["血液"],
+  "status": "active",
+  "sort_order": 4
+}
+```
+
+随访记录创建：
+
+```json
+{
+  "study_id": "LZXK-01",
+  "patient_id": "PAT-051",
+  "visit_id": "VIS-051-2",
+  "follow_up_date": "2024-10-30",
+  "follow_up_method": "门诊",
+  "followed_by": "肺癌 CRC",
+  "survival_status": "存活",
+  "disease_status": "稳定",
+  "symptoms_signs": "咳嗽/胸痛较前稳定，ECOG 1。",
+  "imaging_lab_summary": "胸部CT提示靶病灶稳定；ctDNA 动态监测已复核。",
+  "efficacy_assessment": "稳定",
+  "metastasis_status": "未见新增转移",
+  "adverse_events": "无明显不良事件",
+  "quality_of_life": "日常活动基本可维持。",
+  "lost_to_follow_up_reason": "-"
+}
+```
+
+CRF 查询响应会继续返回解码后的 JSON object，同时暴露底层存储格式和 CRF payload 版本：
+
+```json
+{
+  "id": "CRF-001",
+  "study_id": "LGL-1111",
+  "patient_id": "PAT-001",
+  "visit_id": "VIS-001",
+  "crf_version_id": "CRFV-LGL-1111-V0.1",
+  "form_id": "baseline",
+  "module": "baseline",
+  "payload": {
+    "CRF版本": "V0.1",
+    "SLEDAI评分": 12
+  },
+  "payload_version": "V0.1",
+  "payload_format": "jsonb",
   "status": "draft"
 }
 ```
@@ -86,7 +175,12 @@ CRF 创建：
 ## API 与前端数据映射
 
 - `patients` 映射到 `PatientRecord`
+- `study_visit_plans` 映射到 `StudyVisitPlanRecord`
+- `follow_up_records` 映射到 `FollowUpRecord`
 - `samples` 映射到 `SampleRecord`
 - `omics_records` 映射到 `OmicsRecord`
-- `crf_entries.payload` 保持 CRF 字段字典的宽表 JSON，便于阶段 4 与现有前端 `clinicalData` 对齐
-- `patients/{patient_id}/journey` 与现有 `panorama` 保持兼容，后续可返回 `patient`、`consents`、`visits`、`crf_entries`、`samples`、`omics_records`、`files`、`quality_issues`
+- `patients.clinical_data` 与 `crf_entries.payload` 保持 CRF 字段字典的宽表 JSON，当前 SLE CRF V0.1 来自 `resource/sle-crf-v0.1.schema.json`，便于阶段 4 与现有前端 `clinicalData` 对齐
+- SQLite 存储层优先写入 `patients.clinical_data_jsonb` 与 `crf_entries.payload_jsonb` BLOB；API mapper 解码后返回 JSON object，并通过 `clinical_data_version`、`clinical_data_format`、`payload_version`、`payload_format` 暴露版本和存储格式
+- `patients/{patient_id}/journey` 与现有 `panorama` 保持兼容，返回 `patient`、`consents`、`visits`、`follow_up_records`、`crf_entries`、`samples`、`omics_records`、`files`、`quality_issues`
+- `visits.visit_plan_id` 指向 `study_visit_plans.id`；`visits` 返回 `visit_plan_code`、`plan_day_offset` 和访视窗口字段，供前端展示计划来源。
+- `follow_up_records.visit_id` 可选指向 `visits.id`；同一患者同一日期同一随访方式通过数据库唯一索引防重复。

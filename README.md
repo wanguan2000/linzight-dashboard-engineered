@@ -18,7 +18,7 @@
 - 样式：分层 CSS，医疗/科研运营型 dashboard 风格，玻璃拟态侧边栏、卡片、业务表格和状态标签
 - 国际化：项目内轻量 i18n，支持中文和英文，默认中文
 - 后端：FastAPI + Pydantic + SQLite Demo API
-- 数据：本地 mock data + `backend/seed.py` 初始化数据
+- 数据：SLE CRF V0.1 schema + LZXK-01 肺癌耐药字段 + 70 名本地 mock/SQLite seed 患者、访视和随访记录
 - 静态导出：`npm run export:html` 生成可直接打开的交互式 HTML 页面
 
 ## 目录结构
@@ -45,6 +45,8 @@
 ├── SECURITY.md                    # 安全与敏感信息规则
 └── package.json
 ```
+
+Beta 发布前验证与剩余正式化工作见 `docs/05-beta-release-readiness.md`。
 
 ## 本地安装
 
@@ -75,7 +77,41 @@ npm run dev
 
 浏览器打开 Vite 输出地址，通常是 `http://localhost:5173/`。如果端口被占用，Vite 会自动切换到下一个可用端口。
 
-默认 Demo 登录账号可在 `src/data/auth.ts` 和 `backend/seed.py` 中查看；前端登录会优先调用后端认证，后端不可用时回退到本地 Demo 账号。
+默认 Demo 登录账号可在 `src/data/auth.ts` 和 `backend/seed.py` 中查看；前端登录会优先调用后端认证，后端不可用时回退到本地 Demo 账号。登录页先选择 `Study 研究入口` 或 `LZ 系统管理`；选择 Study 入口时需要选择研究编号 `study_id`，账号列表只显示该 Study 的研究成员。
+
+## CRF 与 Demo 数据
+
+- `resource/SLE临床数据记录表.csv` 是 SLE 临床数据记录参考模板。
+- `resource/sle-crf-v0.1.schema.json` 是由该 CSV 生成的 CRF V0.1 schema，包含 10 个分组、89 个字段。
+- `src/data/crfTemplate.ts` 将 CRF V0.1 schema 接入前端临床数据采集和系统管理字段配置。
+- `backend/seed.py` 读取同一份 schema，生成 70 名测试患者、210 条访视、140 条随访记录、210 条 CRF 记录及关联样本/组学/知情同意数据；其中 `LZXK-01` 为真实世界肺癌耐药研究，默认 20 名患者。
+- `study_visit_plans` 为每个 Study 独立配置 V1/V2/V3 访视计划、时间窗、必填 CRF 表单和样本要求；`visits.visit_plan_id` 关联配置，新建患者时后端自动生成计划访视和 CRF 草稿。
+- `follow_up_records` 隶属于患者信息，绑定 `study_id + patient_id`，可选关联 `visit_id`，记录随访方式、随访人、生存/疾病状态、疗效、转移、不良事件、生活质量和失访原因。
+- `LZXK-01` 发布独立 Study CRF V1.0，在 SLE CRF V0.1 基础上追加 15 个肺癌耐药字段，已录入数据保留各自 `crf_version_id`。
+- SQLite 使用 JSONB（二进制 JSON）优先保存 CRF：`patients.clinical_data_jsonb` 与 `crf_entries.payload_jsonb` 为 BLOB，同时保留 `*_version` 与 `*_format` 供 API 和迁移校验。
+- 当前 CSV 中 `免疫制剂2` 出现两次，V0.1 schema 将第二个字段规范为 `免疫制剂2（第2项）`，避免 JSON payload 字段覆盖。
+
+## Study 权限与隔离
+
+- RWD EDC 主链路统一使用 `study_id` 作为研究隔离字段，不使用 `project_id`。
+- 当前 Demo seed 包含 `LGL-1111`、`RWD-NMO-2026` 和 `LZXK-01` 三个 Study，并生成 Study 成员、平台授权范围和独立 CRF 版本。
+- 平台角色使用 `LZ_ADMIN`、`LZ_CRC`、`LZ_CRF_ADMIN`、`LZ_DATA_MANAGER`、`LZ_AUDITOR`。
+- 研究角色使用 `STUDY_PI`、`STUDY_CRC`、`STUDY_CONFIG_ADMIN`、`STUDY_DATA_MANAGER`。
+- 样本检测项目编号字段为 `testing_project_id`，与 RWD EDC Study 概念分离。
+- 详细设计见 `docs/04-study-permissions.md`。
+
+常用 Demo 账号：
+
+| 账号 | 角色 | Study 范围 |
+| --- | --- | --- |
+| `crc@demo.linzight` | `STUDY_CRC` | `LGL-1111` |
+| `lung-pi@demo.linzight` | `STUDY_PI` | `LZXK-01` |
+| `lung-crc@demo.linzight` | `STUDY_CRC` | `LZXK-01` |
+| `lung-config@demo.linzight` | `STUDY_CONFIG_ADMIN` | `LZXK-01` |
+| `lung-dm@demo.linzight` | `STUDY_DATA_MANAGER` | `LZXK-01` |
+| `admin@demo.linzight` | `LZ_ADMIN` | 全部 Study |
+| `lz-crc@demo.linzight` | `LZ_CRC` | `LGL-1111`、`RWD-NMO-2026`、`LZXK-01` |
+| `lz-dm@demo.linzight` | `LZ_DATA_MANAGER` | `RWD-NMO-2026` |
 
 ## 构建方式
 

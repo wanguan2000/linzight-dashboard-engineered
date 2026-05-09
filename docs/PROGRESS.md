@@ -1,11 +1,11 @@
-# RWS EDC 开发进度
+# RWD EDC 开发进度
 
 ## 当前阶段
 已完成 v1 主链路开发
 
 ## 已完成
 - [x] 1. 前端工程化改造
-  - 新增 Demo 登录入口，覆盖 `sys_admin`、`project_admin`、`investigator`、`crc`、`data_manager`、`viewer` 六类角色。
+  - 新增 Demo 登录入口，覆盖 `LZ_ADMIN`、`LZ_CRC`、`LZ_CRF_ADMIN`、`LZ_DATA_MANAGER`、`LZ_AUDITOR`、`STUDY_PI`、`STUDY_CRC`、`STUDY_CONFIG_ADMIN`、`STUDY_DATA_MANAGER` 角色。
   - 登录后保持现有前端 UI 风格进入主应用，并在 Topbar/Sidebar 展示当前用户与角色。
   - 保留现有模块导航，主链路入口为：登录 → 患者列表 → 患者详情/Patient Journey → CRF 录入 → 样本及检测 → 数据分析。
 - [x] 2. 设计数据库表结构
@@ -20,7 +20,7 @@
   - 调整 `src/services/api.ts`，保持现有 fallback 行为，只负责后端响应到前端组件数据的转换。
   - 新增 `docs/03-frontend-backend-protocol.md`，记录字段映射、fallback 规则、Journey 聚合结构与错误格式。
 - [x] 5. 后端开发
-  - 重写 `backend/seed.py`，生成 50 个模拟患者，均匀覆盖 NPSLE、Non-NPSLE、MS、NMOSD、HC，并生成关联访视、CRF、样本、多组学和知情同意数据。
+  - 重写 `backend/seed.py`，生成 70 个模拟患者，覆盖 NPSLE、Non-NPSLE、MS、NMOSD、HC 与 LZXK-01 肺癌耐药队列，并生成关联访视、CRF、样本、多组学和知情同意数据。
   - 补齐 FastAPI 主链路接口：登录、CRF、文件上传、Patient Journey、分析摘要、导出、审计查询。
   - 文件上传使用本地 `uploads/` 目录，导出任务可生成队列 CSV。
   - 更新 README 后端接口和数据说明。
@@ -28,6 +28,8 @@
   - 后端新增 Demo Bearer token 解析和角色权限校验，写接口缺 token 返回 401，无权限返回 403。
   - 写接口已接入权限校验：患者、CRF、样本、组学、文件、导出。
   - 前端登录优先调用后端 `/auth/login`，后端不可用时回退本地 Demo 认证。
+  - 2026-05-07：新增多 Study 权限体系，RWD EDC 主链路统一按 `study_id` 隔离，Study CRC 只看所属 Study，平台角色按授权 Study scope 访问。
+  - 2026-05-07：新增 `LZXK-01` 真实世界肺癌耐药研究，默认生成 20 名患者及 Study PI/CRC/配置管理员/数据管理员角色，平台 LZ_CRC 与 LZ_CRF_ADMIN 授权覆盖该 Study。
 - [x] 7. 文件上传与隐私处理
   - 后端文件上传增加分类白名单和去标识化校验，`clinical`、`omics_result`、`analysis_export` 必须标记 `is_deidentified=true`。
   - 上传成功后自动写入 `audit_logs`。
@@ -35,7 +37,7 @@
 - [x] 8. 数据导入导出
   - 后端新增 `GET /exports/{export_id}/download`，支持下载导出任务生成的 CSV 文件。
   - 后端新增 `POST /imports/patients`，支持最小患者 CSV 导入并写入审计。
-  - 前端数据分析页的导出按钮已接入 `/exports`，默认登录角色调整为项目管理员以便主链路可直接试跑导出。
+  - 前端数据分析页的导出按钮已接入 `/exports`，默认登录角色调整为研究配置管理员以便主链路可直接试跑导出。
 - [x] 9. 数据完整性与校验
   - 后端新增 `/quality/run` 和 `/quality/issues`，可扫描临床完整度、样本缺失和知情同意状态并生成 `data_quality_issues`。
   - 质控运行写入审计日志。
@@ -47,7 +49,7 @@
 - [x] 11. 测试
   - 完成主链路 API smoke：登录 → 患者列表 → CRF 录入 → 文件上传 → Patient Journey → 数据分析 → 导出下载。
   - 完成后端 Python 编译、前端 `npm run check`、静态 HTML 导出。
-  - Smoke 后已清理上传/导出测试文件，并 reseed 回 50 名模拟患者状态。
+  - Smoke 后已清理上传/导出测试文件，并 reseed 回 70 名模拟患者状态。
   - 2026-04-30：患者旅程新增患者查找/切换入口；患者队列列表默认分页调整为 5 条，并完成浏览器回归。
   - 2026-04-30：优化正文可读性，调深正文辅助色并放大表格、筛选区、知情同意正文和分页文字；完成浏览器回归。
   - 2026-04-30：样本及检测页独有统计卡、筛选区和患者选择控件同步正文排版标准；完成浏览器回归。

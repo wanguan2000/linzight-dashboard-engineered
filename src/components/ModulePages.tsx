@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { quickActions } from '../data/dashboard';
+import { clinicalDataGroups, clinicalFields, crfTemplateFieldCount, crfTemplateVersion, systemCrfFields } from '../data/crfTemplate';
 import {
   consentRecords,
   formatSampleLibraryId,
@@ -7,19 +8,23 @@ import {
   omicsRecords,
   reportRecords,
   samples,
+  studyVisitPlans,
   type ConsentRecord,
   type OmicsRecord,
   type ReportRecord,
   type SampleRecord,
+  type StudyVisitPlanRecord,
   type VisitRecord
 } from '../data/operations';
 import type { PatientRecord } from '../data/patientCohort';
+import type { UserRole } from '../data/auth';
 import {
   createExportJob,
   fetchConsentRecords,
   fetchDemoDataset,
   fetchOmicsRecords,
   fetchSamples,
+  filterRecordsByCurrentStudyScope,
   runQualityChecks,
   updateConsentRecord,
   uploadFileToBackend
@@ -477,41 +482,6 @@ function buildSampleLedgerRows(sampleRows: SampleRecord[]): SampleLedgerRow[] {
 
 const clinicalSectionUpdatedAt = ['2026-04-27', '2026-04-27', '2026-04-26', '2026-04-26', '2026-04-25', '2026-04-25', '2026-04-24', '2026-04-24'];
 
-const clinicalDataGroups = [
-  {
-    title: '基本信息',
-    fields: ['患者编号', '姓名', '性别', '年龄', '身高（cm）', '体重（Kg）', '住院号', '疾病类型', '出院诊断', '受累脏器']
-  },
-  {
-    title: '目前病情评估',
-    fields: ['SLEDAI评分', 'RSLEDAI', 'PGA评分', 'LN病理分型（如有）', 'AI', 'CI', '神经系统症状', '关节肿胀', '关节疼痛', '皮疹', '口腔溃疡', '脱发', '其他']
-  },
-  {
-    title: '目前用药情况',
-    fields: ['MP mg/d', '免疫抑制剂1', '免疫制剂2', '其他合并用药']
-  },
-  {
-    title: '常规生化',
-    fields: ['WBC', 'N绝对值10^9/L', '淋巴绝对值', '单核绝对值', 'HB(g/L)', 'PLT(^10*9/L)', 'TB（g/L）', 'ALB(g/l)', 'ALT(U/L)', 'AST(U/L)', 'LDH(U/L)', 'AKP U/L', '总胆红素 umol/L', 'EPI-GFR（mmol/l*min）', 'Cr（ummol/l)', 'BUN(mg/l)', 'UA', '甘油三酯', '胆固醇', 'CRP(mg/l)', 'ESR(mm)']
-  },
-  {
-    title: '尿蛋白',
-    fields: ['24小时尿蛋白 g/24h', '尿白细胞/Hp', '尿红细胞/Hp', '尿蛋白/Cr']
-  },
-  {
-    title: '免疫球蛋白及补体',
-    fields: ['总补体CH50 （U/mL)', 'C1抑制剂 (g/l)', 'C3(g/l)', 'C4(g/l)', 'IgG(g/l)', 'IgA(g/l)', 'IgM(g/l)']
-  },
-  {
-    title: '自身抗体',
-    fields: ['ANA1:80为阳性（1-yes，0-none）', '滴度', '核型', 'ENA1', 'ENA2', 'ENA3', 'ds-DNA（ELISA）', 'ds-DNA(放免法iu/ml)', '其他阳性抗体']
-  },
-  {
-    title: '特殊检查',
-    fields: ['胸膜炎', '心包炎', '肺动脉高压', '其他异常结果']
-  }
-];
-
 function formatClinicalValue(value: string | number | undefined) {
   if (value === undefined || value === null || value === '') return '-';
   return String(value);
@@ -556,9 +526,11 @@ const emptyClinicalPatient: PatientRecord = {
 
 export function ClinicalDataCapturePage({
   selectedPatient,
+  onPatientChange,
   onOpenPatientJourney
 }: {
   selectedPatient?: PatientRecord | null;
+  onPatientChange?: (patient: PatientRecord) => void;
   onOpenPatientJourney?: (patient: PatientRecord) => void;
 }) {
   const pageRef = useRef<HTMLDivElement | null>(null);
@@ -607,6 +579,15 @@ export function ClinicalDataCapturePage({
   const patient = patients.find((record) => record.name === activePatientName) ?? selectedPatient ?? patients[0] ?? emptyClinicalPatient;
   const patientVisitRows = useMemo(() => visitRows.filter((record) => record.patientName === patient.name), [patient.name, visitRows]);
   const patientSampleRows = useMemo(() => patientSamples(patient, sampleRows), [patient, sampleRows]);
+
+  useEffect(() => {
+    if (patient.id) onPatientChange?.(patient);
+  }, [onPatientChange, patient]);
+
+  function selectClinicalPatient(record: PatientRecord) {
+    setActivePatientName(record.name);
+    onPatientChange?.(record);
+  }
 
   useEffect(() => {
     setClinicalFormSections(buildClinicalSectionsFromPatient(patient));
@@ -702,8 +683,8 @@ export function ClinicalDataCapturePage({
         className="clinical-queue-card"
         patients={patients}
         activePatientName={patient.name}
-        onViewPatient={(record) => setActivePatientName(record.name)}
-        onEditPatient={(record) => setActivePatientName(record.name)}
+        onViewPatient={selectClinicalPatient}
+        onEditPatient={selectClinicalPatient}
       />
 
       <div className="module-layout module-layout--clinical">
@@ -711,7 +692,7 @@ export function ClinicalDataCapturePage({
           <section className="module-card module-card--wide">
             <header className="module-card__header">
               <h2>患者数据录入</h2>
-              <span>按 CRF 模块实时校验</span>
+              <span>SLE CRF {crfTemplateVersion} · {crfTemplateFieldCount} 字段</span>
             </header>
             <div className="clinical-entry-summary">
               <div className="clinical-entry-summary__icon"><Icon name="patients" size={24} /></div>
@@ -723,8 +704,9 @@ export function ClinicalDataCapturePage({
             {[
               ['住院号', patient.hospitalNo],
               ['疾病类型', patient.diseaseType],
-              ['已填字段', `${Object.keys(patient.clinicalData).filter((key) => key !== '数据完整度').length} / 动态字段`],
+              ['已填字段', `${clinicalFields.filter((field) => patient.clinicalData[field] !== undefined && patient.clinicalData[field] !== '').length} / ${clinicalFields.length}`],
               ['完整度', `${getCompleteness(patient)}%`],
+              ['存储格式', patient.clinicalDataFormat === 'jsonb' ? 'SQLite JSONB' : 'SQLite JSON'],
               ['最近更新', 'SQLite 实时']
             ].map(([label, value]) => (
                   <div className="clinical-entry-metric" key={label}>
@@ -1189,8 +1171,9 @@ function SampleTestingStatTiles({
 }
 
 export function ConsentManagementPage() {
-  const [selected, setSelected] = useState<ConsentRecord>(consentRecords[0]);
-  const [baseRecords, setBaseRecords] = useState<ConsentRecord[]>(consentRecords);
+  const initialConsentRecords = filterRecordsByCurrentStudyScope(consentRecords);
+  const [selected, setSelected] = useState<ConsentRecord>(initialConsentRecords[0] ?? consentRecords[0]);
+  const [baseRecords, setBaseRecords] = useState<ConsentRecord[]>(initialConsentRecords);
   const [recordOverrides, setRecordOverrides] = useState<Record<string, Partial<ConsentRecord>>>({});
   const [understoodRecords, setUnderstoodRecords] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState('');
@@ -1475,7 +1458,7 @@ export function ConsentManagementPage() {
 }
 
 export function SampleManagementPage() {
-  const [sampleRows, setSampleRows] = useState(samples);
+  const [sampleRows, setSampleRows] = useState(filterRecordsByCurrentStudyScope(samples));
   const sampleTypeCounts = useMemo(() => {
     return sampleRows.reduce<Record<string, number>>((acc, sample) => {
       acc[sample.sampleType] = (acc[sample.sampleType] ?? 0) + 1;
@@ -1539,8 +1522,9 @@ export function SampleManagementPage() {
 }
 
 export function OmicsTestingPage() {
-  const [records, setRecords] = useState(omicsRecords);
-  const [selected, setSelected] = useState<OmicsRecord>(omicsRecords[0]);
+  const initialOmicsRecords = filterRecordsByCurrentStudyScope(omicsRecords);
+  const [records, setRecords] = useState(initialOmicsRecords);
+  const [selected, setSelected] = useState<OmicsRecord>(initialOmicsRecords[0] ?? omicsRecords[0]);
   const completed = records.filter((record) => record.status === '结果归档').length;
 
   useEffect(() => {
@@ -1641,8 +1625,8 @@ export function OmicsTestingPage() {
 }
 
 export function SampleTestingPage() {
-  const [sampleRows, setSampleRows] = useState(samples);
-  const [records, setRecords] = useState(omicsRecords);
+  const [sampleRows, setSampleRows] = useState(filterRecordsByCurrentStudyScope(samples));
+  const [records, setRecords] = useState(filterRecordsByCurrentStudyScope(omicsRecords));
   const [samplePatientQuery, setSamplePatientQuery] = useState('');
   const [sampleIdQuery, setSampleIdQuery] = useState('');
   const [sampleTypeFilter, setSampleTypeFilter] = useState('全部');
@@ -1894,15 +1878,22 @@ export function SampleTestingPage() {
   );
 }
 
-export function PatientJourneyPage({ selectedPatient }: { selectedPatient?: PatientRecord | null }) {
-  return <PatientJourneyDemoPage selectedPatient={selectedPatient} />;
+export function PatientJourneyPage({
+  selectedPatient,
+  onPatientChange
+}: {
+  selectedPatient?: PatientRecord | null;
+  onPatientChange?: (patient: PatientRecord) => void;
+}) {
+  return <PatientJourneyDemoPage selectedPatient={selectedPatient} onPatientChange={onPatientChange} />;
 }
 
 type SystemAccount = {
   name: string;
   email: string;
-  role: 'PI' | 'CRC' | 'Admin';
+  role: UserRole;
   roleLabel: string;
+  studyScope: string;
   status: 'Active' | 'Pending' | 'Disabled';
   lastLogin: string;
 };
@@ -1916,58 +1907,66 @@ type SystemField = {
   status: '启用' | '草稿' | '停用';
 };
 
-type PermissionKey = 'pi' | 'crc' | 'admin';
-
 type PermissionRow = {
   action: string;
-  pi: boolean;
-  crc: boolean;
-  admin: boolean;
+  values: Partial<Record<UserRole, boolean>>;
 };
 
 const systemAccounts: SystemAccount[] = [
-  { name: 'Dr. Victoria Chen', email: 'v.chen@linzight.com', role: 'PI', roleLabel: '研究医生 / PI', status: 'Active', lastLogin: '2026-04-28' },
-  { name: 'Alice Wang', email: 'a.wang@linzight.com', role: 'CRC', roleLabel: '研究助理 / CRC', status: 'Active', lastLogin: '2026-04-27' },
-  { name: 'Bob Smith', email: 'b.smith@linzight.com', role: 'Admin', roleLabel: '系统管理员', status: 'Active', lastLogin: '2026-04-28' },
-  { name: 'Dr. Li Wei', email: 'l.wei@linzight.com', role: 'PI', roleLabel: '研究医生 / PI', status: 'Active', lastLogin: '2026-04-26' },
-  { name: 'Zhang Min', email: 'm.zhang@linzight.com', role: 'CRC', roleLabel: '研究助理 / CRC', status: 'Pending', lastLogin: '2026-04-24' },
-  { name: 'Nina Zhao', email: 'n.zhao@linzight.com', role: 'CRC', roleLabel: '研究助理 / CRC', status: 'Active', lastLogin: '2026-04-28' },
-  { name: 'Qian Yu', email: 'q.yu@linzight.com', role: 'Admin', roleLabel: '系统管理员', status: 'Active', lastLogin: '2026-04-25' },
-  { name: 'Dr. Han Rui', email: 'r.han@linzight.com', role: 'PI', roleLabel: '研究医生 / PI', status: 'Disabled', lastLogin: '2026-04-18' }
+  { name: '系统管理员', email: 'admin@demo.linzight', role: 'LZ_ADMIN', roleLabel: 'LZ 系统管理员', studyScope: '全部 Study', status: 'Active', lastLogin: '2026-05-07' },
+  { name: '中央 CRC', email: 'lz-crc@demo.linzight', role: 'LZ_CRC', roleLabel: 'LZ CRC / 中央 CRC', studyScope: 'LGL-1111 / RWD-NMO-2026 / LZXK-01', status: 'Active', lastLogin: '2026-05-07' },
+  { name: 'CRF 管理员', email: 'crf-admin@demo.linzight', role: 'LZ_CRF_ADMIN', roleLabel: 'LZ CRF 管理员', studyScope: 'LGL-1111 / RWD-NMO-2026 / LZXK-01', status: 'Active', lastLogin: '2026-05-06' },
+  { name: '平台数据管理员', email: 'lz-dm@demo.linzight', role: 'LZ_DATA_MANAGER', roleLabel: 'LZ 数据管理员', studyScope: 'RWD-NMO-2026', status: 'Active', lastLogin: '2026-05-06' },
+  { name: '约翰·伦格', email: 'pi@demo.linzight', role: 'STUDY_PI', roleLabel: '研究 PI / 医生', studyScope: 'LGL-1111', status: 'Active', lastLogin: '2026-05-07' },
+  { name: '林清妍', email: 'crc@demo.linzight', role: 'STUDY_CRC', roleLabel: '研究 CRC', studyScope: 'LGL-1111', status: 'Active', lastLogin: '2026-05-07' },
+  { name: '顾明远', email: 'config@demo.linzight', role: 'STUDY_CONFIG_ADMIN', roleLabel: '研究配置管理员', studyScope: 'LGL-1111 / RWD-NMO-2026', status: 'Active', lastLogin: '2026-05-06' },
+  { name: '陈序', email: 'dm@demo.linzight', role: 'STUDY_DATA_MANAGER', roleLabel: '研究数据管理员', studyScope: 'LGL-1111', status: 'Active', lastLogin: '2026-05-06' },
+  { name: '平台审计员', email: 'auditor@demo.linzight', role: 'LZ_AUDITOR', roleLabel: 'LZ 平台审计员', studyScope: '授权 Study', status: 'Pending', lastLogin: '2026-05-05' },
+  { name: '肺癌 PI', email: 'lung-pi@demo.linzight', role: 'STUDY_PI', roleLabel: '研究 PI / 医生', studyScope: 'LZXK-01', status: 'Active', lastLogin: '2026-05-07' },
+  { name: '肺癌 CRC', email: 'lung-crc@demo.linzight', role: 'STUDY_CRC', roleLabel: '研究 CRC', studyScope: 'LZXK-01', status: 'Active', lastLogin: '2026-05-07' },
+  { name: '肺癌配置管理员', email: 'lung-config@demo.linzight', role: 'STUDY_CONFIG_ADMIN', roleLabel: '研究配置管理员', studyScope: 'LZXK-01', status: 'Active', lastLogin: '2026-05-07' },
+  { name: '肺癌数据管理员', email: 'lung-dm@demo.linzight', role: 'STUDY_DATA_MANAGER', roleLabel: '研究数据管理员', studyScope: 'LZXK-01', status: 'Active', lastLogin: '2026-05-07' }
 ];
 
-const systemFields: SystemField[] = [
-  { id: 'baseline_age', name: '年龄', type: 'Number', module: '基本信息', updatedAt: '2026-04-28', status: '启用' },
-  { id: 'baseline_sex', name: '性别', type: 'Dropdown', module: '基本信息', updatedAt: '2026-04-28', status: '启用' },
-  { id: 'followup_visit_date', name: '随访日期', type: 'Date', module: '多次随访', updatedAt: '2026-04-27', status: '启用' },
-  { id: 'primary_disease_type', name: '疾病类型', type: 'Dropdown', module: '基本信息', updatedAt: '2026-04-28', status: '启用' },
-  { id: 'specific_biomarker_value', name: '标志物结果', type: 'Text', module: '实验室结果', updatedAt: '2026-04-26', status: '草稿' },
-  { id: 'lab_test_result_file', name: '结果文件', type: 'File', module: '样本及检测', updatedAt: '2026-04-26', status: '启用' }
-];
+const systemFields: SystemField[] = systemCrfFields;
+const systemVisitPlans: StudyVisitPlanRecord[] = studyVisitPlans;
 
 const permissionRows: PermissionRow[] = [
-  { action: '查看患者列表 / View Patient List', pi: true, crc: false, admin: false },
-  { action: '查看单患者画像 / View Patient Profile', pi: true, crc: false, admin: false },
-  { action: '查看病程结果 / View Timeline', pi: true, crc: false, admin: false },
-  { action: '查看样本结果 / View Sample Results', pi: true, crc: false, admin: false },
-  { action: '导出数据权限 / Export Data', pi: true, crc: false, admin: false },
-  { action: '录入临床数据 / Enter Clinical Data', pi: false, crc: true, admin: false },
-  { action: '录入随访事件 / Enter Follow-up Events', pi: false, crc: true, admin: false },
-  { action: '录入样本采集信息 / Sample Collection', pi: false, crc: true, admin: false },
-  { action: '样本登记处理 / Sample Processing', pi: false, crc: true, admin: false },
-  { action: '样本送样时间 / Sample Shipping', pi: false, crc: true, admin: false },
-  { action: '登记检测项目 / Test Registration', pi: false, crc: true, admin: false },
-  { action: '登记结果文件 / Result File Registration', pi: false, crc: true, admin: false },
-  { action: '导入数据 / Import Data', pi: false, crc: true, admin: true },
-  { action: '账户管理 / Account Management', pi: false, crc: false, admin: true },
-  { action: '字段配置 / Field Configuration', pi: false, crc: false, admin: true },
-  { action: '权限策略管理 / Permission Policy', pi: false, crc: false, admin: true }
+  { action: '跨 Study 访问 / Cross-study scope', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_CRF_ADMIN: true, LZ_DATA_MANAGER: true, LZ_AUDITOR: true } },
+  { action: '新建研究 / Create Study', values: { LZ_ADMIN: true } },
+  { action: '研究成员管理 / Study Members', values: { LZ_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
+  { action: '患者查看 / View Patients', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_DATA_MANAGER: true, LZ_AUDITOR: true, STUDY_PI: true, STUDY_CRC: true, STUDY_DATA_MANAGER: true } },
+  { action: '患者与 CRF 录入 / Enter Patient & CRF Data', values: { LZ_ADMIN: true, LZ_CRC: true, STUDY_CRC: true } },
+  { action: 'Study CRF 配置 / Study CRF Config', values: { LZ_ADMIN: true, LZ_CRF_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
+  { action: '访视计划配置 / Study Visit Plan Config', values: { LZ_ADMIN: true, LZ_CRF_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
+  { action: 'CRF 版本发布 / Publish CRF Version', values: { LZ_ADMIN: true, LZ_CRF_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
+  { action: 'Query 与质控 / Query & QC', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_DATA_MANAGER: true, STUDY_DATA_MANAGER: true } },
+  { action: '数据冻结与锁定 / Freeze & Lock', values: { LZ_ADMIN: true, LZ_DATA_MANAGER: true, STUDY_DATA_MANAGER: true } },
+  { action: '导出与分析 / Export & Analytics', values: { LZ_ADMIN: true, LZ_DATA_MANAGER: true, STUDY_PI: true, STUDY_DATA_MANAGER: true } },
+  { action: '审计日志 / Audit Logs', values: { LZ_ADMIN: true, LZ_AUDITOR: true, LZ_DATA_MANAGER: true, STUDY_CONFIG_ADMIN: true, STUDY_DATA_MANAGER: true } }
 ];
 
-const roleTone: Record<SystemAccount['role'], string> = {
-  PI: 'info',
-  CRC: 'success',
-  Admin: 'admin'
+const permissionColumns: Array<{ key: UserRole; label: string }> = [
+  { key: 'LZ_ADMIN', label: 'LZ Admin' },
+  { key: 'LZ_CRC', label: 'LZ CRC' },
+  { key: 'LZ_CRF_ADMIN', label: 'CRF Admin' },
+  { key: 'LZ_DATA_MANAGER', label: 'LZ DM' },
+  { key: 'STUDY_PI', label: 'Study PI' },
+  { key: 'STUDY_CRC', label: 'Study CRC' },
+  { key: 'STUDY_CONFIG_ADMIN', label: 'Config Admin' },
+  { key: 'STUDY_DATA_MANAGER', label: 'Study DM' }
+];
+
+const roleTone: Record<UserRole, string> = {
+  LZ_ADMIN: 'admin',
+  LZ_CRC: 'success',
+  LZ_CRF_ADMIN: 'admin',
+  LZ_DATA_MANAGER: 'info',
+  LZ_AUDITOR: 'info',
+  STUDY_PI: 'info',
+  STUDY_CRC: 'success',
+  STUDY_CONFIG_ADMIN: 'admin',
+  STUDY_DATA_MANAGER: 'info'
 };
 
 const systemStatusTone: Record<SystemAccount['status'], 'success' | 'warning' | 'danger'> = {
@@ -1984,7 +1983,7 @@ export function SystemManagementPage() {
   const visibleAccounts = useMemo(() => {
     if (!normalizedQuery) return systemAccounts;
     return systemAccounts.filter((account) =>
-      [account.name, account.email, account.roleLabel, account.status].some((item) => item.toLowerCase().includes(normalizedQuery))
+      [account.name, account.email, account.role, account.roleLabel, account.studyScope, account.status].some((item) => item.toLowerCase().includes(normalizedQuery))
     );
   }, [normalizedQuery]);
 
@@ -1992,6 +1991,15 @@ export function SystemManagementPage() {
     if (!normalizedQuery) return systemFields;
     return systemFields.filter((field) =>
       [field.id, field.name, field.type, field.module, field.status].some((item) => item.toLowerCase().includes(normalizedQuery))
+    );
+  }, [normalizedQuery]);
+
+  const visibleVisitPlans = useMemo(() => {
+    if (!normalizedQuery) return systemVisitPlans;
+    return systemVisitPlans.filter((plan) =>
+      [plan.id, plan.studyId, plan.code, plan.name, plan.visitType, plan.status, plan.requiredForms.join('/'), plan.requiredSamples.join('/')].some((item) =>
+        item.toLowerCase().includes(normalizedQuery)
+      )
     );
   }, [normalizedQuery]);
 
@@ -2014,13 +2022,15 @@ export function SystemManagementPage() {
         <div className="system-management-title">
           <span>System Management</span>
           <h2>系统管理</h2>
-          <p>Manage accounts, roles, permission policies, and CRF fields. 管理账户、角色、权限策略和 CRF 字段配置。</p>
+          <p>Manage Study-scoped accounts, global roles, permission policies, and CRF versions. 管理 Study 成员、平台角色、权限策略和 CRF 版本。</p>
         </div>
         <label className="system-study-select">
           <span>Study</span>
-          <select defaultValue="Nexus1111">
-            <option>Nexus1111</option>
+          <select defaultValue="LGL-1111">
             <option>LGL-1111</option>
+            <option>RWD-NMO-2026</option>
+            <option>LZXK-01</option>
+            <option>全部 Study</option>
           </select>
         </label>
       </section>
@@ -2042,7 +2052,7 @@ export function SystemManagementPage() {
                   setAccountPage(1);
                   setFieldPage(1);
                 }}
-                placeholder="Search users, roles, CRF fields, or ask LinZight AI..."
+                placeholder="Search users, roles, CRF fields, visit plans, or ask LinZight AI..."
               />
               <Icon name="microphone" />
             </label>
@@ -2052,26 +2062,26 @@ export function SystemManagementPage() {
         <div className="system-summary-grid">
           <div>
             <span>Total Accounts</span>
-            <strong>60</strong>
-            <small>↑ 12.6%</small>
+            <strong>{systemAccounts.length}</strong>
+            <small>Demo</small>
           </div>
           <div>
-            <span>PIs</span>
-            <strong>12</strong>
+            <span>Global Roles</span>
+            <strong>{systemAccounts.filter((account) => account.role.startsWith('LZ_')).length}</strong>
           </div>
           <div>
-            <span>CRCs</span>
-            <strong>45</strong>
+            <span>Study Roles</span>
+            <strong>{systemAccounts.filter((account) => account.role.startsWith('STUDY_')).length}</strong>
           </div>
           <div>
-            <span>Admins</span>
+            <span>Studies</span>
             <strong>3</strong>
           </div>
         </div>
         <div className="system-global-actions">
           <Icon name="alerts" />
           <span>Global Actions</span>
-          <strong>账户创建、权限策略变更均进入审计日志。</strong>
+          <strong>Study 成员、CRF 版本、导出和权限策略变更均进入审计日志。</strong>
         </div>
       </section>
 
@@ -2091,6 +2101,7 @@ export function SystemManagementPage() {
                     <th>Name</th>
                     <th>Email</th>
                     <th>Assigned Role</th>
+                    <th>Study Scope</th>
                     <th>Status</th>
                     <th>Last Login</th>
                     <th>Actions</th>
@@ -2102,6 +2113,7 @@ export function SystemManagementPage() {
                       <td>{account.name}</td>
                       <td>{account.email}</td>
                       <td><span className={`system-role-pill system-role-pill--${roleTone[account.role]}`}>{account.role} | {account.roleLabel}</span></td>
+                      <td>{account.studyScope}</td>
                       <td><span className={`status-pill status-pill--${systemStatusTone[account.status]}`}>{account.status}</span></td>
                       <td>{account.lastLogin}</td>
                       <td>
@@ -2122,7 +2134,7 @@ export function SystemManagementPage() {
             <header className="module-card__header">
               <div>
                 <h2>Field & CRF Configuration | CRF 与字段配置</h2>
-                <span>维护结构化 CRF 字段、类型和所属模块</span>
+                <span>维护每个 Study 独立 CRF 字段、类型、版本和所属模块</span>
               </div>
               <button className="module-link-button module-link-button--primary" type="button"><Icon name="filePlus" />新增字段</button>
             </header>
@@ -2161,6 +2173,46 @@ export function SystemManagementPage() {
             </div>
             <ModuleTableFooter page={safeFieldPage} total={visibleFields.length} pageSize={systemFieldPageSize} onPageChange={setFieldPage} />
           </section>
+
+          <section className="module-card">
+            <header className="module-card__header">
+              <div>
+                <h2>Visit Plan Configuration | 访视计划配置</h2>
+                <span>按 Study 配置访视时间窗、必填 CRF 表单和样本要求</span>
+              </div>
+              <button className="module-link-button module-link-button--primary" type="button"><Icon name="filePlus" />新增访视</button>
+            </header>
+            <div className="module-table-wrap">
+              <table className="module-table system-visit-plan-table">
+                <thead>
+                  <tr>
+                    <th>Study</th>
+                    <th>Code</th>
+                    <th>Visit Plan</th>
+                    <th>Day</th>
+                    <th>Window</th>
+                    <th>CRF Forms</th>
+                    <th>Samples</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleVisitPlans.map((plan) => (
+                    <tr key={plan.id}>
+                      <td>{plan.studyId}</td>
+                      <td>{plan.code}</td>
+                      <td>{plan.name}</td>
+                      <td>D{plan.dayOffset}</td>
+                      <td>-{plan.windowBeforeDays} / +{plan.windowAfterDays} 天</td>
+                      <td>{plan.requiredForms.join(', ')}</td>
+                      <td>{plan.requiredSamples.join('、') || '-'}</td>
+                      <td><span className={plan.status === 'active' ? 'status-pill status-pill--success' : plan.status === 'draft' ? 'status-pill status-pill--warning' : 'status-pill status-pill--danger'}>{plan.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
 
         <div className="module-stack">
@@ -2168,27 +2220,27 @@ export function SystemManagementPage() {
             <header className="module-card__header">
               <div>
                 <h2>Permission Strategy Matrix | 权限策略矩阵</h2>
-                <span>按角色定义患者、样本、组学、导入与系统配置权限</span>
+                <span>平台级角色跨 Study；研究级角色只在所属 Study 内生效</span>
               </div>
             </header>
             <div className="module-table-wrap system-permission-wrap">
               <table className="module-table system-permission-table">
                 <thead>
                   <tr>
-                    <th>Role</th>
-                    <th>Research Doctor / PI<br />研究医生 / PI</th>
-                    <th>CRC / Research Assistant<br />CRC / 研究助理</th>
-                    <th>System Administrator<br />系统管理员</th>
+                    <th>Permission</th>
+                    {permissionColumns.map((column) => (
+                      <th key={column.key}>{column.label}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {permissionRows.map((row) => (
                     <tr key={row.action}>
                       <td>{row.action}</td>
-                      {(['pi', 'crc', 'admin'] as PermissionKey[]).map((key) => (
-                        <td key={key}>
+                      {permissionColumns.map((column) => (
+                        <td key={column.key}>
                           <label className="system-permission-check">
-                            <input type="checkbox" checked={row[key]} readOnly aria-label={`${row.action}-${key}`} />
+                            <input type="checkbox" checked={Boolean(row.values[column.key])} readOnly aria-label={`${row.action}-${column.key}`} />
                             <span />
                           </label>
                         </td>

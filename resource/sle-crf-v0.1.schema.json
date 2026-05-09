@@ -1,0 +1,795 @@
+{
+  "version": "V0.1",
+  "name": "SLE 临床数据记录表 CRF",
+  "source": "resource/SLE临床数据记录表.csv",
+  "releasedAt": "2026-05-07",
+  "fieldCount": 89,
+  "notes": [
+    "Derived from resource/SLE临床数据记录表.csv row 1 section headers and row 2 field headers.",
+    "The source template contains duplicate field name 免疫制剂2; the second occurrence is normalized to 免疫制剂2（第2项） for JSON payload safety."
+  ],
+  "sections": [
+    {
+      "id": "basic_info",
+      "title": "基本信息",
+      "fields": [
+        {
+          "id": "sle_v01_001",
+          "name": "姓名",
+          "sourceName": "姓名",
+          "sourceColumn": 1,
+          "type": "text"
+        },
+        {
+          "id": "sle_v01_002",
+          "name": "性别",
+          "sourceName": "性别",
+          "sourceColumn": 2,
+          "type": "select"
+        },
+        {
+          "id": "sle_v01_003",
+          "name": "年龄",
+          "sourceName": "年龄",
+          "sourceColumn": 3,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_004",
+          "name": "身高（cm）",
+          "sourceName": "身高（cm）",
+          "sourceColumn": 4,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_005",
+          "name": "体重（Kg）",
+          "sourceName": "体重（Kg）",
+          "sourceColumn": 5,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_006",
+          "name": "病程（发病-使用CD20时）",
+          "sourceName": "病程（发病-使用CD20时）",
+          "sourceColumn": 6,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_007",
+          "name": "住院号",
+          "sourceName": "住院号",
+          "sourceColumn": 7,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "disease_activity",
+      "title": "目前病情评估",
+      "fields": [
+        {
+          "id": "sle_v01_008",
+          "name": "出院诊断",
+          "sourceName": "出院诊断",
+          "sourceColumn": 8,
+          "type": "select"
+        },
+        {
+          "id": "sle_v01_009",
+          "name": "受累脏器",
+          "sourceName": "受累脏器",
+          "sourceColumn": 9,
+          "type": "select"
+        },
+        {
+          "id": "sle_v01_010",
+          "name": "SLEDAI评分",
+          "sourceName": "SLEDAI评分",
+          "sourceColumn": 10,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_011",
+          "name": "RSLEDAI",
+          "sourceName": "RSLEDAI",
+          "sourceColumn": 11,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_012",
+          "name": "LN病理分型（如有）",
+          "sourceName": "LN病理分型（如有）",
+          "sourceColumn": 12,
+          "type": "select"
+        },
+        {
+          "id": "sle_v01_013",
+          "name": "AI",
+          "sourceName": "AI",
+          "sourceColumn": 13,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_014",
+          "name": "CI",
+          "sourceName": "CI",
+          "sourceColumn": 14,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_015",
+          "name": "PGA评分",
+          "sourceName": "PGA评分",
+          "sourceColumn": 15,
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "id": "medication",
+      "title": "目前用药情况",
+      "fields": [
+        {
+          "id": "sle_v01_016",
+          "name": "MP mg/d",
+          "sourceName": "MP mg/d",
+          "sourceColumn": 16,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_017",
+          "name": "免疫抑制剂1",
+          "sourceName": "免疫抑制剂1",
+          "sourceColumn": 17,
+          "type": "text"
+        },
+        {
+          "id": "sle_v01_018",
+          "name": "免疫制剂2",
+          "sourceName": "免疫制剂2",
+          "sourceColumn": 18,
+          "type": "text"
+        },
+        {
+          "id": "sle_v01_019",
+          "name": "免疫制剂2（第2项）",
+          "sourceName": "免疫制剂2",
+          "sourceColumn": 19,
+          "type": "text"
+        },
+        {
+          "id": "sle_v01_020",
+          "name": "其他合并用药",
+          "sourceName": "其他合并用药",
+          "sourceColumn": 20,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "physical_exam",
+      "title": "体格检查",
+      "fields": [
+        {
+          "id": "sle_v01_021",
+          "name": "体温",
+          "sourceName": "体温",
+          "sourceColumn": 21,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_022",
+          "name": "神经系统症状",
+          "sourceName": "神经系统症状",
+          "sourceColumn": 22,
+          "type": "boolean"
+        },
+        {
+          "id": "sle_v01_023",
+          "name": "关节肿胀",
+          "sourceName": "关节肿胀",
+          "sourceColumn": 23,
+          "type": "boolean"
+        },
+        {
+          "id": "sle_v01_024",
+          "name": "关节疼痛",
+          "sourceName": "关节疼痛",
+          "sourceColumn": 24,
+          "type": "boolean"
+        },
+        {
+          "id": "sle_v01_025",
+          "name": "皮疹",
+          "sourceName": "皮疹",
+          "sourceColumn": 25,
+          "type": "boolean"
+        },
+        {
+          "id": "sle_v01_026",
+          "name": "口腔溃疡",
+          "sourceName": "口腔溃疡",
+          "sourceColumn": 26,
+          "type": "boolean"
+        },
+        {
+          "id": "sle_v01_027",
+          "name": "脱发",
+          "sourceName": "脱发",
+          "sourceColumn": 27,
+          "type": "boolean"
+        },
+        {
+          "id": "sle_v01_028",
+          "name": "其他",
+          "sourceName": "其他",
+          "sourceColumn": 28,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "routine_biochemistry",
+      "title": "常规生化",
+      "fields": [
+        {
+          "id": "sle_v01_029",
+          "name": "WBC",
+          "sourceName": "WBC",
+          "sourceColumn": 29,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_030",
+          "name": "N绝对值10^9/L",
+          "sourceName": "N绝对值10^9/L",
+          "sourceColumn": 30,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_031",
+          "name": "淋巴绝对值",
+          "sourceName": "淋巴绝对值",
+          "sourceColumn": 31,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_032",
+          "name": "单核绝对值",
+          "sourceName": "单核绝对值",
+          "sourceColumn": 32,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_033",
+          "name": "HB(g/L)",
+          "sourceName": "HB(g/L)",
+          "sourceColumn": 33,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_034",
+          "name": "PLT(^10*9/L)",
+          "sourceName": "PLT(^10*9/L)",
+          "sourceColumn": 34,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_035",
+          "name": "TB（g/L）",
+          "sourceName": "TB（g/L）",
+          "sourceColumn": 35,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_036",
+          "name": "ALB(g/l)",
+          "sourceName": "ALB(g/l)",
+          "sourceColumn": 36,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_037",
+          "name": "前白蛋白（mg/L）",
+          "sourceName": "前白蛋白（mg/L）",
+          "sourceColumn": 37,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_038",
+          "name": "ALT(U/L)",
+          "sourceName": "ALT(U/L)",
+          "sourceColumn": 38,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_039",
+          "name": "AST(U/L)",
+          "sourceName": "AST(U/L)",
+          "sourceColumn": 39,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_040",
+          "name": "LDH(U/L)",
+          "sourceName": "LDH(U/L)",
+          "sourceColumn": 40,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_041",
+          "name": "AKP U/L",
+          "sourceName": "AKP U/L",
+          "sourceColumn": 41,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_042",
+          "name": "总胆红素 umol/L",
+          "sourceName": "总胆红素 umol/L",
+          "sourceColumn": 42,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_043",
+          "name": "EPI-GFR（mmol/l*min）",
+          "sourceName": "EPI-GFR（mmol/l*min）",
+          "sourceColumn": 43,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_044",
+          "name": "Cr（ummol/l)",
+          "sourceName": "Cr（ummol/l)",
+          "sourceColumn": 44,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_045",
+          "name": "BUN(mg/l)",
+          "sourceName": "BUN(mg/l)",
+          "sourceColumn": 45,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_046",
+          "name": "UA",
+          "sourceName": "UA",
+          "sourceColumn": 46,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_047",
+          "name": "甘油三酯",
+          "sourceName": "甘油三酯",
+          "sourceColumn": 47,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_048",
+          "name": "胆固醇",
+          "sourceName": "胆固醇",
+          "sourceColumn": 48,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_049",
+          "name": "LDL",
+          "sourceName": "LDL",
+          "sourceColumn": 49,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_050",
+          "name": "HDL",
+          "sourceName": "HDL",
+          "sourceColumn": 50,
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "id": "urine_protein",
+      "title": "尿蛋白",
+      "fields": [
+        {
+          "id": "sle_v01_051",
+          "name": "24小时尿蛋白 g/24h",
+          "sourceName": "24小时尿蛋白 g/24h",
+          "sourceColumn": 51,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_052",
+          "name": "尿白细胞/Hp",
+          "sourceName": "尿白细胞/Hp",
+          "sourceColumn": 52,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_053",
+          "name": "尿红细胞/Hp",
+          "sourceName": "尿红细胞/Hp",
+          "sourceColumn": 53,
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "id": "immunoglobulin_complement",
+      "title": "免疫球蛋白及补体",
+      "fields": [
+        {
+          "id": "sle_v01_054",
+          "name": "CRP(mg/l)",
+          "sourceName": "CRP(mg/l)",
+          "sourceColumn": 54,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_055",
+          "name": "ESR(mm)",
+          "sourceName": "ESR(mm)",
+          "sourceColumn": 55,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_056",
+          "name": "总补体CH50 （U/mL)",
+          "sourceName": "总补体CH50 （U/mL)",
+          "sourceColumn": 56,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_057",
+          "name": "C1抑制剂 (g/l)",
+          "sourceName": "C1抑制剂 (g/l)",
+          "sourceColumn": 57,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_058",
+          "name": "C3(g/l)",
+          "sourceName": "C3(g/l)",
+          "sourceColumn": 58,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_059",
+          "name": "C4(g/l)",
+          "sourceName": "C4(g/l)",
+          "sourceColumn": 59,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_060",
+          "name": "IgG(g/l)",
+          "sourceName": "IgG(g/l)",
+          "sourceColumn": 60,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_061",
+          "name": "IgA(g/l)",
+          "sourceName": "IgA(g/l)",
+          "sourceColumn": 61,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_062",
+          "name": "IgM(g/l)",
+          "sourceName": "IgM(g/l)",
+          "sourceColumn": 62,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_063",
+          "name": "IgG4",
+          "sourceName": "IgG4",
+          "sourceColumn": 63,
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "id": "autoantibody",
+      "title": "自身抗体",
+      "fields": [
+        {
+          "id": "sle_v01_064",
+          "name": "ANA1:80为阳性（1-yes，0-none）",
+          "sourceName": "ANA1:80为阳性（1-yes，0-none）",
+          "sourceColumn": 64,
+          "type": "boolean"
+        },
+        {
+          "id": "sle_v01_065",
+          "name": "滴度",
+          "sourceName": "滴度",
+          "sourceColumn": 65,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_066",
+          "name": "核型",
+          "sourceName": "核型",
+          "sourceColumn": 66,
+          "type": "select"
+        },
+        {
+          "id": "sle_v01_067",
+          "name": "ENA1",
+          "sourceName": "ENA1",
+          "sourceColumn": 67,
+          "type": "text"
+        },
+        {
+          "id": "sle_v01_068",
+          "name": "ENA2",
+          "sourceName": "ENA2",
+          "sourceColumn": 68,
+          "type": "text"
+        },
+        {
+          "id": "sle_v01_069",
+          "name": "ENA3",
+          "sourceName": "ENA3",
+          "sourceColumn": 69,
+          "type": "text"
+        },
+        {
+          "id": "sle_v01_070",
+          "name": "ds-DNA（ELISA）",
+          "sourceName": "ds-DNA（ELISA）",
+          "sourceColumn": 70,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_071",
+          "name": "ds-DNA(放免法iu/ml)",
+          "sourceName": "ds-DNA(放免法iu/ml)",
+          "sourceColumn": 71,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_072",
+          "name": "其他阳性抗体",
+          "sourceName": "其他阳性抗体",
+          "sourceColumn": 72,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "lymphocyte_activity",
+      "title": "淋巴细胞计数及活性检测",
+      "fields": [
+        {
+          "id": "sle_v01_073",
+          "name": "淋巴细胞绝对值 *10^9",
+          "sourceName": "淋巴细胞绝对值 *10^9",
+          "sourceColumn": 73,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_074",
+          "name": "B淋巴细胞绝对值",
+          "sourceName": "B淋巴细胞绝对值",
+          "sourceColumn": 74,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_075",
+          "name": "T淋巴细胞绝对值",
+          "sourceName": "T淋巴细胞绝对值",
+          "sourceColumn": 75,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_076",
+          "name": "Th淋巴细胞绝对值",
+          "sourceName": "Th淋巴细胞绝对值",
+          "sourceColumn": 76,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_077",
+          "name": "Ts淋巴细胞绝对值",
+          "sourceName": "Ts淋巴细胞绝对值",
+          "sourceColumn": 77,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_078",
+          "name": "自然杀伤细胞绝对值",
+          "sourceName": "自然杀伤细胞绝对值",
+          "sourceColumn": 78,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_079",
+          "name": "CD20细胞百分比%",
+          "sourceName": "CD20细胞百分比%",
+          "sourceColumn": 79,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_080",
+          "name": "外周血浆细胞检测%",
+          "sourceName": "外周血浆细胞检测%",
+          "sourceColumn": 80,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_081",
+          "name": "CD3+HLA-DR+/CD3+ %",
+          "sourceName": "CD3+HLA-DR+/CD3+ %",
+          "sourceColumn": 81,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_082",
+          "name": "CD8+HLA-DR+/CD8 %",
+          "sourceName": "CD8+HLA-DR+/CD8 %",
+          "sourceColumn": 82,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_083",
+          "name": "CD8+CD38/CD8+ %",
+          "sourceName": "CD8+CD38/CD8+ %",
+          "sourceColumn": 83,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_084",
+          "name": "CD4+HLA-DR+/CD4+ %",
+          "sourceName": "CD4+HLA-DR+/CD4+ %",
+          "sourceColumn": 84,
+          "type": "number"
+        },
+        {
+          "id": "sle_v01_085",
+          "name": "CD4+CD38+/CD4+ %",
+          "sourceName": "CD4+CD38+/CD4+ %",
+          "sourceColumn": 85,
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "id": "special_exam",
+      "title": "特殊检查",
+      "fields": [
+        {
+          "id": "sle_v01_086",
+          "name": "胸膜炎",
+          "sourceName": "胸膜炎",
+          "sourceColumn": 86,
+          "type": "boolean"
+        },
+        {
+          "id": "sle_v01_087",
+          "name": "心包炎",
+          "sourceName": "心包炎",
+          "sourceColumn": 87,
+          "type": "boolean"
+        },
+        {
+          "id": "sle_v01_088",
+          "name": "肺动脉高压",
+          "sourceName": "肺动脉高压",
+          "sourceColumn": 88,
+          "type": "boolean"
+        },
+        {
+          "id": "sle_v01_089",
+          "name": "其他异常结果",
+          "sourceName": "其他异常结果",
+          "sourceColumn": 89,
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  "exampleRows": [
+    {
+      "row": 1,
+      "values": {
+        "姓名": "XX",
+        "性别": "女",
+        "年龄": "33",
+        "身高（cm）": "160",
+        "体重（Kg）": "50",
+        "病程（发病-使用CD20时）": "38",
+        "受累脏器": "皮肤、肾脏",
+        "SLEDAI评分": "10",
+        "RSLEDAI": "4",
+        "LN病理分型（如有）": "IV",
+        "AI": "8",
+        "CI": "2",
+        "PGA评分": "1.8",
+        "MP mg/d": "240",
+        "免疫抑制剂1": "CD20",
+        "免疫制剂2": "MMF",
+        "其他合并用药": "IVIG",
+        "WBC": "10.73",
+        "N绝对值10^9/L": "8.73",
+        "淋巴绝对值": "0.82",
+        "单核绝对值": "1.14",
+        "HB(g/L)": "111",
+        "PLT(^10*9/L)": "400",
+        "TB（g/L）": "55",
+        "ALB(g/l)": "25",
+        "前白蛋白（mg/L）": "180",
+        "ALT(U/L)": "162",
+        "AST(U/L)": "89",
+        "LDH(U/L)": "287",
+        "AKP U/L": "35",
+        "总胆红素 umol/L": "6",
+        "EPI-GFR（mmol/l*min）": "123",
+        "Cr（ummol/l)": "50",
+        "BUN(mg/l)": "3.2",
+        "UA": "246",
+        "甘油三酯": "3.98",
+        "胆固醇": "5.03",
+        "LDL": "2.45",
+        "HDL": "0.86",
+        "24小时尿蛋白 g/24h": "0.8",
+        "尿白细胞/Hp": "0",
+        "尿红细胞/Hp": "0",
+        "CRP(mg/l)": "4",
+        "ESR(mm)": "50",
+        "总补体CH50 （U/mL)": "25.4",
+        "C1抑制剂 (g/l)": "0.26",
+        "C3(g/l)": "0.589",
+        "C4(g/l)": "0.071",
+        "IgG(g/l)": "11.2",
+        "IgA(g/l)": "3.13",
+        "IgM(g/l)": "1.01",
+        "IgG4": "0.266",
+        "ANA1:80为阳性（1-yes，0-none）": "1",
+        "滴度": "320",
+        "核型": "均质型",
+        "ENA1": "Sm",
+        "ENA2": "Ro-52",
+        "ENA3": "0",
+        "ds-DNA（ELISA）": "230",
+        "ds-DNA(放免法iu/ml)": "87",
+        "淋巴细胞绝对值 *10^9": "0.93",
+        "B淋巴细胞绝对值": "67.9",
+        "T淋巴细胞绝对值": "794",
+        "Th淋巴细胞绝对值": "386",
+        "Ts淋巴细胞绝对值": "396",
+        "自然杀伤细胞绝对值": "50",
+        "CD20细胞百分比%": "21",
+        "外周血浆细胞检测%": "2.3",
+        "CD3+HLA-DR+/CD3+ %": "14.2",
+        "CD8+HLA-DR+/CD8 %": "18.8",
+        "CD8+CD38/CD8+ %": "55.9",
+        "CD4+HLA-DR+/CD4+ %": "10",
+        "CD4+CD38+/CD4+ %": "46.4"
+      }
+    },
+    {
+      "row": 2,
+      "values": {
+        "姓名": "XX",
+        "性别": "女",
+        "年龄": "33",
+        "身高（cm）": "160",
+        "体重（Kg）": "52",
+        "受累脏器": "皮肤、肾脏",
+        "SLEDAI评分": "2",
+        "RSLEDAI": "0",
+        "LN病理分型（如有）": "-",
+        "AI": "-",
+        "CI": "-",
+        "PGA评分": "0.2",
+        "MP mg/d": "10",
+        "免疫抑制剂1": "无"
+      }
+    }
+  ]
+}

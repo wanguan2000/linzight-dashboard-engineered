@@ -7,6 +7,7 @@ resource/clinical-patient-journey-nextjs/node_modules/
 dist/
 build/
 out/
+exports/json/
 .vite/
 .cache/
 .turbo/

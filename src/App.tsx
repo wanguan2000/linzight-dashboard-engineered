@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { LoginPage } from './components/LoginPage';
 import {
@@ -12,7 +12,7 @@ import {
 import { PatientCohortPage } from './components/PatientCohortPage';
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
-import type { AuthenticatedUser } from './data/auth';
+import { authStorageKey, normalizeAuthenticatedUser, type AuthenticatedUser } from './data/auth';
 import { navItems } from './data/dashboard';
 import type { PatientRecord } from './data/patientCohort';
 import { useI18n } from './i18n/I18nProvider';
@@ -33,8 +33,6 @@ const moduleSlugMap: Record<string, string> = {
   数据分析: 'data-analysis',
   系统管理: 'system-management'
 };
-
-const authStorageKey = 'linzight-demo-user';
 
 function getNavIndexByLabel(label?: string | null) {
   if (!label) return 0;
@@ -73,7 +71,13 @@ function getInitialUser(): AuthenticatedUser | null {
   if (!rawUser) return null;
 
   try {
-    return JSON.parse(rawUser) as AuthenticatedUser;
+    const user = normalizeAuthenticatedUser(JSON.parse(rawUser));
+    if (user) {
+      window.localStorage.setItem(authStorageKey, JSON.stringify(user));
+      return user;
+    }
+    window.localStorage.removeItem(authStorageKey);
+    return null;
   } catch {
     window.localStorage.removeItem(authStorageKey);
     return null;
@@ -99,7 +103,7 @@ function getTopbarCopy(activeModule: string) {
     },
     患者队列管理: {
       title: '患者队列管理',
-      subtitle: '管理和审核 LGL-1111 研究患者队列。',
+      subtitle: '按 Study 权限管理和审核研究患者队列。',
       aiPlaceholder: '搜索患者、住院号、疾病类型，或询问 LinZight AI...'
     },
     知情同意: {
@@ -109,7 +113,7 @@ function getTopbarCopy(activeModule: string) {
     },
     临床数据采集: {
       title: '临床数据采集',
-      subtitle: '采集和审核 LGL-1111 研究结构化临床数据。',
+      subtitle: '采集和审核当前授权 Study 的结构化临床数据。',
       aiPlaceholder: '搜索患者、住院号、疾病类型，或询问 LinZight AI...'
     },
     样本及检测: {
@@ -137,13 +141,29 @@ function getTopbarCopy(activeModule: string) {
   return copy[activeModule] ?? copy.首页工作台;
 }
 
+function canAccessModule(user: AuthenticatedUser | null, label: string) {
+  if (!user || user.role === 'LZ_ADMIN') return true;
+  if (label === '系统管理') return ['LZ_CRF_ADMIN', 'STUDY_CONFIG_ADMIN', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_DATA_MANAGER'].includes(user.role);
+  if (label === '数据分析') return ['LZ_CRC', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_PI', 'STUDY_DATA_MANAGER'].includes(user.role);
+  if (label === '临床数据采集') return !['LZ_AUDITOR'].includes(user.role);
+  if (label === '样本及检测') return !['LZ_CRF_ADMIN', 'LZ_AUDITOR', 'STUDY_CONFIG_ADMIN'].includes(user.role);
+  if (label === '知情同意') return !['LZ_CRF_ADMIN', 'LZ_AUDITOR', 'STUDY_CONFIG_ADMIN'].includes(user.role);
+  return true;
+}
+
 export default function App() {
   useI18n();
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(getInitialUser);
   const [activeNavIndex, setActiveNavIndex] = useState(getInitialNavIndex);
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
+  const visibleNavItems = useMemo(() => navItems.filter((item) => canAccessModule(currentUser, item.label)), [currentUser]);
   const activeModule = navItems[activeNavIndex]?.label ?? '首页工作台';
+  const visibleActiveIndex = Math.max(0, visibleNavItems.findIndex((item) => item.label === activeModule));
   const topbarCopy = getTopbarCopy(activeModule);
+  const topbarTitle =
+    activeModule === '首页工作台' && currentUser
+      ? `欢迎回来，${currentUser.name}`
+      : topbarCopy.title;
 
   function setActiveModule(label: string) {
     const index = navItems.findIndex((item) => item.label === label);
@@ -153,6 +173,11 @@ export default function App() {
   useEffect(() => {
     syncModuleRoute(activeModule);
   }, [activeModule]);
+
+  useEffect(() => {
+    if (!currentUser || canAccessModule(currentUser, activeModule)) return;
+    setActiveModule(visibleNavItems[0]?.label ?? '首页工作台');
+  }, [activeModule, currentUser, visibleNavItems]);
 
   function openPatientJourney(patient: PatientRecord) {
     setSelectedPatient(patient);
@@ -187,9 +212,11 @@ export default function App() {
       return <PatientCohortPage onCreatePatient={createPatient} onEditPatient={openClinicalData} onViewPatient={openPatientJourney} />;
     }
     if (activeModule === '知情同意') return <ConsentManagementPage />;
-    if (activeModule === '临床数据采集') return <ClinicalDataCapturePage selectedPatient={selectedPatient} onOpenPatientJourney={openPatientJourney} />;
+    if (activeModule === '临床数据采集') {
+      return <ClinicalDataCapturePage selectedPatient={selectedPatient} onOpenPatientJourney={openPatientJourney} onPatientChange={setSelectedPatient} />;
+    }
     if (activeModule === '样本及检测') return <SampleTestingPage />;
-    if (activeModule === '患者旅程') return <PatientJourneyPage selectedPatient={selectedPatient} />;
+    if (activeModule === '患者旅程') return <PatientJourneyPage selectedPatient={selectedPatient} onPatientChange={setSelectedPatient} />;
     if (activeModule === '数据分析') return <ReportsPage />;
     if (activeModule === '系统管理') return <SystemManagementPage />;
     return <Dashboard selectedModule={activeModule === '首页工作台' ? undefined : activeModule} selectedPatient={selectedPatient} />;
@@ -201,12 +228,17 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar activeIndex={activeNavIndex} onSelect={setActiveNavIndex} currentUser={currentUser} />
+      <Sidebar
+        activeIndex={visibleActiveIndex}
+        items={visibleNavItems}
+        onSelect={(index) => setActiveModule(visibleNavItems[index]?.label ?? '首页工作台')}
+        currentUser={currentUser}
+      />
       <main className="main-panel">
         <Topbar
           aiPlaceholder={topbarCopy.aiPlaceholder}
           showAiPrompts={topbarCopy.showAiPrompts}
-          title={topbarCopy.title}
+          title={topbarTitle}
           subtitle={topbarCopy.subtitle}
           currentUser={currentUser}
           onLogout={handleLogout}

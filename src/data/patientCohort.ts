@@ -1,5 +1,7 @@
-export type DiseaseType = 'NPSLE' | 'Non-NPSLE' | 'MS' | 'NMOSD' | 'HC';
-export type SampleType = '血液' | 'CSF' | '肾';
+import { clinicalFields, crfFieldDefaults, crfTemplateVersion } from './crfTemplate';
+
+export type DiseaseType = 'NPSLE' | 'Non-NPSLE' | 'MS' | 'NMOSD' | 'HC' | 'NSCLC' | 'LUAD' | 'LUSC' | 'EGFR-TKI耐药' | 'ALK耐药';
+export type SampleType = '血液' | 'CSF' | '肾' | '组织' | '胸水';
 export type OmicsStatus = '样本采集' | '进行中' | '完成';
 
 export interface SampleCollection {
@@ -9,7 +11,7 @@ export interface SampleCollection {
 
 export interface PatientRecord {
   id?: string;
-  studyId: 'LGL-1111';
+  studyId: string;
   name: string;
   hospitalNo: string;
   sex: '男' | '女';
@@ -20,119 +22,317 @@ export interface PatientRecord {
   omicsStatus: OmicsStatus;
   note: string;
   clinicalData: Record<string, string | number>;
+  clinicalDataVersion?: string;
+  clinicalDataFormat?: 'jsonb' | 'json' | 'legacy';
 }
 
-export const clinicalFields = [
-  '患者编号',
-  '性别',
-  '年龄',
-  '身高（cm）',
-  '体重（Kg）',
-  '病程（发病-使用CD20时）',
-  '住院号',
-  '出院诊断',
-  '受累脏器',
-  'SLEDAI评分',
-  'RSLEDAI',
-  'LN病理分型（如有）',
-  'AI',
-  'CI',
-  'PGA评分',
-  'MP mg/d',
-  '免疫抑制剂1',
-  '免疫制剂2',
-  '其他合并用药',
-  '体温',
-  '神经系统症状',
-  '关节肿胀',
-  '关节疼痛',
-  '皮疹',
-  '口腔溃疡',
-  '脱发',
-  '其他',
-  'WBC',
-  'N绝对值10^9/L',
-  '淋巴绝对值',
-  '单核绝对值',
-  'HB(g/L)',
-  'PLT(^10*9/L)',
-  'TB（g/L）',
-  'ALB(g/l)',
-  'ALT(U/L)',
-  'AST(U/L)',
-  'LDH(U/L)',
-  'AKP U/L',
-  '总胆红素 umol/L',
-  'EPI-GFR（mmol/l*min）',
-  'Cr（ummol/l)',
-  'BUN(mg/l)',
-  'UA',
-  '甘油三酯',
-  '胆固醇',
-  '24小时尿蛋白 g/24h',
-  '尿白细胞/Hp',
-  '尿红细胞/Hp',
-  'CRP(mg/l)',
-  'ESR(mm)',
-  '总补体CH50 （U/mL)',
-  'C1抑制剂 (g/l)',
-  'C3(g/l)',
-  'C4(g/l)',
-  'IgG(g/l)',
-  'IgA(g/l)',
-  'IgM(g/l)',
-  'ANA1:80为阳性（1-yes，0-none）',
-  '滴度',
-  '核型',
-  'ENA1',
-  'ENA2',
-  'ENA3',
-  'ds-DNA（ELISA）',
-  'ds-DNA(放免法iu/ml)',
-  '其他阳性抗体',
-  '淋巴细胞绝对值 *10^9',
-  'B淋巴细胞绝对值',
-  'T淋巴细胞绝对值',
-  'Th淋巴细胞绝对值',
-  'Ts淋巴细胞绝对值',
-  '自然杀伤细胞绝对值',
-  'CD20细胞百分比%',
-  '外周血浆细胞检测%',
-  '胸膜炎',
-  '心包炎',
-  '肺动脉高压',
-  '其他异常结果'
-];
+export { clinicalFields } from './crfTemplate';
 
-function makeClinicalData(completeness: number, seed: Record<string, string | number>) {
+export const diseases: DiseaseType[] = ['NPSLE', 'Non-NPSLE', 'MS', 'NMOSD', 'HC'];
+export const lungResistanceDiseases: DiseaseType[] = ['NSCLC', 'LUAD', 'LUSC', 'EGFR-TKI耐药', 'ALK耐药'];
+export const lzxkStudyId = 'LZXK-01';
+
+const patientPrefixes = ['LQH', 'WYM', 'ZXR', 'CJY', 'LYT', 'HQN', 'QML', 'SYF', 'ZYW', 'GCH'];
+
+const medicationByDisease: Record<DiseaseType, string[]> = {
+  NPSLE: ['CD20', 'MMF', 'IVIG'],
+  'Non-NPSLE': ['HCQ', 'MMF', ''],
+  MS: ['激素冲击', 'DMT', ''],
+  NMOSD: ['CD20', 'AZA', ''],
+  HC: ['无', '', ''],
+  NSCLC: ['含铂双药', 'PD-1', '抗血管生成'],
+  LUAD: ['奥希替尼', '培美曲塞', '贝伐珠单抗'],
+  LUSC: ['紫杉醇', '卡铂', 'PD-1'],
+  'EGFR-TKI耐药': ['奥希替尼', 'MET抑制剂', '局部放疗'],
+  ALK耐药: ['阿来替尼', '洛拉替尼', '局部放疗']
+};
+
+function isLungResistanceDisease(disease: DiseaseType) {
+  return lungResistanceDiseases.includes(disease);
+}
+
+export function patientCode(index: number) {
+  const prefixes = index >= 50 ? ['LZXK', 'LCAD', 'LUSC', 'EGFR', 'ALKR'] : patientPrefixes;
+  return `${prefixes[index % prefixes.length]}-${index + 101}`;
+}
+
+export function organsForDisease(disease: DiseaseType, index: number) {
+  if (isLungResistanceDisease(disease)) {
+    const patterns = [
+      ['肺', '纵隔淋巴结'],
+      ['肺', '胸膜'],
+      ['肺', '骨'],
+      ['肺', '脑'],
+      ['肺', '肝']
+    ];
+    return patterns[index % patterns.length];
+  }
+  if (disease === 'NPSLE') return index % 2 ? ['神经系统', '皮肤'] : ['神经系统', '肾'];
+  if (disease === 'Non-NPSLE') return index % 3 ? ['皮肤', '肾'] : ['肾'];
+  if (disease === 'MS' || disease === 'NMOSD') return ['神经系统'];
+  return ['健康对照'];
+}
+
+export function samplePlanForDisease(disease: DiseaseType, index: number): SampleType[] {
+  if (isLungResistanceDisease(disease)) {
+    if ((disease === 'EGFR-TKI耐药' || disease === 'ALK耐药') && index % 2 === 0) return ['血液', '组织', '胸水'];
+    return ['血液', '组织'];
+  }
+  if (disease === 'HC') return ['血液'];
+  if (disease === 'MS' || disease === 'NMOSD') return index % 2 ? ['血液', 'CSF'] : ['CSF'];
+  if (disease === 'NPSLE') return index % 4 === 0 ? ['血液', 'CSF', '肾'] : ['血液', 'CSF'];
+  return index % 3 === 0 ? ['血液', '肾'] : ['血液'];
+}
+
+function diseaseActivityFor(disease: DiseaseType) {
+  if (isLungResistanceDisease(disease)) return 0;
+  if (disease === 'NPSLE') return 12;
+  if (disease === 'MS' || disease === 'NMOSD') return 7;
+  if (disease === 'Non-NPSLE') return 4;
+  return 0;
+}
+
+function numericValue(field: string, index: number, fallback: number) {
+  const example = Number.parseFloat(crfFieldDefaults[field] ?? '');
+  const base = Number.isFinite(example) ? example : fallback;
+  return Number((base + ((index % 5) - 2) * 0.07).toFixed(2));
+}
+
+function lungResistanceClinicalData(index: number, disease: DiseaseType, organs: string[]): Record<string, string | number> {
+  if (!isLungResistanceDisease(disease)) return {};
+  const driverGene: Record<string, string> = {
+    NSCLC: 'EGFR exon19del',
+    LUAD: 'EGFR L858R',
+    LUSC: 'FGFR1 amplification',
+    'EGFR-TKI耐药': 'EGFR T790M / C797S',
+    ALK耐药: 'ALK G1202R'
+  };
+  const treatment: Record<string, string> = {
+    NSCLC: '含铂双药 + 免疫治疗',
+    LUAD: '奥希替尼一线治疗',
+    LUSC: '紫杉醇 + 卡铂 + PD-1',
+    'EGFR-TKI耐药': '三代 EGFR-TKI 后耐药评估',
+    ALK耐药: '二代 ALK-TKI 后耐药评估'
+  };
+  const resistance: Record<string, string> = {
+    NSCLC: '待复核',
+    LUAD: 'MET 扩增疑似',
+    LUSC: 'PIK3CA 通路激活',
+    'EGFR-TKI耐药': 'T790M / C797S 或旁路激活',
+    ALK耐药: 'ALK 二级突变或旁路激活'
+  };
+
+  return {
+    研究编号: lzxkStudyId,
+    研究名称: '真实世界肺癌耐药研究',
+    肿瘤类型: disease,
+    肿瘤分期: ['IIIB', 'IVA', 'IVB'][index % 3],
+    ECOG评分: index % 3,
+    驱动基因: driverGene[disease],
+    初始治疗方案: treatment[disease],
+    耐药机制: resistance[disease],
+    RECIST疗效: ['SD', 'PR', 'PD', 'NE'][index % 4],
+    'PFS（月）': Number((6.5 + (index % 9) * 1.4).toFixed(1)),
+    ctDNA突变丰度: `${Number((0.8 + (index % 7) * 1.3).toFixed(1))}%`,
+    转移部位: organs.filter((organ) => organ !== '肺').join('、') || '未见远处转移',
+    标本类型: index % 2 ? '血液、组织' : '血液、组织、胸水',
+    检测项目: 'NGS 520基因 panel + ctDNA 动态监测',
+    当前治疗线数: 1 + (index % 4)
+  };
+}
+
+function generatedClinicalValue(
+  field: string,
+  index: number,
+  name: string,
+  hospitalNo: string,
+  sex: '男' | '女',
+  age: number,
+  disease: DiseaseType,
+  organs: string[]
+): string | number {
+  const activity = diseaseActivityFor(disease);
+  const [primaryMedication, secondaryMedication, otherMedication] = medicationByDisease[disease];
+
+  switch (field) {
+    case '姓名':
+      return name;
+    case '性别':
+      return sex;
+    case '年龄':
+      return age;
+    case '身高（cm）':
+      return sex === '女' ? 156 + (index % 9) : 166 + (index % 10);
+    case '体重（Kg）':
+      return sex === '女' ? 48 + (index % 13) : 60 + (index % 15);
+    case '病程（发病-使用CD20时）':
+      if (disease === 'HC') return 0;
+      return isLungResistanceDisease(disease) ? 6 + (index * 2) % 36 : 8 + (index * 3) % 48;
+    case '住院号':
+      return hospitalNo;
+    case '出院诊断':
+      return disease;
+    case '受累脏器':
+      return organs.join('、');
+    case 'SLEDAI评分':
+      return activity;
+    case 'RSLEDAI':
+      return Math.max(0, activity - 6);
+    case 'LN病理分型（如有）':
+      if (isLungResistanceDisease(disease)) return '-';
+      return organs.includes('肾') ? ['II', 'III', 'IV', 'V'][index % 4] : '-';
+    case 'AI':
+      if (isLungResistanceDisease(disease)) return '-';
+      return organs.includes('肾') ? 4 + (index % 6) : '-';
+    case 'CI':
+      if (isLungResistanceDisease(disease)) return '-';
+      return organs.includes('肾') ? index % 4 : '-';
+    case 'PGA评分':
+      return disease === 'HC' ? 0 : Number(((isLungResistanceDisease(disease) ? 1.0 : 0.8) + (index % 5) * 0.3).toFixed(1));
+    case 'MP mg/d':
+      return disease === 'HC' || isLungResistanceDisease(disease) ? 0 : [10, 20, 40, 80, 240][index % 5];
+    case '免疫抑制剂1':
+      return primaryMedication;
+    case '免疫制剂2':
+      return secondaryMedication || '-';
+    case '免疫制剂2（第2项）':
+      return disease === 'NPSLE' && index % 4 === 0 ? 'CTX' : '-';
+    case '其他合并用药':
+      return otherMedication || '-';
+    case '体温':
+      return Number((36.4 + (index % 4) * 0.2).toFixed(1));
+    case '神经系统症状':
+      return organs.includes('神经系统') ? '有' : '无';
+    case '关节肿胀':
+    case '关节疼痛':
+    case '皮疹':
+    case '口腔溃疡':
+    case '脱发':
+      return disease === 'HC' ? '无' : index % 3 === 0 ? '有' : '无';
+    case '其他':
+      return disease === 'HC' ? '无' : '疲乏';
+    case 'ANA1:80为阳性（1-yes，0-none）':
+      return disease === 'HC' || isLungResistanceDisease(disease) ? 0 : 1;
+    case '滴度':
+      return disease === 'HC' || isLungResistanceDisease(disease) ? '-' : [80, 160, 320, 640][index % 4];
+    case '核型':
+      return disease === 'HC' || isLungResistanceDisease(disease) ? '-' : ['均质型', '颗粒型', '核仁型'][index % 3];
+    case 'ENA1':
+      return disease === 'HC' || isLungResistanceDisease(disease) ? '-' : ['Sm', 'SSA', 'Ro-52'][index % 3];
+    case 'ENA2':
+      return disease === 'HC' || isLungResistanceDisease(disease) ? '-' : ['Ro-52', 'SSB', '0'][index % 3];
+    case 'ENA3':
+      return disease === 'HC' || isLungResistanceDisease(disease) ? '-' : ['0', 'RNP', ''][index % 3] || '-';
+    case '其他阳性抗体':
+      return disease === 'HC' || isLungResistanceDisease(disease) ? '-' : index % 2 ? '抗磷脂抗体' : '-';
+    case '胸膜炎':
+    case '心包炎':
+    case '肺动脉高压':
+      if (isLungResistanceDisease(disease) && field === '胸膜炎') return organs.includes('胸膜') ? '有' : '无';
+      return disease === 'HC' ? '无' : index % 6 === 0 ? '有' : '无';
+    case '其他异常结果':
+      return disease === 'HC' ? '无' : isLungResistanceDisease(disease) ? '肺部影像与耐药机制待复核' : index % 4 === 0 ? '影像异常待复核' : '无';
+    default:
+      if (field.includes('DNA')) return disease === 'HC' ? 0 : numericValue(field, index, isLungResistanceDisease(disease) ? 35 : 60);
+      if (field.includes('WBC')) return numericValue(field, index, 6.4);
+      if (field.includes('HB')) return 105 + (age % 28);
+      if (field.includes('PLT')) return 180 + (age % 12) * 18;
+      if (field.includes('C3')) return numericValue(field, index, 0.72);
+      if (field.includes('C4')) return numericValue(field, index, 0.18);
+      if (field.includes('Ig')) return numericValue(field, index, 7.6);
+      if (field.includes('尿') || field.includes('Cr') || field.includes('BUN') || field.includes('UA')) return numericValue(field, index, 1.2);
+      if (field.includes('CD') || field.includes('淋巴') || field.includes('自然杀伤')) return numericValue(field, index, 12);
+      return crfFieldDefaults[field] ?? '已录入';
+  }
+}
+
+function makeClinicalData(
+  completeness: number,
+  seed: Record<string, string | number>,
+  context: {
+    index: number;
+    name: string;
+    hospitalNo: string;
+    sex: '男' | '女';
+    age: number;
+    disease: DiseaseType;
+    organs: string[];
+  }
+) {
   const filledCount = Math.round((clinicalFields.length * completeness) / 100);
   const data: Record<string, string | number> = {};
 
   clinicalFields.slice(0, filledCount).forEach((field) => {
-    data[field] = seed[field] ?? '已录入';
+    data[field] =
+      seed[field] ??
+      generatedClinicalValue(field, context.index, context.name, context.hospitalNo, context.sex, context.age, context.disease, context.organs);
   });
 
   Object.entries(seed).forEach(([key, value]) => {
     data[key] = value;
   });
 
+  data.CRF版本 = crfTemplateVersion;
+  data.数据完整度 = completeness;
+
   return data;
 }
 
-function createPatient(
-  name: string,
-  hospitalNo: string,
-  sex: '男' | '女',
-  age: number,
-  diseaseType: DiseaseType,
-  organs: string[],
-  samples: SampleCollection[],
-  omicsStatus: OmicsStatus,
-  completeness: number,
-  note: string
-): PatientRecord {
+function studyContextForIndex(index: number) {
+  if (index >= 50) {
+    return {
+      studyId: lzxkStudyId,
+      diseaseType: lungResistanceDiseases[(index - 50) % lungResistanceDiseases.length],
+      crfVersion: 'V1.0'
+    };
+  }
   return {
-    studyId: 'LGL-1111',
+    studyId: index < 36 ? 'LGL-1111' : 'RWD-NMO-2026',
+    diseaseType: diseases[index % diseases.length],
+    crfVersion: crfTemplateVersion
+  };
+}
+
+function createPatient(index: number): PatientRecord {
+  const { studyId, diseaseType, crfVersion } = studyContextForIndex(index);
+  const name = patientCode(index);
+  const hospitalNo = `${23000000 + index * 137}`;
+  const sex = index % 2 === 0 ? '女' : '男';
+  const age = 19 + (index * 7) % 48;
+  const organs = organsForDisease(diseaseType, index);
+  const completeness = 68 + (index * 7) % 33;
+  const sampleTypes = samplePlanForDisease(diseaseType, index);
+  const samples = sampleTypes.reduce<SampleCollection[]>((acc, type) => {
+    const existing = acc.find((sample) => sample.type === type);
+    if (existing) existing.count += 1;
+    else acc.push({ type, count: 1 });
+    return acc;
+  }, []);
+  const omicsStatus: OmicsStatus = index % 4 === 0 ? '进行中' : index % 5 === 0 ? '样本采集' : '完成';
+  const note = isLungResistanceDisease(diseaseType)
+    ? `真实世界肺癌耐药研究随访中，耐药机制与组学检测已生成，完整度 ${completeness}%`
+    : diseaseType === 'HC'
+      ? '健康对照质控通过'
+      : `${diseaseType} 队列随访中，完整度 ${completeness}%`;
+
+  const clinicalData = makeClinicalData(
+    completeness,
+    {
+      姓名: name,
+      性别: sex,
+      年龄: age,
+      住院号: hospitalNo,
+      出院诊断: diseaseType,
+      受累脏器: organs.join('、'),
+      ...lungResistanceClinicalData(index, diseaseType, organs)
+    },
+    { index, name, hospitalNo, sex, age, disease: diseaseType, organs }
+  );
+  clinicalData.CRF版本 = crfVersion;
+
+  return {
+    id: `PAT-${String(index + 1).padStart(3, '0')}`,
+    studyId,
     name,
     hospitalNo,
     sex,
@@ -142,14 +342,9 @@ function createPatient(
     samples,
     omicsStatus,
     note,
-    clinicalData: makeClinicalData(completeness, {
-      患者编号: name,
-      性别: sex,
-      年龄: age,
-      住院号: hospitalNo,
-      出院诊断: diseaseType,
-      受累脏器: organs.join('、')
-    })
+    clinicalDataVersion: crfVersion,
+    clinicalDataFormat: 'jsonb',
+    clinicalData
   };
 }
 
@@ -169,58 +364,30 @@ export function calculateClinicalCompleteness(clinicalData: Record<string, strin
   return Math.round((filled / clinicalFields.length) * 100);
 }
 
-export const patientRecords: PatientRecord[] = [
-  createPatient('LQH-023', '23018456', '女', 23, 'NPSLE', ['皮肤', '肾'], [{ type: '血液', count: 2 }, { type: 'CSF', count: 1 }], '完成', 96, '近期采血，下次随访风险低'),
-  createPatient('WYM-184', '24002391', '男', 31, 'Non-NPSLE', ['皮肤'], [{ type: '血液', count: 1 }], '进行中', 76, '临床数据待补录'),
-  createPatient('ZXR-512', '22091734', '女', 42, 'NMOSD', ['神经系统'], [{ type: 'CSF', count: 2 }], '完成', 100, '脑脊液样本已完成检测'),
-  createPatient('CJY-308', '21056288', '男', 56, 'MS', ['神经系统'], [{ type: '血液', count: 1 }, { type: 'CSF', count: 1 }], '完成', 94, '下次随访需评估神经症状'),
-  createPatient('LYT-447', '23047322', '女', 29, 'NPSLE', ['皮肤', '神经系统'], [{ type: '血液', count: 2 }], '进行中', 82, '近期采血，等待多组学结果'),
-  createPatient('HQN-065', '24011873', '男', 38, 'Non-NPSLE', ['肾'], [{ type: 'CSF', count: 1 }, { type: '肾', count: 1 }], '完成', 89, '肾样本已入库'),
-  createPatient('QML-731', '21083451', '女', 47, 'NPSLE', ['皮肤', '肾'], [{ type: '血液', count: 1 }, { type: 'CSF', count: 1 }], '完成', 97, '数据完整，建议进入分析队列'),
-  createPatient('SYF-209', '22030467', '男', 33, 'HC', ['皮肤'], [{ type: '血液', count: 1 }], '样本采集', 68, '待补充体格检查与生化结果'),
-  createPatient('ZYW-912', '23099812', '女', 61, 'NMOSD', ['神经系统', '肾'], [{ type: 'CSF', count: 1 }], '完成', 93, '随访风险中等'),
-  createPatient('GCH-156', '24026619', '男', 27, 'HC', ['皮肤'], [{ type: '血液', count: 1 }], '进行中', 72, '样本送检中'),
-  createPatient('TYR-684', '21049276', '女', 35, 'NPSLE', ['肾', '神经系统'], [{ type: '血液', count: 2 }, { type: '肾', count: 1 }], '完成', 91, '肾活检样本已归档'),
-  createPatient('MPX-417', '22068105', '男', 44, 'MS', ['神经系统'], [{ type: 'CSF', count: 1 }], '进行中', 84, '等待蛋白组结果回传'),
-  createPatient('DHL-530', '23015762', '女', 52, 'Non-NPSLE', ['皮肤', '肾'], [{ type: '血液', count: 1 }], '完成', 88, '免疫指标复核完成'),
-  createPatient('BQS-271', '24073018', '男', 19, 'HC', ['皮肤'], [{ type: '血液', count: 1 }], '样本采集', 64, '健康对照采样待确认'),
-  createPatient('NCL-809', '21093644', '女', 58, 'NMOSD', ['神经系统'], [{ type: 'CSF', count: 2 }, { type: '血液', count: 1 }], '完成', 95, '影像资料已同步'),
-  createPatient('FJW-362', '22074590', '男', 63, 'NPSLE', ['肾'], [{ type: '血液', count: 1 }, { type: '肾', count: 1 }], '进行中', 81, '需补录尿检记录'),
-  createPatient('YKH-904', '23062047', '女', 40, 'MS', ['神经系统'], [{ type: 'CSF', count: 1 }], '完成', 92, '随访窗口期正常'),
-  createPatient('RZT-118', '24058133', '男', 25, 'HC', ['皮肤'], [{ type: '血液', count: 1 }], '完成', 86, '健康对照质控通过'),
-  createPatient('XWP-755', '21037584', '女', 49, 'NPSLE', ['皮肤', '神经系统'], [{ type: '血液', count: 2 }], '进行中', 79, '等待随访量表补充'),
-  createPatient('KMD-642', '22084621', '男', 54, 'Non-NPSLE', ['肾'], [{ type: '血液', count: 1 }, { type: '肾', count: 1 }], '完成', 90, '病理分型已确认'),
-  createPatient('VQA-290', '23071596', '女', 32, 'NMOSD', ['神经系统'], [{ type: 'CSF', count: 1 }, { type: '血液', count: 1 }], '样本采集', 74, '待采集第二管血样'),
-  createPatient('PLS-583', '24040728', '男', 37, 'NPSLE', ['皮肤'], [{ type: '血液', count: 1 }], '完成', 87, '皮疹照片已上传'),
-  createPatient('EJN-046', '21052913', '女', 66, 'MS', ['神经系统'], [{ type: 'CSF', count: 2 }], '进行中', 83, '复查脑脊液计划中'),
-  createPatient('HVB-319', '22019850', '男', 30, 'HC', ['皮肤'], [{ type: '血液', count: 1 }], '完成', 85, '样本运输记录完整'),
-  createPatient('SGL-774', '23086405', '女', 45, 'Non-NPSLE', ['皮肤', '肾'], [{ type: '血液', count: 2 }, { type: '肾', count: 1 }], '完成', 98, '核心字段均已审核'),
-  createPatient('CWN-928', '24061270', '男', 57, 'NMOSD', ['神经系统'], [{ type: 'CSF', count: 1 }], '样本采集', 70, '待完善既往治疗史'),
-  createPatient('AMF-105', '21024837', '女', 22, 'NPSLE', ['皮肤'], [{ type: '血液', count: 1 }], '进行中', 77, '初筛后等待入组确认'),
-  createPatient('JTD-691', '22093486', '男', 41, 'MS', ['神经系统'], [{ type: '血液', count: 1 }, { type: 'CSF', count: 1 }], '完成', 94, '组学数据已进入分析'),
-  createPatient('OLN-237', '23050614', '女', 60, 'Non-NPSLE', ['肾'], [{ type: '肾', count: 1 }], '完成', 92, '肾组织样本已入库'),
-  createPatient('PXY-850', '24037192', '男', 34, 'HC', ['皮肤'], [{ type: '血液', count: 1 }], '进行中', 73, '待完成基线问卷')
-];
+export const patientRecords: PatientRecord[] = Array.from({ length: 70 }, (_, index) => createPatient(index));
 
 export const cohortStats = [
-  { label: '总患者数', value: '1,248', delta: '12.6%', helper: '较近 30 天', icon: 'patients' as const },
-  { label: 'NPSLE', value: '532', delta: '8.4%', helper: '占总数 42.7%', icon: 'check' as const },
-  { label: 'NMOSD / MS', value: '386', delta: '10.1%', helper: '占总数 30.9%', icon: 'dna' as const },
-  { label: 'HC', value: '330', delta: '6.7%', helper: '占总数 26.4%', icon: 'userPlus' as const },
-  { label: '数据完整性', value: '88.6%', delta: '5.3%', helper: '较近 30 天', icon: 'check' as const, progress: 88.6 }
+  { label: '总患者数', value: '70', delta: 'Demo', helper: '本地 seed 患者', icon: 'patients' as const },
+  { label: 'NPSLE', value: '10', delta: '20.0%', helper: '占总数 20.0%', icon: 'check' as const },
+  { label: 'NMOSD / MS', value: '20', delta: '40.0%', helper: '占总数 40.0%', icon: 'dna' as const },
+  { label: '肺癌耐药', value: '20', delta: '28.6%', helper: 'LZXK-01', icon: 'dna' as const },
+  { label: '数据完整性', value: '83.7%', delta: 'V0.1', helper: 'SLE CRF V0.1', icon: 'check' as const, progress: 83.7 }
 ];
 
 export const diseaseDistribution = [
-  { label: 'NPSLE', value: 532, percent: '42.7%' },
-  { label: 'Non-NPSLE', value: 198, percent: '15.9%' },
-  { label: 'NMOSD', value: 148, percent: '11.9%' },
-  { label: 'MS', value: 238, percent: '19.1%' },
-  { label: 'HC', value: 132, percent: '10.6%' }
+  { label: 'NPSLE', value: 10, percent: '14.3%' },
+  { label: 'Non-NPSLE', value: 10, percent: '14.3%' },
+  { label: 'NMOSD', value: 10, percent: '14.3%' },
+  { label: 'MS', value: 10, percent: '14.3%' },
+  { label: 'HC', value: 10, percent: '14.3%' },
+  { label: '肺癌耐药', value: 20, percent: '28.6%' }
 ];
 
 export const sampleSummary = [
-  { label: '血液', value: '1,102', helper: '88.3%' },
-  { label: 'CSF', value: '786', helper: '62.5%' },
-  { label: '肾', value: '256', helper: '20.5%' },
-  { label: '总样本数', value: '1,348', helper: '—' }
+  { label: '血液', value: '60', helper: '85.7%' },
+  { label: 'CSF', value: '30', helper: '60.0%' },
+  { label: '肾', value: '6', helper: '12.0%' },
+  { label: '组织', value: '20', helper: '28.6%' },
+  { label: '胸水', value: '4', helper: '5.7%' },
+  { label: '总样本数', value: '120', helper: '70 名患者' }
 ];

@@ -2,13 +2,25 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-UserRole = Literal["sys_admin", "project_admin", "investigator", "crc", "data_manager", "viewer"]
-DiseaseType = Literal["NPSLE", "Non-NPSLE", "MS", "NMOSD", "HC"]
+UserRole = Literal[
+    "LZ_ADMIN",
+    "LZ_CRC",
+    "LZ_CRF_ADMIN",
+    "LZ_DATA_MANAGER",
+    "LZ_AUDITOR",
+    "STUDY_PI",
+    "STUDY_CRC",
+    "STUDY_CONFIG_ADMIN",
+    "STUDY_DATA_MANAGER",
+]
+StudyRole = Literal["STUDY_PI", "STUDY_CRC", "STUDY_CONFIG_ADMIN", "STUDY_DATA_MANAGER"]
+StudyScopeType = Literal["all_studies", "assigned_studies", "own_studies"]
+DiseaseType = Literal["NPSLE", "Non-NPSLE", "MS", "NMOSD", "HC", "NSCLC", "LUAD", "LUSC", "EGFR-TKI耐药", "ALK耐药"]
 Sex = Literal["男", "女"]
-SampleType = Literal["血液", "CSF", "肾", "尿液"]
+SampleType = Literal["血液", "CSF", "肾", "尿液", "组织", "胸水"]
 SampleStatus = Literal["已采集", "已送检", "检测中", "结果回传", "待处理"]
 OmicsStatus = Literal["样本接收", "文库构建", "测序完成", "数据分析", "结果归档"]
 QcStatus = Literal["通过", "未通过", "待确认"]
@@ -18,6 +30,9 @@ FileCategory = Literal["consent", "clinical", "sample", "omics_result", "analysi
 ExportStatus = Literal["queued", "running", "ready", "failed"]
 QualitySeverity = Literal["info", "warning", "critical"]
 QualityStatus = Literal["open", "resolved", "waived"]
+VisitPlanStatus = Literal["active", "draft", "retired"]
+FollowUpMethod = Literal["门诊", "电话", "线上", "家访", "其他"]
+SurvivalStatus = Literal["存活", "死亡", "未知"]
 
 
 class UserPublic(BaseModel):
@@ -25,7 +40,10 @@ class UserPublic(BaseModel):
     username: str
     display_name: str
     role: UserRole
+    legacy_role: str | None = None
     status: str = "active"
+    study_scope: dict[str, Any] | None = None
+    study_memberships: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class LoginRequest(BaseModel):
@@ -68,6 +86,7 @@ class PatientUpdate(BaseModel):
 
 
 class SampleBase(BaseModel):
+    study_id: str | None = None
     patient_id: str
     patient_name: str
     hospital_no: str
@@ -84,6 +103,7 @@ class SampleCreate(SampleBase):
 
 
 class SampleUpdate(BaseModel):
+    study_id: str | None = None
     patient_id: str | None = None
     patient_name: str | None = None
     hospital_no: str | None = None
@@ -96,6 +116,8 @@ class SampleUpdate(BaseModel):
 
 
 class OmicsBase(BaseModel):
+    study_id: str | None = None
+    testing_project_id: str = "TP-SLE-OMICS"
     patient_id: str
     patient_name: str
     sample_id: str
@@ -114,6 +136,8 @@ class OmicsCreate(OmicsBase):
 
 
 class OmicsUpdate(BaseModel):
+    study_id: str | None = None
+    testing_project_id: str | None = None
     patient_id: str | None = None
     patient_name: str | None = None
     sample_id: str | None = None
@@ -135,8 +159,11 @@ class ConsentUpdate(BaseModel):
 
 
 class CrfEntryBase(BaseModel):
+    study_id: str | None = None
     patient_id: str
     visit_id: str | None = None
+    crf_version_id: str | None = None
+    form_id: str | None = None
     module: str
     payload: dict[str, Any] = Field(default_factory=dict)
     status: CrfStatus = "draft"
@@ -147,7 +174,10 @@ class CrfEntryCreate(CrfEntryBase):
 
 
 class CrfEntryUpdate(BaseModel):
+    study_id: str | None = None
     visit_id: str | None = None
+    crf_version_id: str | None = None
+    form_id: str | None = None
     module: str | None = None
     payload: dict[str, Any] | None = None
     status: CrfStatus | None = None
@@ -155,8 +185,50 @@ class CrfEntryUpdate(BaseModel):
     completed_at: str | None = None
 
 
+class FollowUpRecordBase(BaseModel):
+    study_id: str | None = None
+    patient_id: str
+    visit_id: str | None = None
+    follow_up_date: str
+    follow_up_method: FollowUpMethod
+    followed_by: str
+    survival_status: SurvivalStatus = "存活"
+    disease_status: str
+    symptoms_signs: str = ""
+    imaging_lab_summary: str = ""
+    efficacy_assessment: str = ""
+    metastasis_status: str = ""
+    adverse_events: str = ""
+    quality_of_life: str = ""
+    lost_to_follow_up_reason: str = ""
+    recorded_at: str | None = None
+
+
+class FollowUpRecordCreate(FollowUpRecordBase):
+    id: str | None = None
+
+
+class FollowUpRecordUpdate(BaseModel):
+    study_id: str | None = None
+    visit_id: str | None = None
+    follow_up_date: str | None = None
+    follow_up_method: FollowUpMethod | None = None
+    followed_by: str | None = None
+    survival_status: SurvivalStatus | None = None
+    disease_status: str | None = None
+    symptoms_signs: str | None = None
+    imaging_lab_summary: str | None = None
+    efficacy_assessment: str | None = None
+    metastasis_status: str | None = None
+    adverse_events: str | None = None
+    quality_of_life: str | None = None
+    lost_to_follow_up_reason: str | None = None
+    recorded_at: str | None = None
+
+
 class FileMetadata(BaseModel):
     id: str
+    study_id: str
     patient_id: str | None = None
     sample_id: str | None = None
     omics_id: str | None = None
@@ -181,6 +253,7 @@ class ExportJobCreate(BaseModel):
 
 class ExportJob(BaseModel):
     id: str
+    study_id: str
     requested_by: str | None = None
     export_type: str
     scope: dict[str, Any] = Field(default_factory=dict)
@@ -192,6 +265,7 @@ class ExportJob(BaseModel):
 
 class DataQualityIssue(BaseModel):
     id: str
+    study_id: str
     patient_id: str
     source_table: str
     source_id: str
@@ -205,6 +279,7 @@ class DataQualityIssue(BaseModel):
 
 class AuditLog(BaseModel):
     id: str
+    study_id: str
     actor_id: str | None = None
     actor_role: UserRole | None = None
     action: str
@@ -223,3 +298,56 @@ class AnalysisSummary(BaseModel):
     omics_count: int
     completed_omics_count: int
     data_completeness_avg: float
+
+
+class StudyCreate(BaseModel):
+    id: str
+    code: str
+    name: str
+    indication: str
+    phase: str = "RWD"
+    status: str = "active"
+    owner_org: str = "LinZight"
+
+
+class StudyMemberCreate(BaseModel):
+    user_id: str
+    study_role: StudyRole
+    status: str = "active"
+
+
+class StudyVisitPlanCreate(BaseModel):
+    id: str | None = None
+    code: str
+    name: str
+    visit_type: str
+    day_offset: int = 0
+    window_before_days: int = Field(default=0, ge=0)
+    window_after_days: int = Field(default=0, ge=0)
+    required_forms: list[str] = Field(default_factory=list)
+    required_samples: list[str] = Field(default_factory=list)
+    status: VisitPlanStatus = "active"
+    sort_order: int = 0
+
+
+class StudyVisitPlanUpdate(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    visit_type: str | None = None
+    day_offset: int | None = None
+    window_before_days: int | None = Field(default=None, ge=0)
+    window_after_days: int | None = Field(default=None, ge=0)
+    required_forms: list[str] | None = None
+    required_samples: list[str] | None = None
+    status: VisitPlanStatus | None = None
+    sort_order: int | None = None
+
+
+class StudyCrfVersionCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    version: str
+    template_id: str | None = None
+    status: Literal["draft", "published", "retired"] = "draft"
+    schema_payload: dict[str, Any] = Field(default_factory=dict, alias="schema")
+    change_summary: str = ""

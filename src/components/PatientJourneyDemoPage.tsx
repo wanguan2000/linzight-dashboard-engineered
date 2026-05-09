@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ElementRef, type PointerEvent } from 'react';
 import {
-  journeyBiomarkerPoints,
   journeyCategoryConfig,
   journeyDemoEvents,
   journeyEnd,
@@ -11,9 +10,19 @@ import {
   type JourneyDemoEvent,
   type JourneyEventCategory
 } from '../data/patientJourneyDemo';
-import { getSelectedPatient } from '../data/operations';
+import {
+  followUpRecords,
+  getSelectedPatient,
+  omicsRecords,
+  samples,
+  visits,
+  type FollowUpRecord,
+  type OmicsRecord,
+  type SampleRecord,
+  type VisitRecord
+} from '../data/operations';
 import { patientRecords, type PatientRecord } from '../data/patientCohort';
-import { fetchDemoDataset } from '../services/api';
+import { fetchDemoDataset, filterRecordsByCurrentStudyScope } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 
@@ -44,8 +53,8 @@ const chartLegendWidths: Record<MetricKey, number> = {
   sledai: 86,
   c3: 58,
   esr: 62,
-  protein24h: 108,
-  igg: 62
+  protein24h: 136,
+  igg: 70
 };
 
 const chartLayout = {
@@ -57,6 +66,18 @@ const chartLayout = {
 };
 
 type TimelineZoomRange = { start: number; end: number };
+type PatientJourneySource = {
+  visits: VisitRecord[];
+  followUps: FollowUpRecord[];
+  samples: SampleRecord[];
+  omics: OmicsRecord[];
+};
+type TimelineDomain = {
+  start: string;
+  end: string;
+  startMs: number;
+  endMs: number;
+};
 type ChartFrame = {
   left: number;
   right: number;
@@ -64,6 +85,258 @@ type ChartFrame = {
   laneGap: number;
   amplitude: number;
 };
+
+const fallbackJourneySource: PatientJourneySource = {
+  visits,
+  followUps: followUpRecords,
+  samples,
+  omics: omicsRecords
+};
+
+const dayMs = 24 * 60 * 60 * 1000;
+
+function toIsoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function parseDateMs(date: string | undefined) {
+  const timestamp = Date.parse(date ?? '');
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function shiftDate(date: string, days: number) {
+  const timestamp = Date.parse(date);
+  if (Number.isNaN(timestamp)) return date;
+  return toIsoDate(new Date(timestamp + days * dayMs));
+}
+
+function sortByDate<T extends { date?: string; visitDate?: string; followUpDate?: string; collectedAt?: string; sentAt?: string }>(items: T[]) {
+  return [...items].sort(
+    (a, b) =>
+      Date.parse(a.date ?? a.visitDate ?? a.followUpDate ?? a.collectedAt ?? a.sentAt ?? '') -
+      Date.parse(b.date ?? b.visitDate ?? b.followUpDate ?? b.collectedAt ?? b.sentAt ?? '')
+  );
+}
+
+function numericClinicalValue(patient: PatientRecord, field: string, fallback: number) {
+  const value = Number(patient.clinicalData[field]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function formatPatientMedication(patient: PatientRecord, fallback: string) {
+  const medicationFields = ['免疫抑制剂1', '免疫制剂2', '免疫制剂2（第2项）'];
+  const medications = medicationFields
+    .map((field) => String(patient.clinicalData[field] ?? '').trim())
+    .filter((value) => value && value !== '-' && value !== '无');
+  return medications.length ? medications.slice(0, 2).join(' + ') : fallback;
+}
+
+function styleFor(category: JourneyEventCategory) {
+  return journeyCategoryConfig[category];
+}
+
+function patientRowMatches(patient: PatientRecord, row: { patientId?: string; patientName: string }) {
+  return row.patientId === patient.id || row.patientName === patient.name;
+}
+
+function getPatientScopedRows(patient: PatientRecord, source: PatientJourneySource) {
+  return {
+    visits: sortByDate(source.visits.filter((visit) => patientRowMatches(patient, visit))),
+    followUps: sortByDate(source.followUps.filter((followUp) => patientRowMatches(patient, followUp))),
+    samples: sortByDate(source.samples.filter((sample) => patientRowMatches(patient, sample))),
+    omics: sortByDate(source.omics.filter((record) => patientRowMatches(patient, record)))
+  };
+}
+
+function buildPatientJourneyEvents(
+  patient: PatientRecord,
+  patientVisits: VisitRecord[],
+  patientFollowUps: FollowUpRecord[],
+  patientSamples: SampleRecord[],
+  patientOmics: OmicsRecord[]
+): JourneyDemoEvent[] {
+  const firstVisitDate = patientVisits[0]?.visitDate ?? '2024-05-01';
+  const lastVisitDate = patientVisits[patientVisits.length - 1]?.visitDate ?? firstVisitDate;
+  const baselineSledai = Number(patientVisits[0]?.sleDai ?? patient.clinicalData['SLEDAI评分'] ?? 0);
+  const diseaseTitle = patient.diseaseType === 'HC' ? '健康对照入组' : `明确${patient.diseaseType}`;
+  const events: JourneyDemoEvent[] = [
+    {
+      id: `${patient.id}-screening`,
+      kind: 'point',
+      category: 'disease',
+      track: '病程主线',
+      laneIndex: 0,
+      title: patient.diseaseType === 'HC' ? '筛选入组' : '症状记录',
+      tag: patient.diseaseType === 'HC' ? '入组' : '病程',
+      date: shiftDate(firstVisitDate, -30),
+      subtitle: `${patient.name} · ${patient.diseaseType}`,
+      description: `${patient.name} 建立患者旅程，受累脏器：${patient.organs.join('、') || '未记录'}。`,
+      ...styleFor('disease')
+    },
+    {
+      id: `${patient.id}-diagnosis`,
+      kind: 'point',
+      category: 'disease',
+      track: '病程主线',
+      laneIndex: 0,
+      title: diseaseTitle,
+      tag: '诊断',
+      date: shiftDate(firstVisitDate, -14),
+      subtitle: baselineSledai ? `基线 SLEDAI ${baselineSledai}` : patient.diseaseType,
+      description: `${patient.name} 诊断/分组为 ${patient.diseaseType}，住院号 ${patient.hospitalNo}。`,
+      ...styleFor('disease')
+    }
+  ];
+
+  if (patient.diseaseType !== 'HC') {
+    const treatmentTitle = formatPatientMedication(patient, patientVisits[0]?.medication ?? '维持治疗');
+    events.push(
+      {
+        id: `${patient.id}-admission`,
+        kind: 'range',
+        category: 'admission',
+        track: '住院/急性事件',
+        laneIndex: 1,
+        title: baselineSledai >= 10 ? '活动评估住院' : '基线评估住院',
+        tag: '住院',
+        date: shiftDate(firstVisitDate, -5),
+        endDate: shiftDate(firstVisitDate, 2),
+        subtitle: `${patient.diseaseType} · ${patient.organs.join('、')}`,
+        description: `${patient.name} 完成 ${patient.diseaseType} 基线评估，记录 SLEDAI、用药和样本采集计划。`,
+        ...styleFor('admission')
+      },
+      {
+        id: `${patient.id}-treatment`,
+        kind: 'range',
+        category: 'treatment',
+        track: '治疗方案',
+        laneIndex: 2,
+        title: treatmentTitle,
+        tag: '治疗',
+        date: firstVisitDate,
+        endDate: shiftDate(lastVisitDate, 30),
+        subtitle: patientVisits[0]?.medication ?? '随访期间维持治疗',
+        description: `${patient.name} 当前治疗方案：${treatmentTitle}。`,
+        ...styleFor('treatment')
+      }
+    );
+  }
+
+  patientVisits.forEach((visit) => {
+    events.push({
+      id: `${patient.id}-${visit.id}`,
+      kind: 'point',
+      category: 'visit',
+      track: visit.visit === patientVisits[patientVisits.length - 1]?.visit ? '病程主线' : '随访访视',
+      laneIndex: visit.visit === patientVisits[patientVisits.length - 1]?.visit ? 0 : 3,
+      title: visit.visit,
+      tag: '随访',
+      date: visit.visitDate,
+      subtitle: `SLEDAI ${visit.sleDai} · 完整度 ${visit.completeness}%`,
+      description: `${patient.name} ${visit.visitType}，用药 ${visit.medication}，样本采集 ${visit.sampleCollection}。`,
+      ...styleFor('visit')
+    });
+  });
+
+  patientFollowUps.forEach((followUp) => {
+    const lostReason =
+      followUp.lostToFollowUpReason && followUp.lostToFollowUpReason !== '-'
+        ? `；失访原因：${followUp.lostToFollowUpReason}`
+        : '';
+    events.push({
+      id: `${patient.id}-${followUp.id}`,
+      kind: 'point',
+      category: 'visit',
+      track: '随访访视',
+      laneIndex: 3,
+      title: `随访记录 · ${followUp.followUpMethod}`,
+      tag: '随访记录',
+      date: followUp.followUpDate,
+      subtitle: `${followUp.survivalStatus} · ${followUp.diseaseStatus} · ${followUp.efficacyAssessment || '未评估'}`,
+      description: `${followUp.followedBy}记录：${followUp.symptomsSigns}；影像/检验：${followUp.imagingLabSummary}；转移：${followUp.metastasisStatus || '-'}；AE/QoL：${followUp.adverseEvents || '无'} / ${followUp.qualityOfLife || '-'}${lostReason}`,
+      ...styleFor('visit')
+    });
+  });
+
+  patientSamples.forEach((sample) => {
+    events.push({
+      id: `${patient.id}-${sample.id}`,
+      kind: 'point',
+      category: 'sample',
+      track: '样本与组学',
+      laneIndex: 4,
+      title: `${sample.sampleType}采集`,
+      tag: '样本采集',
+      date: sample.collectedAt,
+      subtitle: `${sample.visit} · ${sample.status}`,
+      description: `${sample.id}：${sample.sampleType} 样本采集，存储位置 ${sample.storage}，关联检测 ${sample.linkedOmics.join(' / ')}。`,
+      ...styleFor('sample')
+    });
+  });
+
+  patientOmics.forEach((record) => {
+    const eventDate = record.completedAt !== '-' ? record.completedAt : record.sentAt;
+    events.push({
+      id: `${patient.id}-${record.id}`,
+      kind: 'point',
+      category: 'omics',
+      track: '样本与组学',
+      laneIndex: 4,
+      title: `${record.assay}${record.status === '结果归档' ? '结果' : '送检'}`,
+      tag: 'Omics检测',
+      date: eventDate,
+      subtitle: `${record.sampleType} · ${record.status}`,
+      description: `${record.assay} / ${record.platform}，样本 ${record.sampleId}，QC ${record.qc}。`,
+      ...styleFor('omics')
+    });
+  });
+
+  return events.sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
+}
+
+function buildPatientBiomarkerPoints(patient: PatientRecord, patientVisits: VisitRecord[]): JourneyBiomarkerPoint[] {
+  const orderedVisits = patientVisits.length
+    ? patientVisits
+    : [
+        {
+          id: `${patient.id}-baseline`,
+          patientName: patient.name,
+          visit: 'V1 基线访视',
+          visitDate: '2024-05-01',
+          visitType: '基线访视',
+          sleDai: String(patient.clinicalData['SLEDAI评分'] ?? 0),
+          medication: '-',
+          sampleCollection: '-',
+          completeness: 0,
+          status: '已完成' as const
+        }
+      ];
+  const c3Base = numericClinicalValue(patient, 'C3(g/l)', patient.diseaseType === 'HC' ? 0.9 : 0.58);
+  const esrBase = numericClinicalValue(patient, 'ESR(mm)', patient.diseaseType === 'HC' ? 12 : 50);
+  const proteinBase = numericClinicalValue(patient, '24小时尿蛋白 g/24h', patient.organs.includes('肾') ? 0.8 : 0.18);
+  const iggBase = numericClinicalValue(patient, 'IgG(g/l)', patient.diseaseType === 'HC' ? 9 : 12);
+
+  return orderedVisits.map((visit, index) => {
+    const sledai = Number(visit.sleDai);
+    return {
+      date: visit.visitDate,
+      sledai: Number.isFinite(sledai) ? sledai : 0,
+      c3: Number(clampNumber(c3Base + index * 0.05, 0.1, 1.2).toFixed(2)),
+      esr: Math.round(clampNumber(esrBase - index * 6, 2, 100)),
+      protein24h: Number(clampNumber(proteinBase - index * 0.08, 0.02, 1.2).toFixed(2)),
+      igg: Number(clampNumber(iggBase - index * 0.35, 3, 18).toFixed(1))
+    };
+  });
+}
+
+function getDefaultSelectedEvent(events: JourneyDemoEvent[]) {
+  const descending = [...events].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+  return descending.find((event) => event.category === 'visit') ?? descending[0] ?? journeyDemoEvents[0];
+}
 
 function getChartFrame(width: number): ChartFrame {
   const chartWidth = Math.max(chartLayout.minWidth, width);
@@ -101,38 +374,63 @@ function clampPercent(value: number) {
   return Math.min(100, Math.max(0, value));
 }
 
-function datePercent(date: string) {
-  const start = Date.parse(journeyStart);
-  const end = Date.parse(journeyEnd);
+function buildTimelineDomain(events: JourneyDemoEvent[], points: JourneyBiomarkerPoint[]): TimelineDomain {
+  const timestamps = [
+    ...events.flatMap((event) => [parseDateMs(event.date), parseDateMs(event.endDate)]),
+    ...points.map((point) => parseDateMs(point.date))
+  ].filter((value): value is number => value !== null);
+
+  const rawStart = timestamps.length ? Math.min(...timestamps) : Date.parse(journeyStart);
+  const rawEnd = timestamps.length ? Math.max(...timestamps) : Date.parse(journeyEnd);
+  const rawSpanDays = Math.max(1, Math.ceil((rawEnd - rawStart) / dayMs));
+  const paddingDays = rawSpanDays <= 1 ? 30 : Math.min(90, Math.max(14, Math.ceil(rawSpanDays * 0.16)));
+  const startMs = rawStart - paddingDays * dayMs;
+  const endMs = rawEnd + paddingDays * dayMs;
+
+  return {
+    start: toIsoDate(new Date(startMs)),
+    end: toIsoDate(new Date(endMs)),
+    startMs,
+    endMs
+  };
+}
+
+function getDomainSpanDays(domain: TimelineDomain) {
+  return Math.max(1, Math.ceil((domain.endMs - domain.startMs) / dayMs));
+}
+
+function datePercent(date: string, domain: TimelineDomain) {
+  const start = domain.startMs;
+  const end = domain.endMs;
   const current = Date.parse(date);
   if (Number.isNaN(current)) return 0;
   return Math.min(100, Math.max(0, ((current - start) / (end - start)) * 100));
 }
 
-function percentToDate(percent: number) {
-  const start = Date.parse(journeyStart);
-  const end = Date.parse(journeyEnd);
+function percentToDate(percent: number, domain: TimelineDomain) {
+  const start = domain.startMs;
+  const end = domain.endMs;
   return new Date(start + (end - start) * (clampPercent(percent) / 100)).toISOString().slice(0, 10);
 }
 
-function dateFromZoomPercent(localPercent: number, zoomRange: TimelineZoomRange) {
+function dateFromZoomPercent(localPercent: number, zoomRange: TimelineZoomRange, domain: TimelineDomain) {
   const globalPercent = zoomRange.start + (clampPercent(localPercent) / 100) * Math.max(1, zoomRange.end - zoomRange.start);
-  return percentToDate(globalPercent);
+  return percentToDate(globalPercent, domain);
 }
 
-function datePercentInZoom(date: string, zoomRange: TimelineZoomRange) {
+function datePercentInZoom(date: string, zoomRange: TimelineZoomRange, domain: TimelineDomain) {
   const zoomWidth = Math.max(1, zoomRange.end - zoomRange.start);
-  return clampPercent(((datePercent(date) - zoomRange.start) / zoomWidth) * 100);
+  return clampPercent(((datePercent(date, domain) - zoomRange.start) / zoomWidth) * 100);
 }
 
-function dateIsVisible(date: string, zoomRange: TimelineZoomRange) {
-  const percent = datePercent(date);
+function dateIsVisible(date: string, zoomRange: TimelineZoomRange, domain: TimelineDomain) {
+  const percent = datePercent(date, domain);
   return percent >= zoomRange.start && percent <= zoomRange.end;
 }
 
-function eventIntersectsZoom(event: JourneyDemoEvent, zoomRange: TimelineZoomRange) {
-  const start = datePercent(event.date);
-  const end = datePercent(event.endDate ?? event.date);
+function eventIntersectsZoom(event: JourneyDemoEvent, zoomRange: TimelineZoomRange, domain: TimelineDomain) {
+  const start = datePercent(event.date, domain);
+  const end = datePercent(event.endDate ?? event.date, domain);
   return Math.max(start, end) >= zoomRange.start && Math.min(start, end) <= zoomRange.end;
 }
 
@@ -158,18 +456,19 @@ function getOrderedStreamEvents(events: JourneyDemoEvent[]) {
   return [...ordered, ...rest];
 }
 
-function nearestBiomarker(date: string) {
+function nearestBiomarker(date: string, points: JourneyBiomarkerPoint[]) {
   const target = Date.parse(date);
-  return journeyBiomarkerPoints.reduce((nearest, point) => {
+  const fallback = points[0] ?? { date, sledai: 0, c3: 0, esr: 0, protein24h: 0, igg: 0 };
+  return points.reduce((nearest, point) => {
     const currentGap = Math.abs(Date.parse(point.date) - target);
     const nearestGap = Math.abs(Date.parse(nearest.date) - target);
     return currentGap < nearestGap ? point : nearest;
-  }, journeyBiomarkerPoints[0]);
+  }, fallback);
 }
 
 function getNearestEvent(events: JourneyDemoEvent[], date: string) {
   const target = Date.parse(date);
-  if (!events.length || Number.isNaN(target)) return journeyDemoEvents[0];
+  if (!events.length || Number.isNaN(target)) return events[0] ?? journeyDemoEvents[0];
   return events.reduce((nearest, event) => {
     const eventStart = Date.parse(event.date);
     const eventEnd = Date.parse(event.endDate ?? event.date);
@@ -182,8 +481,8 @@ function getNearestEvent(events: JourneyDemoEvent[], date: string) {
   }, events[0]);
 }
 
-function getVisibleBiomarkerPoints(zoomRange: TimelineZoomRange) {
-  return journeyBiomarkerPoints.filter((point) => dateIsVisible(point.date, zoomRange));
+function getVisibleBiomarkerPoints(zoomRange: TimelineZoomRange, points: JourneyBiomarkerPoint[], domain: TimelineDomain) {
+  return points.filter((point) => dateIsVisible(point.date, zoomRange, domain));
 }
 
 function getMetricLaneY(index: number, frame: ChartFrame) {
@@ -203,12 +502,13 @@ function getTrendPoint(
   metricIndex: number,
   point: JourneyBiomarkerPoint,
   zoomRange: TimelineZoomRange,
+  domain: TimelineDomain,
   frame: ChartFrame
 ) {
   const width = frame.right - frame.left;
   const value = Math.min(1, Math.max(0, Number(point[metric.key]) / metric.max));
   return {
-    x: frame.left + (datePercentInZoom(point.date, zoomRange) / 100) * width,
+    x: frame.left + (datePercentInZoom(point.date, zoomRange, domain) / 100) * width,
     y: getMetricLaneY(metricIndex, frame) + frame.amplitude / 2 - value * frame.amplitude,
     value: point[metric.key]
   };
@@ -229,43 +529,103 @@ function buildTrendLine(
   metricIndex: number,
   points: JourneyBiomarkerPoint[],
   zoomRange: TimelineZoomRange,
+  domain: TimelineDomain,
   frame: ChartFrame
 ) {
   return points
     .map((point) => {
-      const { x, y } = getTrendPoint(metric, metricIndex, point, zoomRange, frame);
+      const { x, y } = getTrendPoint(metric, metricIndex, point, zoomRange, domain, frame);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(' ');
 }
 
-function getTimelineTicks(zoomRange: TimelineZoomRange) {
+function getTimelineTicks(zoomRange: TimelineZoomRange, domain: TimelineDomain) {
   const ticks: Array<{ label: string; percent: number }> = [];
-  for (let year = 2022; year <= 2024; year += 1) {
-    [1, 4, 7, 10].forEach((month, index) => {
-      const date = `${year}-${String(month).padStart(2, '0')}-01`;
-      if (dateIsVisible(date, zoomRange)) {
-        ticks.push({ label: `${year} Q${index + 1}`, percent: datePercentInZoom(date, zoomRange) });
+  const visibleStart = Date.parse(percentToDate(zoomRange.start, domain));
+  const visibleEnd = Date.parse(percentToDate(zoomRange.end, domain));
+  const spanDays = Math.max(1, Math.ceil((visibleEnd - visibleStart) / dayMs));
+  const cursor = new Date(visibleStart);
+
+  if (spanDays > 540) {
+    cursor.setUTCMonth(Math.floor(cursor.getUTCMonth() / 3) * 3, 1);
+    while (cursor.getTime() <= visibleEnd) {
+      const date = toIsoDate(cursor);
+      if (dateIsVisible(date, zoomRange, domain)) {
+        ticks.push({ label: `${cursor.getUTCFullYear()} Q${Math.floor(cursor.getUTCMonth() / 3) + 1}`, percent: datePercentInZoom(date, zoomRange, domain) });
       }
-    });
+      cursor.setUTCMonth(cursor.getUTCMonth() + 3, 1);
+    }
+    return ticks;
+  }
+
+  if (spanDays > 75) {
+    cursor.setUTCDate(1);
+    while (cursor.getTime() <= visibleEnd) {
+      const date = toIsoDate(cursor);
+      if (dateIsVisible(date, zoomRange, domain)) {
+        ticks.push({ label: `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`, percent: datePercentInZoom(date, zoomRange, domain) });
+      }
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1, 1);
+    }
+    return ticks;
+  }
+
+  cursor.setUTCDate(cursor.getUTCDate() - cursor.getUTCDay());
+  while (cursor.getTime() <= visibleEnd) {
+    const date = toIsoDate(cursor);
+    if (dateIsVisible(date, zoomRange, domain)) {
+      ticks.push({ label: `${String(cursor.getUTCMonth() + 1).padStart(2, '0')}-${String(cursor.getUTCDate()).padStart(2, '0')}`, percent: datePercentInZoom(date, zoomRange, domain) });
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 7);
   }
   return ticks;
 }
 
-function getBrushYearTicks() {
-  return [2022, 2023, 2024].map((year) => ({
-    label: String(year),
-    percent: datePercent(`${year}-01-01`)
-  }));
+function getBrushLabelTicks(domain: TimelineDomain) {
+  const ticks: Array<{ label: string; percent: number }> = [];
+  const spanDays = getDomainSpanDays(domain);
+  const cursor = new Date(domain.startMs);
+
+  if (spanDays > 540) {
+    cursor.setUTCMonth(0, 1);
+    while (cursor.getTime() <= domain.endMs) {
+      const date = toIsoDate(cursor);
+      ticks.push({ label: String(cursor.getUTCFullYear()), percent: datePercent(date, domain) });
+      cursor.setUTCFullYear(cursor.getUTCFullYear() + 1, 0, 1);
+    }
+    return ticks;
+  }
+
+  cursor.setUTCDate(1);
+  const stepMonths = spanDays > 180 ? 2 : 1;
+  while (cursor.getTime() <= domain.endMs) {
+    const date = toIsoDate(cursor);
+    ticks.push({ label: `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`, percent: datePercent(date, domain) });
+    cursor.setUTCMonth(cursor.getUTCMonth() + stepMonths, 1);
+  }
+  return ticks;
 }
 
-function getBrushMonthTicks() {
+function getBrushTicks(domain: TimelineDomain) {
   const ticks: Array<{ id: string; percent: number; major: boolean }> = [];
-  for (let year = 2022; year <= 2024; year += 1) {
-    for (let month = 1; month <= 12; month += 1) {
-      const id = `${year}-${String(month).padStart(2, '0')}`;
-      ticks.push({ id, percent: datePercent(`${id}-01`), major: month === 1 || month === 4 || month === 7 || month === 10 });
+  const spanDays = getDomainSpanDays(domain);
+  const cursor = new Date(domain.startMs);
+
+  if (spanDays > 90) {
+    cursor.setUTCDate(1);
+    while (cursor.getTime() <= domain.endMs) {
+      const id = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`;
+      ticks.push({ id, percent: datePercent(`${id}-01`, domain), major: cursor.getUTCMonth() % 3 === 0 });
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1, 1);
     }
+    return ticks;
+  }
+
+  while (cursor.getTime() <= domain.endMs) {
+    const id = toIsoDate(cursor);
+    ticks.push({ id, percent: datePercent(id, domain), major: cursor.getUTCDate() <= 7 });
+    cursor.setUTCDate(cursor.getUTCDate() + 7);
   }
   return ticks;
 }
@@ -284,16 +644,29 @@ function getChartLegendItems() {
   });
 }
 
-export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: PatientRecord | null }) {
-  const initialPatient = getSelectedPatient(selectedPatient);
-  const [patients, setPatients] = useState<PatientRecord[]>(patientRecords);
+export function PatientJourneyDemoPage({
+  selectedPatient,
+  onPatientChange
+}: {
+  selectedPatient?: PatientRecord | null;
+  onPatientChange?: (patient: PatientRecord) => void;
+}) {
+  const scopedFallbackPatients = filterRecordsByCurrentStudyScope(patientRecords);
+  const initialPatient = selectedPatient ?? scopedFallbackPatients[0] ?? getSelectedPatient(selectedPatient);
+  const [patients, setPatients] = useState<PatientRecord[]>(scopedFallbackPatients);
+  const [journeySource, setJourneySource] = useState<PatientJourneySource>({
+    visits: filterRecordsByCurrentStudyScope(fallbackJourneySource.visits),
+    followUps: filterRecordsByCurrentStudyScope(fallbackJourneySource.followUps),
+    samples: filterRecordsByCurrentStudyScope(fallbackJourneySource.samples),
+    omics: filterRecordsByCurrentStudyScope(fallbackJourneySource.omics)
+  });
   const [activePatient, setActivePatient] = useState<PatientRecord>(initialPatient);
   const [patientQuery, setPatientQuery] = useState('');
   const [patientPickerOpen, setPatientPickerOpen] = useState(false);
   const [enabledCategories, setEnabledCategories] = useState<JourneyEventCategory[]>(categoryOrder);
   const [query, setQuery] = useState('');
-  const [selectedEventId, setSelectedEventId] = useState<string | null>('evt-v2');
-  const [selectedDate, setSelectedDate] = useState('2024-06-01');
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState('2024-05-01');
   const [streamPage, setStreamPage] = useState(1);
   const [zoomRange, setZoomRange] = useState<TimelineZoomRange>({ start: 0, end: 100 });
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
@@ -306,9 +679,15 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
       .then((dataset) => {
         if (ignore || !dataset.patients.length) return;
         setPatients(dataset.patients);
+        setJourneySource({
+          visits: dataset.visits,
+          followUps: dataset.followUps,
+          samples: dataset.samples,
+          omics: dataset.omics
+        });
         setActivePatient((current) => {
           if (selectedPatient) return selectedPatient;
-          return dataset.patients.find((item) => item.name === current.name) ?? dataset.patients[0];
+          return dataset.patients.find((item) => item.id === current.id || item.name === current.name) ?? dataset.patients[0];
         });
       })
       .catch(() => undefined);
@@ -326,6 +705,27 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
     }
   }, [selectedPatient]);
 
+  useEffect(() => {
+    if (activePatient.id) onPatientChange?.(activePatient);
+  }, [activePatient, onPatientChange]);
+
+  const scopedJourneyRows = useMemo(() => getPatientScopedRows(patient, journeySource), [journeySource, patient]);
+  const journeyEvents = useMemo(
+    () => buildPatientJourneyEvents(patient, scopedJourneyRows.visits, scopedJourneyRows.followUps, scopedJourneyRows.samples, scopedJourneyRows.omics),
+    [patient, scopedJourneyRows]
+  );
+  const biomarkerPoints = useMemo(() => buildPatientBiomarkerPoints(patient, scopedJourneyRows.visits), [patient, scopedJourneyRows.visits]);
+  const timelineDomain = useMemo(() => buildTimelineDomain(journeyEvents, biomarkerPoints), [biomarkerPoints, journeyEvents]);
+
+  useEffect(() => {
+    const defaultEvent = getDefaultSelectedEvent(journeyEvents);
+    setSelectedEventId(defaultEvent.id);
+    setSelectedDate(defaultEvent.date);
+    setStreamPage(1);
+    setZoomRange({ start: 0, end: 100 });
+    setHoveredEventId(null);
+  }, [journeyEvents, patient.id]);
+
   const normalizedPatientQuery = patientQuery.trim().toLowerCase();
   const patientSearchMatches = useMemo(() => {
     if (!normalizedPatientQuery) return patients;
@@ -342,17 +742,18 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
     : `${patients.length} 名患者 · 输入编号、住院号或疾病类型切换`;
 
   const filteredEvents = useMemo(
-    () => journeyDemoEvents.filter((event) => enabledCategories.includes(event.category) && matchesEventQuery(event, query)),
-    [enabledCategories, query]
+    () => journeyEvents.filter((event) => enabledCategories.includes(event.category) && matchesEventQuery(event, query)),
+    [enabledCategories, journeyEvents, query]
   );
   const streamEvents = useMemo(() => getOrderedStreamEvents(filteredEvents), [filteredEvents]);
   const streamPageCount = Math.max(1, Math.ceil(streamEvents.length / streamPageSize));
   const safeStreamPage = Math.min(streamPage, streamPageCount);
   const selectedEvent =
-    (selectedEventId ? journeyDemoEvents.find((event) => event.id === selectedEventId) : null) ??
+    (selectedEventId ? journeyEvents.find((event) => event.id === selectedEventId) : null) ??
     getNearestEvent(filteredEvents, selectedDate) ??
+    journeyEvents[0] ??
     journeyDemoEvents[0];
-  const currentPoint = nearestBiomarker(selectedDate);
+  const currentPoint = nearestBiomarker(selectedDate, biomarkerPoints);
 
   const getStreamPageForEvent = (eventId: string) => {
     const eventIndex = streamEvents.findIndex((event) => event.id === eventId);
@@ -383,10 +784,11 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
   };
 
   const resetView = () => {
+    const defaultEvent = getDefaultSelectedEvent(journeyEvents);
     setEnabledCategories(categoryOrder);
     setQuery('');
-    setSelectedEventId('evt-v2');
-    setSelectedDate('2024-06-01');
+    setSelectedEventId(defaultEvent.id);
+    setSelectedDate(defaultEvent.date);
     setStreamPage(1);
     setZoomRange({ start: 0, end: 100 });
     setHoveredEventId(null);
@@ -405,7 +807,7 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
           <div>
             <h2>临床 Patient Journey</h2>
             <p>
-              LGL-1111 / {patient.name} · {patient.sex} · {patient.age}岁 · {patient.diseaseType}
+              {patient.studyId} / {patient.name} · {patient.sex} · {patient.age} 岁 · {patient.diseaseType}
             </p>
           </div>
         </div>
@@ -456,7 +858,7 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
                   type="button"
                 >
                   <strong>{item.name}</strong>
-                  <span>{item.hospitalNo} · {item.sex} · {item.age}岁 · {item.diseaseType}</span>
+                  <span>{item.hospitalNo} · {item.sex} · {item.age} 岁 · {item.diseaseType}</span>
                 </button>
               ))}
               {!patientMatches.length ? <span className="journey-demo-patient-empty">无匹配患者</span> : null}
@@ -480,13 +882,16 @@ export function PatientJourneyDemoPage({ selectedPatient }: { selectedPatient?: 
             query={query}
             selectedDate={selectedDate}
             selectedEventId={selectedEvent.id}
+            timelineDomain={timelineDomain}
             zoomRange={zoomRange}
           />
           <JourneyBiomarkers
             currentPoint={currentPoint}
             onSelectDate={selectDate}
             onZoomChange={setZoomRange}
+            points={biomarkerPoints}
             selectedDate={selectedDate}
+            timelineDomain={timelineDomain}
             zoomRange={zoomRange}
           />
         </div>
@@ -518,6 +923,7 @@ function JourneyTimeline({
   query,
   selectedDate,
   selectedEventId,
+  timelineDomain,
   zoomRange
 }: {
   enabledCategories: JourneyEventCategory[];
@@ -532,12 +938,13 @@ function JourneyTimeline({
   query: string;
   selectedDate: string;
   selectedEventId: string;
+  timelineDomain: TimelineDomain;
   zoomRange: TimelineZoomRange;
 }) {
-  const visibleEvents = events.filter((event) => eventIntersectsZoom(event, zoomRange));
-  const selectedDateVisible = dateIsVisible(selectedDate, zoomRange);
-  const selectedDatePosition = datePercentInZoom(selectedDate, zoomRange);
-  const ticks = getTimelineTicks(zoomRange);
+  const visibleEvents = events.filter((event) => eventIntersectsZoom(event, zoomRange, timelineDomain));
+  const selectedDateVisible = dateIsVisible(selectedDate, zoomRange, timelineDomain);
+  const selectedDatePosition = datePercentInZoom(selectedDate, zoomRange, timelineDomain);
+  const ticks = getTimelineTicks(zoomRange, timelineDomain);
 
   return (
     <section className="journey-demo-card journey-demo-timeline-card">
@@ -614,9 +1021,15 @@ function JourneyTimeline({
                       onMouseLeave={() => onHover(null)}
                       onClick={() => onSelect(event)}
                       style={{
-                        left: `${Math.min(datePercentInZoom(event.date, zoomRange), datePercentInZoom(event.endDate ?? event.date, zoomRange))}%`,
+                        left: `${Math.min(
+                          datePercentInZoom(event.date, zoomRange, timelineDomain),
+                          datePercentInZoom(event.endDate ?? event.date, zoomRange, timelineDomain)
+                        )}%`,
                         width: `${Math.max(
-                          Math.abs(datePercentInZoom(event.endDate ?? event.date, zoomRange) - datePercentInZoom(event.date, zoomRange)),
+                          Math.abs(
+                            datePercentInZoom(event.endDate ?? event.date, zoomRange, timelineDomain) -
+                              datePercentInZoom(event.date, zoomRange, timelineDomain)
+                          ),
                           3
                         )}%`,
                         backgroundColor: event.softColor,
@@ -642,7 +1055,7 @@ function JourneyTimeline({
                       onMouseLeave={() => onHover(null)}
                       onClick={() => onSelect(event)}
                       style={{
-                        left: `${datePercentInZoom(event.date, zoomRange)}%`,
+                        left: `${datePercentInZoom(event.date, zoomRange, timelineDomain)}%`,
                         backgroundColor: event.softColor,
                         borderColor: event.borderColor,
                         color: event.color
@@ -659,7 +1072,13 @@ function JourneyTimeline({
           );
         })}
       </div>
-      <RangeBrush className="journey-demo-brush--timeline" label="患者旅程时间范围" onChange={onZoomChange} range={zoomRange} />
+      <RangeBrush
+        className="journey-demo-brush--timeline"
+        label="患者旅程时间范围"
+        onChange={onZoomChange}
+        range={zoomRange}
+        timelineDomain={timelineDomain}
+      />
     </section>
   );
 }
@@ -668,20 +1087,24 @@ function JourneyBiomarkers({
   currentPoint,
   onSelectDate,
   onZoomChange,
+  points,
   selectedDate,
+  timelineDomain,
   zoomRange
 }: {
   currentPoint: JourneyBiomarkerPoint;
   onSelectDate: (date: string) => void;
   onZoomChange: (range: TimelineZoomRange) => void;
+  points: JourneyBiomarkerPoint[];
   selectedDate: string;
+  timelineDomain: TimelineDomain;
   zoomRange: TimelineZoomRange;
 }) {
   const [chartRef, chartWidth] = useElementWidth(chartLayout.minWidth);
   const chartFrame = getChartFrame(chartWidth);
-  const visiblePoints = getVisibleBiomarkerPoints(zoomRange);
-  const selectedDateVisible = dateIsVisible(selectedDate, zoomRange);
-  const selectedX = chartFrame.left + (datePercentInZoom(selectedDate, zoomRange) / 100) * (chartFrame.right - chartFrame.left);
+  const visiblePoints = getVisibleBiomarkerPoints(zoomRange, points, timelineDomain);
+  const selectedDateVisible = dateIsVisible(selectedDate, zoomRange, timelineDomain);
+  const selectedX = chartFrame.left + (datePercentInZoom(selectedDate, zoomRange, timelineDomain) / 100) * (chartFrame.right - chartFrame.left);
   const selectedLabelX = Math.min(chartFrame.right - 43, Math.max(chartFrame.left + 43, selectedX));
   const selectedLabelY = getChartPlotTop(chartFrame) - 26;
   const plotTop = getChartPlotTop(chartFrame);
@@ -693,7 +1116,7 @@ function JourneyBiomarkers({
   const handleChartPointer = (event: PointerEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const viewX = ((event.clientX - rect.left) / rect.width) * chartWidth;
-    onSelectDate(dateFromZoomPercent(((viewX - chartFrame.left) / (chartFrame.right - chartFrame.left)) * 100, zoomRange));
+    onSelectDate(dateFromZoomPercent(((viewX - chartFrame.left) / (chartFrame.right - chartFrame.left)) * 100, zoomRange, timelineDomain));
   };
 
   const handleChartPointerMove = (event: PointerEvent<SVGSVGElement>) => {
@@ -739,7 +1162,13 @@ function JourneyBiomarkers({
         </div>
         <label className="journey-demo-date-picker">
           指标日期
-          <input max={journeyEnd} min={journeyStart} onChange={(event) => onSelectDate(event.target.value)} type="date" value={selectedDate} />
+          <input
+            max={timelineDomain.end}
+            min={timelineDomain.start}
+            onChange={(event) => onSelectDate(event.target.value)}
+            type="date"
+            value={selectedDate}
+          />
         </label>
       </header>
       <div className="journey-demo-chart" ref={chartRef}>
@@ -793,8 +1222,8 @@ function JourneyBiomarkers({
           </g>
           {metricLines.map((metric, metricIndex) => {
             const lastPoint = visiblePoints[visiblePoints.length - 1];
-            const labelPoint = lastPoint ? getTrendPoint(metric, metricIndex, lastPoint, zoomRange, chartFrame) : null;
-            const linePoints = buildTrendLine(metric, metricIndex, visiblePoints, zoomRange, chartFrame);
+            const labelPoint = lastPoint ? getTrendPoint(metric, metricIndex, lastPoint, zoomRange, timelineDomain, chartFrame) : null;
+            const linePoints = buildTrendLine(metric, metricIndex, visiblePoints, zoomRange, timelineDomain, chartFrame);
             return (
               <g
                 className={[
@@ -817,7 +1246,7 @@ function JourneyBiomarkers({
                   strokeWidth="3"
                 />
                 {visiblePoints.map((point) => {
-                  const trendPoint = getTrendPoint(metric, metricIndex, point, zoomRange, chartFrame);
+                  const trendPoint = getTrendPoint(metric, metricIndex, point, zoomRange, timelineDomain, chartFrame);
                   const isSelected = point.date === currentPoint.date;
                   const valueLabel = getChartValueLabel(trendPoint.x, trendPoint.y, chartFrame);
                   return (
@@ -883,13 +1312,19 @@ function JourneyBiomarkers({
                 fill="transparent"
                 height={plotBottom - plotTop + 12}
                 width="14"
-                x={chartFrame.left + (datePercentInZoom(point.date, zoomRange) / 100) * (chartFrame.right - chartFrame.left) - 7}
+                x={chartFrame.left + (datePercentInZoom(point.date, zoomRange, timelineDomain) / 100) * (chartFrame.right - chartFrame.left) - 7}
                 y={plotTop - 6}
               />
             </g>
           ))}
         </svg>
-        <RangeBrush className="journey-demo-brush--chart" label="指标趋势时间范围" onChange={onZoomChange} range={zoomRange} />
+        <RangeBrush
+          className="journey-demo-brush--chart"
+          label="指标趋势时间范围"
+          onChange={onZoomChange}
+          range={zoomRange}
+          timelineDomain={timelineDomain}
+        />
       </div>
     </section>
   );
@@ -998,15 +1433,17 @@ function RangeBrush({
   className,
   label,
   onChange,
-  range
+  range,
+  timelineDomain
 }: {
   className?: string;
   label: string;
   onChange: (range: TimelineZoomRange) => void;
   range: TimelineZoomRange;
+  timelineDomain: TimelineDomain;
 }) {
-  const years = getBrushYearTicks();
-  const months = getBrushMonthTicks();
+  const labelTicks = getBrushLabelTicks(timelineDomain);
+  const ticks = getBrushTicks(timelineDomain);
 
   const updateStart = (value: number) => {
     onChange({ start: Math.min(clampPercent(value), range.end - 4), end: range.end });
@@ -1018,12 +1455,12 @@ function RangeBrush({
   return (
     <div className={['journey-demo-brush', className].filter(Boolean).join(' ')}>
       <div className="journey-demo-brush__date-pills">
-        <span style={{ left: `${range.start}%` }}>{percentToDate(range.start)}</span>
-        <span style={{ left: `${range.end}%` }}>{percentToDate(range.end)}</span>
+        <span style={{ left: `${range.start}%` }}>{percentToDate(range.start, timelineDomain)}</span>
+        <span style={{ left: `${range.end}%` }}>{percentToDate(range.end, timelineDomain)}</span>
       </div>
       <div className="journey-demo-brush__rail">
         <div className="journey-demo-brush__ticks" aria-hidden="true">
-          {months.map((tick) => (
+          {ticks.map((tick) => (
             <i className={tick.major ? 'is-major' : ''} key={tick.id} style={{ left: `${tick.percent}%` }} />
           ))}
         </div>
@@ -1046,7 +1483,7 @@ function RangeBrush({
         />
       </div>
       <div className="journey-demo-brush__labels">
-        {years.map((tick) => (
+        {labelTicks.map((tick) => (
           <span key={tick.label} style={{ left: `${tick.percent}%` }}>
             {tick.label}
           </span>

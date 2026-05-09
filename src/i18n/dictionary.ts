@@ -11,6 +11,8 @@ const exactEnglish: Record<string, string> = {
   '真实世界研究工作台': 'Real-world study workspace',
   '登录后进入患者队列、CRF 录入、样本登记、多组学检测、Patient Journey 与数据分析主链路。':
     'Sign in to access patient cohorts, CRF entry, sample registration, multi-omics testing, Patient Journey, and analytics workflows.',
+  '登录后按 Study 权限进入患者队列、CRF 录入、样本登记、多组学检测、Patient Journey 与数据分析主链路。':
+    'Sign in to access patient cohorts, CRF entry, sample registration, multi-omics testing, Patient Journey, and analytics by Study permissions.',
   '主链路': 'Primary workflow',
   '登录': 'Login',
   '患者列表': 'Patient list',
@@ -21,6 +23,14 @@ const exactEnglish: Record<string, string> = {
   '导出': 'Export',
   '账号登录': 'Account login',
   '开发阶段 Demo 认证': 'Demo authentication',
+  '入口类型': 'Entry type',
+  'Study 研究入口': 'Study entry',
+  'LZ 系统管理': 'LZ System Admin',
+  '研究编号 / study_id': 'Study ID / study_id',
+  '平台级账号，可跨 Study 管理研究、成员、CRF、质控、导出和审计。':
+    'Platform accounts can manage studies, members, CRF, quality, exports, and audit across Studies.',
+  '管理入口': 'Admin entry',
+  'LZ 系统管理 · 全部或授权 Study': 'LZ System Admin · All or assigned Studies',
   '角色账号': 'Role account',
   '密码': 'Password',
   '登录中': 'Signing in',
@@ -41,12 +51,37 @@ const exactEnglish: Record<string, string> = {
   'PI研究者': 'PI Investigator',
   '数据管理员': 'Data Manager',
   '只读访客': 'Read-only Visitor',
+  'LZ 系统管理员': 'LZ System Administrator',
+  'LZ CRC / 中央 CRC': 'LZ CRC / Central CRC',
+  'LZ CRF 管理员': 'LZ CRF Administrator',
+  'LZ 数据管理员': 'LZ Data Manager',
+  'LZ 平台审计员': 'LZ Platform Auditor',
+  '研究 PI / 医生': 'Study PI / Physician',
+  '研究 CRC': 'Study CRC',
+  '研究配置管理员': 'Study Configuration Admin',
+  '研究数据管理员': 'Study Data Manager',
+  '访视计划配置 / Study Visit Plan Config': 'Study Visit Plan Config',
+  'Visit Plan Configuration | 访视计划配置': 'Visit Plan Configuration',
+  '按 Study 配置访视时间窗、必填 CRF 表单和样本要求': 'Configure visit windows, required CRF forms, and sample requirements by Study.',
+  '新增访视': 'New Visit',
+  '肺癌 PI': 'Lung Cancer PI',
+  '肺癌 CRC': 'Lung Cancer CRC',
+  '肺癌配置管理员': 'Lung Cancer Configuration Admin',
+  '肺癌数据管理员': 'Lung Cancer Data Manager',
+  '真实世界肺癌耐药研究': 'Real-world Lung Cancer Resistance Study',
+  '肺癌耐药': 'Lung Cancer Resistance',
+  '组织': 'Tissue',
+  '胸水': 'Pleural effusion',
   '研究助理 / CRC': 'Research Assistant / CRC',
   '研究医生 / PI': 'Research Doctor / PI',
   '当前角色': 'Current role',
   '当前角色：PI研究者': 'Current role: PI Investigator',
   '研究编号': 'Study ID',
   '研究编号：LGL-1111': 'Study ID: LGL-1111',
+  'Study 范围': 'Study scope',
+  '全部 Study': 'All Studies',
+  '未授权 Study': 'No authorized Study',
+  'IgG': 'IgG',
   '通知': 'Notifications',
   '退出登录': 'Sign out',
   '询问 LinZight AI': 'Ask LinZight AI',
@@ -58,9 +93,11 @@ const exactEnglish: Record<string, string> = {
   '欢迎回来，约翰·伦格博士': 'Welcome back, Dr. John Lenger',
   '这里是今日临床研究运营概览。': "Here is today's clinical study operations overview.",
   '管理和审核 LGL-1111 研究患者队列。': 'Manage and review the LGL-1111 study patient cohort.',
+  '按 Study 权限管理和审核研究患者队列。': 'Manage and review study patient cohorts by Study permissions.',
   '知情同意管理': 'Informed Consent Management',
   '管理患者授权、版本签署与审计轨迹。': 'Manage patient authorization, version signing, and audit trails.',
   '采集和审核 LGL-1111 研究结构化临床数据。': 'Capture and review structured clinical data for LGL-1111.',
+  '采集和审核当前授权 Study 的结构化临床数据。': 'Capture and review structured clinical data for the authorized Study.',
   '管理样本采集、检测项目、结果文件和检测进度。': 'Manage sample collection, tests, result files, and testing progress.',
   '查看单患者从筛选、知情同意、临床随访到样本检测的全景数据。':
     'View the complete single-patient journey from screening and consent to follow-up and sample testing.',
@@ -201,6 +238,100 @@ const exactEnglish: Record<string, string> = {
   '进行中': 'In progress',
   '结果归档': 'Result archived',
 
+  '临床 Patient Journey': 'Clinical Patient Journey',
+  '查找患者': 'Find patient',
+  '清空': 'Clear',
+  '搜索患者编号、住院号、疾病类型、性别或受累脏器': 'Search patient ID, hospital No., disease type, sex, or affected organ',
+  '患者查找结果': 'Patient search results',
+  '无匹配患者': 'No matching patients',
+  '旅程事件分类筛选': 'Journey event filters',
+  '多轨临床事件轴': 'Multi-track clinical timeline',
+  '搜索事件、治疗或样本': 'Search timeline events',
+  '重置视图': 'Reset view',
+  '患者旅程时间范围': 'Patient journey time range',
+  '指标趋势时间范围': 'Indicator trend time range',
+  '事件明细流': 'Event detail stream',
+  '事件分页': 'Event pagination',
+  '关键指标趋势': 'Key indicator trend',
+  '指标日期': 'Indicator date',
+  '患者关键指标趋势': 'Patient key indicator trend',
+  '选中时间点': 'Selected time point',
+  '24h尿蛋白': '24h urine protein',
+  '病程主线': 'Clinical course',
+  '住院/急性事件': 'Admissions / acute events',
+  '治疗方案': 'Treatment plan',
+  '样本与组学': 'Samples & omics',
+  '病程': 'Course',
+  '住院': 'Admission',
+  '治疗': 'Treatment',
+  '随访': 'Follow-up',
+  '随访记录': 'Follow-up record',
+  'Omics检测': 'Omics testing',
+  '诊断': 'Diagnosis',
+  '发病': 'Onset',
+  '复发': 'Relapse',
+  '健康对照入组': 'Healthy control enrolled',
+  '筛选入组': 'Screening enrollment',
+  '症状记录': 'Symptom record',
+  '首次住院': 'First admission',
+  '初次住院': 'Initial admission',
+  '活动评估住院': 'Disease activity admission',
+  '基线评估住院': 'Baseline assessment admission',
+  '狼疮活动复发住院': 'Lupus flare admission',
+  '观察住院': 'Observation admission',
+  '激素冲击': 'Steroid pulse',
+  'MMF维持': 'MMF maintenance',
+  'CD20启动': 'CD20 started',
+  '血液采集': 'Blood collection',
+  'CSF采集': 'CSF collection',
+  '血液、CSF采集': 'Blood and CSF collection',
+  'Proteomics送检': 'Proteomics sent',
+  '未记录': 'Not recorded',
+  '未评估': 'Not assessed',
+  '影像/检验': 'Imaging/labs',
+  '转移': 'Metastasis',
+  '用药': 'Medication',
+  '完整度': 'Completeness',
+  '存储位置': 'Storage',
+  '关联检测': 'Linked testing',
+  '疗效评估': 'Response assessment',
+  '耐药评估': 'Resistance assessment',
+  '蛋白组': 'Proteomics',
+  '含铂双药': 'Platinum doublet',
+  '结果': 'Result',
+  '送检': 'Sent for testing',
+  '外周血样本': 'Peripheral blood sample',
+  '脑脊液样本': 'CSF sample',
+  '血液与 CSF': 'Blood and CSF',
+  '转录组检测': 'Transcriptomics testing',
+  '血浆蛋白组学检测': 'Plasma proteomics testing',
+  '代谢组学检测': 'Metabolomics testing',
+  '门诊': 'Outpatient',
+  '电话': 'Phone',
+  '线上': 'Online',
+  '家访': 'Home visit',
+  '存活': 'Alive',
+  '死亡': 'Deceased',
+  '稳定': 'Stable',
+  '进展': 'Progression',
+  '缓解': 'Response',
+  '无病': 'No evidence of disease',
+  '无': 'None',
+  '符合 ACR/EULAR 标准': 'Meets ACR/EULAR criteria',
+  '完善检查并制定方案': 'Workup completed and plan set',
+  '皮疹与肾脏受累': 'Rash and kidney involvement',
+  '联合 MMF 维持': 'Combined with MMF maintenance',
+  'SLEDAI 4，病情稳定': 'SLEDAI 4, stable disease',
+  '2022-06-10 ~ 2022-06-20': '2022-06-10 - 2022-06-20',
+  '高热、关节痛、补体下降': 'Fever, joint pain, low complement',
+  '评估 CD20 后反应': 'Post-CD20 response assessment',
+  '甲泼尼龙冲击': 'Methylprednisolone pulse',
+  '定期监测血常规和肝肾功能': 'Routine CBC and liver/kidney monitoring',
+  '联合维持治疗': 'Combined maintenance therapy',
+  '静脉免疫球蛋白': 'Intravenous immunoglobulin',
+  '记录 SLEDAI 与用药': 'SLEDAI and medication recorded',
+  '记录治疗反应': 'Treatment response recorded',
+
   '快捷操作': 'Quick actions',
   '新增患者': 'Add patient',
   '数据录入': 'Data entry',
@@ -210,14 +341,18 @@ const exactEnglish: Record<string, string> = {
   'Account Summary | 账户概览': 'Account Summary',
   '当前研究站点账户结构': 'Current study site account structure',
   'Create Account新增账户': 'Create Account',
+  'Study 成员、CRF 版本、导出和权限策略变更均进入审计日志。':
+    'Study member, CRF version, export, and permission policy changes are recorded in the audit log.',
   '账户创建、权限策略变更均进入审计日志。': 'Account creation and permission policy changes are recorded in the audit log.',
   'User Accounts & Roles List | 用户账户与角色列表': 'User Accounts & Roles List',
   '按角色和状态管理研究团队账号': 'Manage study team accounts by role and status',
   'Field & CRF Configuration | CRF 与字段配置': 'Field & CRF Configuration',
   '维护结构化 CRF 字段、类型和所属模块': 'Maintain structured CRF fields, types, and modules',
+  '维护每个 Study 独立 CRF 字段、类型、版本和所属模块': 'Maintain independent CRF fields, types, versions, and modules for each Study',
   '新增字段': 'Add field',
   'Permission Strategy Matrix | 权限策略矩阵': 'Permission Strategy Matrix',
   '按角色定义患者、样本、组学、导入与系统配置权限': 'Define patient, sample, omics, import, and system permissions by role',
+  '平台级角色跨 Study；研究级角色只在所属 Study 内生效': 'Global roles work across Studies; Study roles apply only inside assigned Studies',
   'Research Doctor / PI研究医生 / PI': 'Research Doctor / PI',
   'CRC / Research AssistantCRC / 研究助理': 'CRC / Research Assistant',
   'System Administrator系统管理员': 'System Administrator',
@@ -282,8 +417,116 @@ const exactEnglish: Record<string, string> = {
 };
 
 const phraseEnglish = ([
+  [
+    '登录后按 Study 权限进入患者队列、CRF 录入、样本登记、多组学检测、Patient Journey 与数据分析主链路。',
+    'Sign in to access patient cohorts, CRF entry, sample registration, multi-omics testing, Patient Journey, and analytics by Study permissions.'
+  ],
+  [
+    '登录后进入患者队列、CRF 录入、样本登记、多组学检测、Patient Journey 与数据分析主链路。',
+    'Sign in to access patient cohorts, CRF entry, sample registration, multi-omics testing, Patient Journey, and analytics workflows.'
+  ],
+  ['平台级账号，可跨 Study 管理研究、成员、CRF、质控、导出和审计。', 'Platform accounts can manage studies, members, CRF, quality, exports, and audit across Studies.'],
+  ['LZ 系统管理 · 全部或授权 Study', 'LZ System Admin · All or assigned Studies'],
+  ['真实世界肺癌耐药研究', 'Real-world Lung Cancer Resistance Study'],
+  ['免疫相关性神经系统疾病 RWD 研究', 'Immune-related Neurological Disease RWD Study'],
+  ['NMOSD 真实世界随访研究', 'NMOSD Real-world Follow-up Study'],
+  ['研究编号 / study_id', 'Study ID / study_id'],
+  ['Study 研究入口', 'Study entry'],
+  ['LZ 系统管理', 'LZ System Admin'],
+  ['研究配置管理员', 'Study Configuration Admin'],
+  ['研究数据管理员', 'Study Data Manager'],
+  ['研究 PI / 医生', 'Study PI / Physician'],
+  ['肺癌配置管理员', 'Lung Cancer Configuration Admin'],
+  ['肺癌数据管理员', 'Lung Cancer Data Manager'],
+  ['肺癌 PI', 'Lung Cancer PI'],
+  ['肺癌 CRC', 'Lung Cancer CRC'],
+  ['账号登录', 'Account login'],
+  ['开发阶段 Demo 认证', 'Demo authentication'],
+  ['角色账号', 'Role account'],
+  ['研究编号', 'Study ID'],
+  ['研究入口', 'study entry'],
+  ['系统管理', 'system admin'],
+  ['权限进入', 'permissions to access'],
+  ['按 Study 权限', 'by Study permissions'],
+  ['登录后按', 'Sign in by'],
+  ['登录后', 'After login'],
+  ['CRF 录入', 'CRF entry'],
+  ['样本登记', 'sample registration'],
+  ['数据分析主链路', 'analytics primary workflow'],
+  ['主链路', 'primary workflow'],
+  ['真实世界', 'real-world'],
+  ['肺癌耐药', 'Lung Cancer Resistance'],
+  ['肺癌', 'Lung Cancer'],
+  ['耐药', 'Resistance'],
+  ['配置管理员', 'Configuration Admin'],
+  ['数据管理员', 'Data Manager'],
+  ['管理员', 'Administrator'],
+  ['医生', 'Physician'],
+  ['进入', 'access'],
+  ['录入', 'entry'],
+  ['登记', 'registration'],
+  ['成员', 'members'],
+  ['质控', 'quality control'],
+  ['与', 'and'],
   ['真实世界研究', 'real-world study'],
   ['真实世界队列', 'real-world cohort'],
+  ['患者编号', 'patient ID'],
+  ['住院号', 'hospital No.'],
+  ['疾病类型', 'disease type'],
+  ['受累脏器', 'affected organs'],
+  ['临床事件轴', 'clinical timeline'],
+  ['事件明细流', 'event detail stream'],
+  ['关键指标', 'key indicator'],
+  ['时间范围', 'time range'],
+  ['患者旅程时间范围开始', 'Patient journey range start'],
+  ['患者旅程时间范围结束', 'Patient journey range end'],
+  ['指标趋势时间范围开始', 'Indicator trend range start'],
+  ['指标趋势时间范围结束', 'Indicator trend range end'],
+  ['疗效评估', 'response assessment'],
+  ['耐药评估', 'resistance assessment'],
+  ['疗效', 'response'],
+  ['蛋白组学', 'proteomics'],
+  ['蛋白组', 'Proteomics'],
+  ['含铂双药', 'Platinum doublet'],
+  ['结果回传', 'results returned'],
+  ['结果归档', 'result archived'],
+  ['完整度', 'completeness'],
+  ['家访', 'Home visit'],
+  ['门诊', 'Outpatient'],
+  ['存活', 'Alive'],
+  ['稳定', 'Stable'],
+  ['缓解', 'Response'],
+  ['组织', 'Tissue'],
+  ['病程主线', 'clinical course'],
+  ['急性事件', 'acute events'],
+  ['治疗方案', 'treatment plan'],
+  ['随访记录', 'Follow-up record'],
+  ['样本采集', 'Sample collection'],
+  ['样本与组学', 'samples and omics'],
+  ['组学检测', 'omics testing'],
+  ['健康对照', 'healthy control'],
+  ['症状记录', 'symptom record'],
+  ['首次住院', 'first admission'],
+  ['初次住院', 'initial admission'],
+  ['基线评估', 'baseline assessment'],
+  ['活动评估', 'activity assessment'],
+  ['观察住院', 'observation admission'],
+  ['激素冲击', 'steroid pulse'],
+  ['维持治疗', 'maintenance therapy'],
+  ['联合维持', 'combined maintenance'],
+  ['结果归档', 'result archived'],
+  ['实验室指标', 'lab indicators'],
+  ['影像/检验', 'imaging/labs'],
+  ['不良事件', 'adverse events'],
+  ['生活质量', 'quality of life'],
+  ['失访原因', 'lost-to-follow-up reason'],
+  ['存储位置', 'storage'],
+  ['关联检测', 'linked testing'],
+  ['外周血', 'peripheral blood'],
+  ['转录组', 'transcriptomics'],
+  ['代谢组学', 'metabolomics'],
+  ['血常规', 'CBC'],
+  ['肝肾功能', 'liver/kidney function'],
   ['患者队列', 'patient cohort'],
   ['知情同意', 'informed consent'],
   ['临床数据采集', 'clinical data capture'],
@@ -294,6 +537,32 @@ const phraseEnglish = ([
   ['多组学检测', 'multi-omics testing'],
   ['多组学', 'multi-omics'],
   ['患者', 'patient'],
+  ['编号', 'ID'],
+  ['性别', 'sex'],
+  ['疾病', 'disease'],
+  ['脏器', 'organ'],
+  ['查找', 'find'],
+  ['清空', 'clear'],
+  ['事件', 'event'],
+  ['明细', 'detail'],
+  ['临床', 'clinical'],
+  ['病程', 'course'],
+  ['住院', 'admission'],
+  ['治疗', 'treatment'],
+  ['诊断', 'diagnosis'],
+  ['发病', 'onset'],
+  ['复发', 'relapse'],
+  ['记录', 'record'],
+  ['指标', 'indicator'],
+  ['日期', 'date'],
+  ['基线', 'baseline'],
+  ['评估', 'assessment'],
+  ['用药', 'medication'],
+  ['影像', 'imaging'],
+  ['检验', 'labs'],
+  ['转移', 'metastasis'],
+  ['失访', 'lost to follow-up'],
+  ['原因', 'reason'],
   ['样本', 'sample'],
   ['检测', 'testing'],
   ['随访', 'follow-up'],
@@ -348,7 +617,7 @@ const phraseEnglish = ([
   ['通知', 'notifications'],
   ['女', 'female'],
   ['男', 'male'],
-  ['血液', 'blood'],
+  ['血液', 'Blood'],
   ['脑脊液', 'CSF'],
   ['肾组织', 'kidney tissue'],
   ['肾', 'kidney'],
@@ -370,6 +639,22 @@ const phraseEnglish = ([
 ] as Array<[string, string]>).sort((a, b) => b[0].length - a[0].length);
 
 const dynamicRules: DynamicRule[] = [
+  {
+    pattern: /^(\d+) 名患者 · 输入编号、住院号或疾病类型切换$/,
+    format: (count) => `${count} patients · Search by patient ID, hospital No., or disease type`
+  },
+  {
+    pattern: /^匹配 (\d+) \/ (\d+) 名患者$/,
+    format: (matched, total) => `${matched} / ${total} patients matched`
+  },
+  {
+    pattern: /^(.+) \/ (.+) · (.+) · (\d+)岁 · (.+)$/,
+    format: (studyId, patient, sex, age, disease) => `${studyId} / ${patient} · ${translateToEnglish(sex)} · ${age} years · ${translateToEnglish(disease)}`
+  },
+  {
+    pattern: /^(.+) · (.+) · (\d+)岁 · (.+)$/,
+    format: (hospitalNo, sex, age, disease) => `${hospitalNo} · ${translateToEnglish(sex)} · ${age} years · ${translateToEnglish(disease)}`
+  },
   {
     pattern: /^显示 (\d+) 至 (\d+) 条，共 (\d+) 条记录$/,
     format: (start, end, total) => `Showing ${start}-${end} of ${total} records`
@@ -403,12 +688,75 @@ const dynamicRules: DynamicRule[] = [
     format: (days) => `Last ${days} days`
   },
   {
+    pattern: /^V(\d+) 基线$/,
+    format: (visit) => `V${visit} baseline`
+  },
+  {
     pattern: /^V(\d+) 基线访视$/,
     format: (visit) => `V${visit} baseline visit`
   },
   {
     pattern: /^V(\d+) (\d+)月随访$/,
     format: (visit, month) => `V${visit} ${month}-month follow-up`
+  },
+  {
+    pattern: /^V(\d+) (\d+)月(.+)$/,
+    format: (visit, month, label) => `V${visit} ${month}-month ${translateToEnglish(label)}`
+  },
+  {
+    pattern: /^明确(.+)$/,
+    format: (disease) => `Confirmed ${translateToEnglish(disease)}`
+  },
+  {
+    pattern: /^(.+)采集$/,
+    format: (sampleType) => `${translateToEnglish(sampleType)} collection`
+  },
+  {
+    pattern: /^(.+)(结果|送检)$/,
+    format: (assay, state) => `${translateToEnglish(assay)} ${translateToEnglish(state)}`
+  },
+  {
+    pattern: /^SLEDAI (.+)，(.+)$/,
+    format: (score, status) => `SLEDAI ${score}, ${translateToEnglish(status)}`
+  },
+  {
+    pattern: /^基线 SLEDAI (.+)$/,
+    format: (score) => `Baseline SLEDAI ${score}`
+  },
+  {
+    pattern: /^SLEDAI (.+) · 完整度 (.+)%$/,
+    format: (score, completeness) => `SLEDAI ${score} · ${completeness}% complete`
+  },
+  {
+    pattern: /^(.+) 建立患者旅程，受累脏器：(.+)。$/,
+    format: (patient, organs) => `${patient} journey created. Affected organs: ${translateToEnglish(organs)}.`
+  },
+  {
+    pattern: /^(.+) 诊断\/分组为 (.+)，住院号 (.+)。$/,
+    format: (patient, disease, hospitalNo) => `${patient} diagnosis/group: ${translateToEnglish(disease)}. Hospital No. ${hospitalNo}.`
+  },
+  {
+    pattern: /^(.+) 完成 (.+) 基线评估，记录 SLEDAI、用药和样本采集计划。$/,
+    format: (patient, disease) =>
+      `${patient} completed ${translateToEnglish(disease)} baseline assessment with SLEDAI, medication, and sample collection plan recorded.`
+  },
+  {
+    pattern: /^(.+) 当前治疗方案：(.+)。$/,
+    format: (patient, treatment) => `${patient} current treatment plan: ${translateToEnglish(treatment)}.`
+  },
+  {
+    pattern: /^(.+) (.+)，用药 (.+)，样本采集 (.+)。$/,
+    format: (patient, visitType, medication, sampleCollection) =>
+      `${patient} ${translateToEnglish(visitType)}. Medication: ${translateToEnglish(medication)}. Sample collection: ${translateToEnglish(sampleCollection)}.`
+  },
+  {
+    pattern: /^(.+)：(.+) 样本采集，存储位置 (.+)，关联检测 (.+)。$/,
+    format: (sampleId, sampleType, storage, testing) =>
+      `${sampleId}: ${translateToEnglish(sampleType)} sample collected. Storage: ${translateToEnglish(storage)}. Linked testing: ${translateToEnglish(testing)}.`
+  },
+  {
+    pattern: /^(.+) \/ (.+)，样本 (.+)，QC (.+)。$/,
+    format: (assay, platform, sampleId, qc) => `${translateToEnglish(assay)} / ${platform}, sample ${sampleId}, QC ${translateToEnglish(qc)}.`
   },
   {
     pattern: /^(\d+)月$/,
@@ -430,6 +778,23 @@ function normalizeBilingualBreaks(text: string) {
     .replace(/([\u4e00-\u9fa5])([a-zA-Z])/g, '$1 $2');
 }
 
+function cleanEnglishPhraseTranslation(text: string) {
+  return text
+    .replace(/、/g, ' / ')
+    .replace(/，/g, ', ')
+    .replace(/；/g, '; ')
+    .replace(/：/g, ': ')
+    .replace(/。/g, '.')
+    .replace(/\bIg G\b/g, 'IgG')
+    .replace(/(\d+)(years|months|days)\b/g, '$1 $2')
+    .replace(/\bbaselinevisit\b/gi, 'baseline visit')
+    .replace(/\b(patient journey|indicator trend|key indicator|study)time range\b/gi, '$1 time range')
+    .replace(/\s+([,.;:])/g, '$1')
+    .replace(/([,;:])(?=\S)/g, '$1 ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 export function translateToEnglish(source: string): string {
   const trimmed = source.trim();
   if (!trimmed) return source;
@@ -447,7 +812,7 @@ export function translateToEnglish(source: string): string {
     translated = translated.split(zh).join(en);
   }
 
-  return preserveOuterWhitespace(source, translated);
+  return preserveOuterWhitespace(source, cleanEnglishPhraseTranslation(translated));
 }
 
 export function translateText(source: string, locale: Locale) {

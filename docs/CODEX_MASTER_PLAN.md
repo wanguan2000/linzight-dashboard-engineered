@@ -1,14 +1,14 @@
-# RWS EDC Demo 自动开发总控计划
+# RWD EDC Demo 自动开发总控计划
 
-目标：基于现有前端界面、数据显示和业务逻辑，继续开发一个可试跑的 RWS EDC Demo 系统，使用 50 个模拟患者数据完成端到端验证,及PI研究者，CRC，系统管理员角色
+目标：基于现有前端界面、数据显示和业务逻辑，继续开发一个可试跑的 RWD EDC Demo 系统，使用 70 个模拟患者数据完成端到端验证，并覆盖平台级角色、研究级角色和多 Study 权限。
 
 ## 技术栈
 - 前端：现有前端为基础，优先工程化改造
 - 后端：Python FastAPI
 - 数据库：PostgreSQL，开发阶段可先兼容 SQLite
 - 文件存储：本地 uploads 目录，后续可替换 MinIO/S3
-- 数据：生成 50 个模拟患者，覆盖 NPSLE、Non-NPSLE、MS、NMOSD、HC
-- 权限：sys_admin、project_admin、investigator、crc、data_manager、viewer
+- 数据：生成 70 个模拟患者，覆盖 NPSLE、Non-NPSLE、MS、NMOSD、HC，以及 `LZXK-01` 真实世界肺癌耐药研究 20 名患者
+- 权限：`LZ_ADMIN`、`LZ_CRC`、`LZ_CRF_ADMIN`、`LZ_DATA_MANAGER`、`LZ_AUDITOR`、`STUDY_PI`、`STUDY_CRC`、`STUDY_CONFIG_ADMIN`、`STUDY_DATA_MANAGER`
 
 ## 必须连续完成的阶段
 1. 前端工程化改造

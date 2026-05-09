@@ -1,14 +1,27 @@
-import type { OmicsRecord, SampleRecord } from '../data/operations';
+import type { FollowUpRecord, OmicsRecord, SampleRecord } from '../data/operations';
+import type { StudyMembership, StudyScope } from '../data/auth';
 import type { DiseaseType } from '../data/patientCohort';
 
-export type ApiUserRole = 'sys_admin' | 'project_admin' | 'investigator' | 'crc' | 'data_manager' | 'viewer';
+export type ApiUserRole =
+  | 'LZ_ADMIN'
+  | 'LZ_CRC'
+  | 'LZ_CRF_ADMIN'
+  | 'LZ_DATA_MANAGER'
+  | 'LZ_AUDITOR'
+  | 'STUDY_PI'
+  | 'STUDY_CRC'
+  | 'STUDY_CONFIG_ADMIN'
+  | 'STUDY_DATA_MANAGER';
 
 export type ApiUser = {
   id: string;
   username: string;
   display_name: string;
   role: ApiUserRole;
+  legacy_role?: string | null;
   status: string;
+  study_scope?: StudyScope;
+  study_memberships?: StudyMembership[];
 };
 
 export type ApiLoginResponse = {
@@ -28,10 +41,13 @@ export type ApiPatient = {
   organs: string[];
   note: string;
   clinical_data: Record<string, string | number>;
+  clinical_data_version?: string;
+  clinical_data_format?: 'jsonb' | 'json' | 'legacy';
 };
 
 export type ApiSample = {
   id: string;
+  study_id: string;
   patient_id: string;
   patient_name: string;
   hospital_no: string;
@@ -45,6 +61,8 @@ export type ApiSample = {
 
 export type ApiOmics = {
   id: string;
+  study_id: string;
+  testing_project_id: string;
   patient_id: string;
   patient_name: string;
   sample_id: string;
@@ -60,7 +78,13 @@ export type ApiOmics = {
 
 export type ApiVisit = {
   id: string;
+  study_id: string;
   patient_id: string;
+  visit_plan_id?: string | null;
+  visit_plan_code?: string | null;
+  plan_day_offset?: number | null;
+  window_before_days?: number | null;
+  window_after_days?: number | null;
   patient_name: string;
   visit: string;
   visit_date: string;
@@ -72,8 +96,49 @@ export type ApiVisit = {
   status: '已完成' | '进行中' | '已预约';
 };
 
+export type ApiStudyVisitPlan = {
+  id: string;
+  study_id: string;
+  code: string;
+  name: string;
+  visit_type: string;
+  day_offset: number;
+  window_before_days: number;
+  window_after_days: number;
+  required_forms: string[];
+  required_samples: string[];
+  status: 'active' | 'draft' | 'retired';
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiFollowUpRecord = {
+  id: string;
+  study_id: string;
+  patient_id: string;
+  visit_id?: string | null;
+  patient_name: string;
+  follow_up_date: string;
+  follow_up_method: FollowUpRecord['followUpMethod'];
+  followed_by: string;
+  survival_status: FollowUpRecord['survivalStatus'];
+  disease_status: string;
+  symptoms_signs: string;
+  imaging_lab_summary: string;
+  efficacy_assessment: string;
+  metastasis_status: string;
+  adverse_events: string;
+  quality_of_life: string;
+  lost_to_follow_up_reason: string;
+  recorded_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ApiConsent = {
   id: string;
+  study_id: string;
   patient_id: string;
   patient_name: string;
   hospital_no: string;
@@ -86,10 +151,15 @@ export type ApiConsent = {
 
 export type ApiCrfEntry = {
   id: string;
+  study_id: string;
   patient_id: string;
   visit_id: string | null;
+  crf_version_id: string;
+  form_id: string;
   module: string;
   payload: Record<string, string | number | boolean | null>;
+  payload_version?: string;
+  payload_format?: 'jsonb' | 'json' | 'legacy';
   status: 'draft' | 'submitted' | 'locked';
   completed_by: string | null;
   completed_at: string | null;
@@ -99,6 +169,7 @@ export type ApiCrfEntry = {
 
 export type ApiFileMetadata = {
   id: string;
+  study_id: string;
   patient_id: string | null;
   sample_id: string | null;
   omics_id: string | null;
@@ -117,6 +188,7 @@ export type ApiFileMetadata = {
 
 export type ApiExportJob = {
   id: string;
+  study_id: string;
   requested_by: string | null;
   export_type: string;
   scope: Record<string, unknown>;
@@ -146,6 +218,7 @@ export type ApiPanorama = {
   samples: ApiSample[];
   omics_records: ApiOmics[];
   visits?: ApiVisit[];
+  follow_up_records?: ApiFollowUpRecord[];
   crf_entries?: ApiCrfEntry[];
   files?: ApiFileMetadata[];
 };
