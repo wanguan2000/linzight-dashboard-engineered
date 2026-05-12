@@ -13,6 +13,7 @@ npm run smoke:api
 npm run export:openapi
 npm run export:html
 npm run smoke:ui
+npm run regression:browser
 npm run release:check
 npm run smoke:docker
 npm test
@@ -35,6 +36,7 @@ git status --short --branch
 - Required package scripts are present.
 - Core handoff, changelog, API, protocol, OpenAPI snapshot, release-readiness, frontend audit, deployment operations, and HTML export docs exist.
 - GitHub Actions runs lint, build, backend compile, API smoke, OpenAPI export, HTML export, UI smoke, the release gate, and Docker smoke.
+- Browser regression is layered via `npm run regression:browser`; if Playwright is not installed, the script writes a limitation report under `reports/`.
 - OpenAPI export script and `docs/openapi.json` exist.
 - Docker smoke script exists and validates compose build/up, backend health/login, and frontend app shell.
 - Docker Compose baseline files exist for local frontend/backend Demo startup.

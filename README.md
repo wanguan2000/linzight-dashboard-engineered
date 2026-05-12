@@ -148,6 +148,12 @@ npm run smoke:api
 npm run smoke:ui
 ```
 
+分层浏览器交互回归（优先使用 Playwright；未安装 Playwright 时会生成 limitation 报告）：
+
+```bash
+npm run regression:browser
+```
+
 发布检查（检查必备脚本/文档/CI gate、静态导出、敏感文件和大文件跟踪风险）：
 
 ```bash

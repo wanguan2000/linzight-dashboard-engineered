@@ -11,6 +11,7 @@
     "smoke:api": "node scripts/api-smoke.mjs",
     "smoke:ui": "node scripts/ui-smoke.mjs",
     "smoke:docker": "node scripts/docker-smoke.mjs",
+    "regression:browser": "node scripts/playwright-regression.mjs",
     "release:check": "node scripts/release-check.mjs",
     "backup:sqlite": "node scripts/backup-sqlite.mjs",
     "restore:sqlite": "node scripts/restore-sqlite.mjs",
