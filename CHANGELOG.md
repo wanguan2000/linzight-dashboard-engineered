@@ -34,6 +34,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Backend list/detail routes now apply Study scope filtering, and the frontend filters menus plus local fallback data by the logged-in user's Study scope.
 - Backend SQLite connections now honor `LINZIGHT_DATABASE_URL`, allowing smoke tests and local installs to use an isolated database path.
 - Dashboard welcome copy now reflects the authenticated user instead of a hard-coded demo PI.
+- Field-level privacy rules now mask direct identifiers for data-manager/auditor roles and remove non-exportable identifiers from CSV exports.
 - Previously inert or frontend-only buttons across cohort, consent, clinical data capture, samples/testing, analytics, and system management now either call backend APIs, create audit-backed records, export real files, or present an explicit disabled state.
 - English locale coverage was expanded across login, module navigation, patient cohort, informed consent, clinical data capture, sample testing, patient journey, data analysis, and system management.
 - Additional English-locale cleanup covers dashboard KPI helpers, workflow cards, enrollment trend, smart summary markers, sample/testing detail panels, omics result panels, data-analysis pipeline, and system-management overview text.

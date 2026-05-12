@@ -677,6 +677,7 @@ def seed_database() -> None:
             DELETE FROM study_visit_plans;
             DELETE FROM consents;
             DELETE FROM role_permissions;
+            DELETE FROM field_permissions;
             DELETE FROM global_role_study_scope;
             DELETE FROM study_members;
             DELETE FROM study_crf_versions;
@@ -780,6 +781,30 @@ def seed_database() -> None:
                 for action in ["read", "write"]
                 if role_can(role, resource, action)
             ],
+        )
+        field_permission_rows = []
+        sensitive_fields = [
+            ("patients", "name", "name"),
+            ("patients", "patient_name", "name"),
+            ("patients", "hospital_no", "hospital_no"),
+            ("patients", "病历号", "hospital_no"),
+            ("patients", "身份证号", "id_card"),
+            ("patients", "手机号", "phone"),
+            ("patients", "联系电话", "phone"),
+            ("patients", "地址", "address"),
+            ("patients", "住址", "address"),
+        ]
+        masked_roles = {"LZ_DATA_MANAGER", "LZ_AUDITOR", "STUDY_DATA_MANAGER"}
+        for role in ROLE_VALUES:
+            for resource, field_name, mask_rule in sensitive_fields:
+                can_export = 0 if role in masked_roles else 1
+                field_permission_rows.append((role, resource, field_name, 1, can_export, "none" if role == "LZ_ADMIN" or role not in masked_roles else mask_rule, now, now))
+        conn.executemany(
+            """
+            INSERT INTO field_permissions (role, resource, field_name, can_view, can_export, mask_rule, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            field_permission_rows,
         )
         conn.execute(
             """

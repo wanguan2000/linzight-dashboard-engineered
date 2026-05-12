@@ -113,6 +113,15 @@ async function uploadConsentFile(token, consentId, patientId) {
   return data;
 }
 
+async function downloadText(path, token) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const raw = await response.text();
+  assert(response.ok, `download ${path} failed ${response.status}: ${raw}`);
+  return raw;
+}
+
 async function runSmoke() {
   startServer();
   await waitForHealth();
@@ -138,6 +147,10 @@ async function runSmoke() {
   assert(patients.data.length > 0, 'LZXK-01 patients should be visible to lung CRC');
   assert(patients.data.every((patient) => patient.study_id === 'LZXK-01'), 'patient list leaked another study');
   await request('/patients?study_id=LGL-1111', { token: crc.access_token, expectedStatus: 403 });
+  const dataManagerPatients = await request('/patients?study_id=LZXK-01', { token: dataManager.access_token });
+  assert(dataManagerPatients.data.length > 0, 'data manager should see scoped patients');
+  assert(dataManagerPatients.data[0].name.includes('**'), 'data manager patient name should be masked');
+  assert(dataManagerPatients.data[0].hospital_no.includes('****'), 'data manager hospital number should be masked in API view');
 
   const patient = patients.data[0];
   const consentList = await request('/consents?study_id=LZXK-01', { token: crc.access_token });
@@ -379,6 +392,12 @@ async function runSmoke() {
   assert(exportJob.status === 201, 'export create should return 201');
   assert(exportJob.data.study_id === 'LZXK-01', 'export should be scoped to LZXK-01');
   assert(exportJob.data.status === 'ready', 'export should be ready in demo backend');
+  const exportedCsv = await downloadText(`/exports/${exportJob.data.id}/download`, dataManager.access_token);
+  const exportedFirstDataRow = exportedCsv.trim().split('\n')[1].split(',');
+  assert(exportedFirstDataRow[2] === '' && exportedFirstDataRow[3] === '', 'data manager export should remove direct identifiers');
+  const fieldPermissions = await request('/field-permissions?resource=patients', { token: dataManager.access_token });
+  assert(fieldPermissions.data.every((item) => item.role === 'STUDY_DATA_MANAGER'), 'non-admin field permissions response should be role-scoped');
+  assert(fieldPermissions.data.some((item) => item.field_name === 'name' && item.mask_rule === 'name'), 'field permissions should expose patient name masking rule');
 
   const audits = await request('/audit-logs?study_id=LZXK-01&entity_type=study_crf_versions', { token: configAdmin.access_token });
   assert(audits.data.some((entry) => entry.action === 'update_crf_field'), 'CRF update audit log missing');

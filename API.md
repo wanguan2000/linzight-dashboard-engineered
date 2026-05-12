@@ -24,8 +24,10 @@
 - `POST /auth/logout`
 - `POST /users`
 - `PATCH /users/{user_id}/status`
+- `GET /field-permissions`
 
 当前认证使用 HMAC 签名 Bearer token，密码使用 PBKDF2-HMAC-SHA256 加盐哈希。`POST /users` 会执行基础密码策略校验，账号禁用后登录会被拒绝。
+字段级权限集中在 `field_permissions`：患者姓名、住院号、身份证号、手机号、地址等直接标识符会按角色返回原文、脱敏值或导出空值。
 
 登录响应会返回新角色码、`study_scope` 和 `study_memberships`。后续请求需要携带 Bearer token，后端按 `study_id` 自动过滤授权数据。
 `POST /users` 用于系统管理页创建账号；`STUDY_CONFIG_ADMIN` 可在本 Study 内创建研究级账号并同步写入 `study_members`，平台级账号创建仅限 `LZ_ADMIN`。

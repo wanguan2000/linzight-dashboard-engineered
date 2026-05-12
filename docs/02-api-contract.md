@@ -22,6 +22,7 @@
 | 登录 | `POST` | `/auth/logout` | 记录登出审计并返回登出状态 |
 | 用户 | `POST` | `/users` | 创建平台或研究级用户；研究级用户可同步加入指定 Study |
 | 用户 | `PATCH` | `/users/{user_id}/status` | `LZ_ADMIN` 启用或禁用账号；禁用账号不能登录 |
+| 字段权限 | `GET` | `/field-permissions` | 当前角色或管理员可见的字段级可见、可导出和脱敏规则 |
 | Study | `GET` | `/studies` | 当前用户可访问 Study |
 | Study 成员 | `GET` | `/studies/{study_id}/members` | 查询 Study 成员 |
 | Study 成员 | `POST` | `/studies/{study_id}/members` | 分配或更新研究级角色，返回与列表一致的成员展示字段 |
@@ -59,6 +60,8 @@
 | 导出 | `POST` | `/exports` | 创建导出任务 |
 | 导出 | `GET` | `/exports` | 查询导出任务 |
 | 审计 | `GET` | `/audit-logs` | 查询实体操作审计 |
+
+患者、样本、组学、访视、随访和知情同意等响应中的直接标识符会按 `field_permissions` 应用字段级权限。`LZ_DATA_MANAGER`、`STUDY_DATA_MANAGER` 和 `LZ_AUDITOR` 默认只能看到姓名、住院号等字段的脱敏值；导出时这些字段按 `can_export=false` 输出为空，确保前端表格、详情页和 CSV 下载使用同一套权限/脱敏逻辑。
 
 ## 角色权限矩阵
 

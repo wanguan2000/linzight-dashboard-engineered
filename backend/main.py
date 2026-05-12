@@ -201,6 +201,85 @@ def append_study_filter(conn: Any, user: dict[str, Any], where: list[str], param
     params.extend(study_ids)
 
 
+def mask_sensitive_value(value: Any, rule: str) -> Any:
+    if value is None or rule == "none":
+        return value
+    text = str(value)
+    if not text:
+        return text
+    if rule == "name":
+        return f"{text[0]}**" if len(text) <= 3 else f"{text[0]}**{text[-1]}"
+    if rule == "phone":
+        return f"{text[:3]}****{text[-4:]}" if len(text) >= 7 else "***"
+    if rule == "id_card":
+        return f"{text[:3]}********{text[-4:]}" if len(text) >= 8 else "***"
+    if rule == "hospital_no":
+        return f"{text[:2]}****{text[-2:]}" if len(text) >= 5 else "***"
+    if rule == "address":
+        return f"{text[:6]}..." if len(text) > 6 else "***"
+    return "***"
+
+
+def load_field_permissions(conn: Any, role: str, resource: str = "patients") -> dict[str, dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT field_name, can_view, can_export, mask_rule
+        FROM field_permissions
+        WHERE role = ? AND resource = ?
+        """,
+        (role, resource),
+    ).fetchall()
+    return {
+        row["field_name"]: {
+            "can_view": bool(row["can_view"]),
+            "can_export": bool(row["can_export"]),
+            "mask_rule": row["mask_rule"],
+        }
+        for row in rows
+    }
+
+
+def apply_field_permissions_to_record(
+    conn: Any,
+    user: dict[str, Any],
+    record: dict[str, Any],
+    *,
+    resource: str = "patients",
+    mode: str = "view",
+) -> dict[str, Any]:
+    permissions = load_field_permissions(conn, user_role(user), resource)
+
+    def apply_field(field_name: str, value: Any) -> Any:
+        permission = permissions.get(field_name)
+        if not permission:
+            return value
+        if mode == "export" and not permission["can_export"]:
+            return ""
+        if not permission["can_view"]:
+            return None
+        return mask_sensitive_value(value, permission["mask_rule"])
+
+    next_record = dict(record)
+    for field_name in ["name", "patient_name", "hospital_no"]:
+        if field_name in next_record:
+            next_record[field_name] = apply_field(field_name, next_record[field_name])
+    clinical_data = next_record.get("clinical_data")
+    if isinstance(clinical_data, dict):
+        next_record["clinical_data"] = {field_name: apply_field(field_name, value) for field_name, value in clinical_data.items()}
+    return next_record
+
+
+def apply_field_permissions_to_records(
+    conn: Any,
+    user: dict[str, Any],
+    records: list[dict[str, Any]],
+    *,
+    resource: str = "patients",
+    mode: str = "view",
+) -> list[dict[str, Any]]:
+    return [apply_field_permissions_to_record(conn, user, record, resource=resource, mode=mode) for record in records]
+
+
 def patient_study_id(conn: Any, patient_id: str) -> str:
     row = fetch_one(conn, "SELECT study_id FROM patients WHERE id = ?", (patient_id,))
     return row["study_id"]
@@ -709,6 +788,35 @@ def update_user_status(user_id: str, payload: UserStatusUpdate, authorization: s
         after["study_scope"] = get_user_study_scope(conn, after)
         insert_audit(conn, actor, "update_status", "users", user_id, before=before, after=after, study_id=first_accessible_study_id(conn, after) or first_accessible_study_id(conn, actor) or "LGL-1111")
         return after
+
+
+@app.get("/field-permissions")
+def list_field_permissions(resource: str = "patients", authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    with connect() as conn:
+        user = authorize(authorization, "studies", "read", conn=conn)
+        rows = conn.execute(
+            """
+            SELECT role, resource, field_name, can_view, can_export, mask_rule, updated_at
+            FROM field_permissions
+            WHERE resource = ?
+            ORDER BY role, field_name
+            """,
+            (resource,),
+        ).fetchall()
+        if user_role(user) != "LZ_ADMIN":
+            rows = [row for row in rows if row["role"] == user_role(user)]
+        return [
+            {
+                "role": row["role"],
+                "resource": row["resource"],
+                "field_name": row["field_name"],
+                "can_view": bool(row["can_view"]),
+                "can_export": bool(row["can_export"]),
+                "mask_rule": row["mask_rule"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
 
 
 @app.get("/studies")
@@ -1290,7 +1398,8 @@ def list_patients(
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY updated_at DESC"
-        return [row_to_patient(row) for row in conn.execute(sql, params).fetchall()]
+        patients = [row_to_patient(row) for row in conn.execute(sql, params).fetchall()]
+        return apply_field_permissions_to_records(conn, user, patients)
 
 
 @app.post("/patients", status_code=status.HTTP_201_CREATED)
@@ -1331,7 +1440,7 @@ def create_patient(payload: PatientCreate, authorization: str | None = Header(de
             insert_audit(conn, user, "create", "patients", patient_id, after=row, study_id=data["study_id"])
             row["generated_visit_count"] = created_plan_items["visits"]
             row["generated_crf_count"] = created_plan_items["crf_entries"]
-            return row
+            return apply_field_permissions_to_record(conn, user, row)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1343,8 +1452,8 @@ def get_patient(patient_id: str, authorization: str | None = Header(default=None
     with connect() as conn:
         try:
             patient = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
-            authorize(authorization, "patients", "read", study_id=patient["study_id"], conn=conn)
-            return patient
+            user = authorize(authorization, "patients", "read", study_id=patient["study_id"], conn=conn)
+            return apply_field_permissions_to_record(conn, user, patient)
         except KeyError as exc:
             raise not_found() from exc
 
@@ -1371,7 +1480,7 @@ def update_patient(patient_id: str, payload: PatientUpdate, authorization: str |
                 columns.append(f"{key} = ?")
                 values.append(value)
         if not columns:
-            return row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
+            return apply_field_permissions_to_record(conn, user, row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,))))
         columns.append("updated_at = ?")
         values.extend([utc_now(), patient_id])
         result = conn.execute(f"UPDATE patients SET {', '.join(columns)} WHERE id = ?", values)
@@ -1379,7 +1488,7 @@ def update_patient(patient_id: str, payload: PatientUpdate, authorization: str |
             raise not_found()
         after = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
         insert_audit(conn, user, "update", "patients", patient_id, before=before, after=after, study_id=after["study_id"])
-        return after
+        return apply_field_permissions_to_record(conn, user, after)
 
 
 @app.delete("/patients/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1413,7 +1522,8 @@ def list_samples(
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY collected_at DESC"
-        return [row_to_sample(row) for row in conn.execute(sql, params).fetchall()]
+        rows = [row_to_sample(row) for row in conn.execute(sql, params).fetchall()]
+        return apply_field_permissions_to_records(conn, user, rows)
 
 
 @app.post("/samples", status_code=status.HTTP_201_CREATED)
@@ -1459,8 +1569,8 @@ def get_sample(sample_id: str, authorization: str | None = Header(default=None))
     with connect() as conn:
         try:
             sample = row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
-            authorize(authorization, "samples", "read", study_id=sample["study_id"], conn=conn)
-            return sample
+            user = authorize(authorization, "samples", "read", study_id=sample["study_id"], conn=conn)
+            return apply_field_permissions_to_record(conn, user, sample)
         except KeyError as exc:
             raise not_found() from exc
 
@@ -1550,7 +1660,8 @@ def list_visits(
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY v.visit_date DESC"
-        return [row_to_visit(row) for row in conn.execute(sql, params).fetchall()]
+        rows = [row_to_visit(row) for row in conn.execute(sql, params).fetchall()]
+        return apply_field_permissions_to_records(conn, user, rows)
 
 
 @app.get("/follow-up-records")
@@ -1580,7 +1691,8 @@ def list_follow_up_records(
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY f.follow_up_date DESC, f.recorded_at DESC"
-        return [row_to_follow_up_record(row) for row in conn.execute(sql, params).fetchall()]
+        rows = [row_to_follow_up_record(row) for row in conn.execute(sql, params).fetchall()]
+        return apply_field_permissions_to_records(conn, user, rows)
 
 
 @app.post("/follow-up-records", status_code=status.HTTP_201_CREATED)
@@ -1730,7 +1842,8 @@ def list_omics(
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY sent_at DESC"
-        return [row_to_omics(row) for row in conn.execute(sql, params).fetchall()]
+        rows = [row_to_omics(row) for row in conn.execute(sql, params).fetchall()]
+        return apply_field_permissions_to_records(conn, user, rows)
 
 
 @app.post("/omics", status_code=status.HTTP_201_CREATED)
@@ -1779,8 +1892,8 @@ def get_omics(record_id: str, authorization: str | None = Header(default=None)) 
     with connect() as conn:
         try:
             record = row_to_omics(fetch_one(conn, "SELECT * FROM omics_records WHERE id = ?", (record_id,)))
-            authorize(authorization, "omics", "read", study_id=record["study_id"], conn=conn)
-            return record
+            user = authorize(authorization, "omics", "read", study_id=record["study_id"], conn=conn)
+            return apply_field_permissions_to_record(conn, user, record)
         except KeyError as exc:
             raise not_found() from exc
 
@@ -1858,7 +1971,8 @@ def list_consents(
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY p.id"
-        return [row_to_consent(row) for row in conn.execute(sql, params).fetchall()]
+        rows = [row_to_consent(row) for row in conn.execute(sql, params).fetchall()]
+        return apply_field_permissions_to_records(conn, user, rows)
 
 
 @app.put("/consents/{consent_id}")
@@ -1896,7 +2010,7 @@ def update_consent(consent_id: str, payload: ConsentUpdate, authorization: str |
             """,
             (consent_id,),
         ).fetchone()
-        return row_to_consent(joined)
+        return apply_field_permissions_to_record(conn, user, row_to_consent(joined))
 
 
 @app.get("/crf")
@@ -2332,14 +2446,31 @@ def create_export_job(payload: ExportJobCreate, authorization: str | None = Head
         temp_user = authorize(authorization, "exports", "write", conn=conn)
         requested_study_id = str(data["scope"].get("study_id") or first_accessible_study_id(conn, temp_user) or "LGL-1111")
         user = authorize(authorization, "exports", "write", study_id=requested_study_id, conn=conn)
-        patient_rows = conn.execute(
-            "SELECT study_id, id, name, hospital_no, sex, age, disease_type, note FROM patients WHERE study_id = ? ORDER BY id",
-            (requested_study_id,),
-        ).fetchall()
+        patient_rows = [
+            apply_field_permissions_to_record(conn, user, row_to_patient(row), mode="export")
+            for row in conn.execute(
+                "SELECT * FROM patients WHERE study_id = ? ORDER BY id",
+                (requested_study_id,),
+            ).fetchall()
+        ]
         with export_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
             writer.writerow(["study_id", "id", "name", "hospital_no", "sex", "age", "disease_type", "note"])
-            writer.writerows([tuple(row) for row in patient_rows])
+            writer.writerows(
+                [
+                    (
+                        row["study_id"],
+                        row["id"],
+                        row["name"],
+                        row["hospital_no"],
+                        row["sex"],
+                        row["age"],
+                        row["disease_type"],
+                        row["note"],
+                    )
+                    for row in patient_rows
+                ]
+            )
         content = export_path.read_bytes()
         conn.execute(
             """
@@ -2520,7 +2651,7 @@ def patient_panorama(patient_id: str, authorization: str | None = Header(default
     with connect() as conn:
         try:
             patient = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
-            authorize(authorization, "patients", "read", study_id=patient["study_id"], conn=conn)
+            user = authorize(authorization, "patients", "read", study_id=patient["study_id"], conn=conn)
         except KeyError as exc:
             raise not_found() from exc
         sample_rows = [row_to_sample(row) for row in conn.execute("SELECT * FROM samples WHERE patient_id = ? ORDER BY collected_at", (patient_id,)).fetchall()]
@@ -2563,12 +2694,12 @@ def patient_panorama(patient_id: str, authorization: str | None = Header(default
         file_rows = [row_to_file(row) for row in conn.execute("SELECT * FROM uploaded_files WHERE patient_id = ? ORDER BY uploaded_at", (patient_id,)).fetchall()]
         quality_rows = [row_to_quality_issue(row) for row in conn.execute("SELECT * FROM data_quality_issues WHERE patient_id = ? ORDER BY created_at", (patient_id,)).fetchall()]
         return {
-            "patient": patient,
-            "samples": sample_rows,
-            "omics_records": omics_rows,
+            "patient": apply_field_permissions_to_record(conn, user, patient),
+            "samples": apply_field_permissions_to_records(conn, user, sample_rows),
+            "omics_records": apply_field_permissions_to_records(conn, user, omics_rows),
             "consents": consents,
-            "visits": visit_rows,
-            "follow_up_records": follow_up_rows,
+            "visits": apply_field_permissions_to_records(conn, user, visit_rows),
+            "follow_up_records": apply_field_permissions_to_records(conn, user, follow_up_rows),
             "crf_entries": crf_rows,
             "files": file_rows,
             "quality_issues": quality_rows,

@@ -15,6 +15,8 @@ CRF 字段字典当前来自 `resource/sle-crf-v0.1.schema.json`。前端通过 
 
 所有 RWD EDC 主链路数据使用 `study_id` 做隔离。前端会在登录后保存 `study_scope`，API 请求自动携带 HMAC 签名 Bearer token；登录态启动时会调用 `/auth/me` 校验，token 缺失、过期或无效时回到登录页。
 
+字段级权限由后端 `field_permissions` 统一执行。前端不自行判断姓名、住院号、身份证号、手机号、地址等直接标识符是否需要脱敏，而是展示 API 返回值；导出文件也由后端按同一规则生成。当前默认规则让 `LZ_DATA_MANAGER`、`STUDY_DATA_MANAGER` 和 `LZ_AUDITOR` 在页面看到脱敏值，在 CSV 导出中移除直接标识符。
+
 访视计划由 `study_visit_plans` 配置，不写入 CRF 字段表。`visits` 是患者实际访视记录，通过 `visit_plan_id` 关联配置；新建患者时后端按当前 Study active 访视计划自动生成访视和初始 CRF 草稿。
 
 随访记录由 `follow_up_records` 保存，不写入 CRF 版本配置表。它隶属于患者信息，绑定 `study_id + patient_id`，并可选通过 `visit_id` 关联某次随访访视，用于记录随访方式、随访人、生存/疾病状态、疗效、转移、不良事件、生活质量和失访原因。

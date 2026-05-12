@@ -206,6 +206,18 @@ def initialize_schema() -> None:
               PRIMARY KEY (role, resource, action)
             );
 
+            CREATE TABLE IF NOT EXISTS field_permissions (
+              role TEXT NOT NULL,
+              resource TEXT NOT NULL,
+              field_name TEXT NOT NULL,
+              can_view INTEGER NOT NULL DEFAULT 1,
+              can_export INTEGER NOT NULL DEFAULT 1,
+              mask_rule TEXT NOT NULL DEFAULT 'none',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY (role, resource, field_name)
+            );
+
             CREATE TABLE IF NOT EXISTS crf_entries (
               id TEXT PRIMARY KEY,
               study_id TEXT NOT NULL DEFAULT 'LGL-1111',
@@ -401,7 +413,36 @@ def initialize_schema() -> None:
         migrate_study_schema(conn)
         migrate_json_storage(conn)
         seed_default_study(conn)
+        seed_default_field_permissions(conn)
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def seed_default_field_permissions(conn: sqlite3.Connection) -> None:
+    now = utc_now()
+    sensitive_fields = [
+        ("patients", "name", "name"),
+        ("patients", "patient_name", "name"),
+        ("patients", "hospital_no", "hospital_no"),
+        ("patients", "病历号", "hospital_no"),
+        ("patients", "身份证号", "id_card"),
+        ("patients", "手机号", "phone"),
+        ("patients", "联系电话", "phone"),
+        ("patients", "地址", "address"),
+        ("patients", "住址", "address"),
+    ]
+    masked_roles = {"LZ_DATA_MANAGER", "LZ_AUDITOR", "STUDY_DATA_MANAGER"}
+    rows = []
+    for role in ROLE_VALUES:
+        for resource, field_name, mask_rule in sensitive_fields:
+            should_mask = role in masked_roles and role != "LZ_ADMIN"
+            rows.append((role, resource, field_name, 1, 0 if should_mask else 1, mask_rule if should_mask else "none", now, now))
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO field_permissions (role, resource, field_name, can_view, can_export, mask_rule, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
 
 
 def encode_json(value: Any) -> str:
