@@ -14,6 +14,7 @@
     "release:check": "node scripts/release-check.mjs",
     "backup:sqlite": "node scripts/backup-sqlite.mjs",
     "restore:sqlite": "node scripts/restore-sqlite.mjs",
+    "export:postgres-migration": "node scripts/sqlite-to-postgres-export.mjs",
     "test": "npm run smoke:api && npm run export:openapi && npm run export:html && npm run smoke:ui && npm run release:check",
     "preview": "vite preview --host 0.0.0.0",
     "lint": "eslint src scripts --report-unused-disable-directives --max-warnings 0",

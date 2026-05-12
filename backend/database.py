@@ -60,6 +60,12 @@ def initialize_schema() -> None:
               updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+              version TEXT PRIMARY KEY,
+              description TEXT NOT NULL,
+              applied_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS patients (
               id TEXT PRIMARY KEY,
               study_id TEXT NOT NULL DEFAULT 'LGL-1111',
@@ -457,6 +463,7 @@ def initialize_schema() -> None:
         migrate_json_storage(conn)
         seed_default_study(conn)
         seed_default_field_permissions(conn)
+        record_schema_version(conn)
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -485,6 +492,20 @@ def seed_default_field_permissions(conn: sqlite3.Connection) -> None:
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         rows,
+    )
+
+
+def record_schema_version(conn: sqlite3.Connection) -> None:
+    versions = [
+        ("20260512_001_auth_privacy_approvals_files", "Production-demo auth, field privacy, approvals, and file security baseline"),
+    ]
+    now = utc_now()
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO schema_migrations (version, description, applied_at)
+        VALUES (?, ?, ?)
+        """,
+        [(version, description, now) for version, description in versions],
     )
 
 

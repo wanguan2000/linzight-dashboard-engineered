@@ -15,7 +15,7 @@ Backend:
 | Variable | Example | Notes |
 | --- | --- | --- |
 | `LINZIGHT_DATABASE_URL` | `sqlite:////data/linzight_demo.db` | SQLite URL for the Demo backend. Do not use SQLite as a production clinical database. |
-| `LINZIGHT_POSTGRES_URL` | `postgresql://user:pass@host:5432/linzight` | Reserved for future production database adaptation. |
+| `LINZIGHT_POSTGRES_URL` | `postgresql://linzight:linzight@localhost:5432/linzight` | PostgreSQL target URL for migration rehearsal and future runtime adapter work. |
 | `LINZIGHT_UPLOADS_DIR` | `/uploads` | Local upload directory for demo files. Production should use controlled object storage. |
 | `LINZIGHT_BACKUP_DIR` | `./backups` | Optional backup output path for demo SQLite backup scripts. |
 
@@ -32,6 +32,15 @@ docker compose up --build
 - Health: `http://127.0.0.1:8000/health`
 
 The backend container seeds the SQLite volume on first start only. Remove the `linzight_backend_data` volume if you need a clean seeded database.
+
+Optional PostgreSQL service for migration rehearsals:
+
+```bash
+docker compose --profile postgres up -d postgres
+npm run export:postgres-migration -- exports/postgres-migration
+```
+
+The export command writes one CSV and JSON file per SQLite table plus `manifest.json`. Load these files into PostgreSQL with a controlled migration tool, compare table counts against the manifest, then switch traffic only after read/write validation. Runtime writes still default to SQLite until a PostgreSQL SQL adapter is activated.
 
 Validation commands:
 

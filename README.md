@@ -173,6 +173,7 @@ Demo SQLite / 上传目录备份恢复：
 ```bash
 npm run backup:sqlite
 npm run restore:sqlite -- backups/linzight-<timestamp>
+npm run export:postgres-migration -- exports/postgres-migration
 ```
 
 部署运维说明见 `docs/deployment-ops.md`。
