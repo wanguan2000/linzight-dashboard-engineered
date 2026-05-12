@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project uses Semantic Versioning.
 
-## Unreleased
+## [0.2.0-production-demo-rc1] - 2026-05-12
 
 ### Added
 

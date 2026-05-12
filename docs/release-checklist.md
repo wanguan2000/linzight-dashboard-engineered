@@ -2,6 +2,8 @@
 
 Use this checklist before publishing a private beta branch, tag, or release artifact.
 
+Current candidate: `v0.2.0-production-demo-rc1`.
+
 ## Required Local Gates
 
 Run these from the repository root:
