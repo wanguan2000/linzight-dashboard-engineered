@@ -307,6 +307,35 @@ export type ApiExportJob = {
   completed_at: string | null;
 };
 
+export type ApiApprovalRequest = {
+  id: string;
+  study_id: string;
+  approval_type: 'export' | 'deidentified_export' | 'crf_publish';
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'cancelled' | 'completed';
+  entity_type: string;
+  entity_id: string;
+  payload: Record<string, unknown>;
+  submitted_by?: string | null;
+  reviewed_by?: string | null;
+  submitted_at?: string | null;
+  reviewed_at?: string | null;
+  completed_at?: string | null;
+  comment: string;
+  created_at: string;
+  updated_at: string;
+  actions?: Array<{
+    id: string;
+    approval_id: string;
+    study_id: string;
+    actor_id?: string | null;
+    action: string;
+    from_status?: string | null;
+    to_status: string;
+    comment: string;
+    created_at: string;
+  }>;
+};
+
 export type ApiAnalysisSummary = {
   patient_count: number;
   disease_distribution: Record<DiseaseType, number>;

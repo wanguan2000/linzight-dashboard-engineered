@@ -395,6 +395,41 @@ def initialize_schema() -> None:
               FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL
             );
 
+            CREATE TABLE IF NOT EXISTS approval_requests (
+              id TEXT PRIMARY KEY,
+              study_id TEXT NOT NULL,
+              approval_type TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'draft',
+              entity_type TEXT NOT NULL DEFAULT '',
+              entity_id TEXT NOT NULL DEFAULT '',
+              payload_json TEXT NOT NULL DEFAULT '{}',
+              submitted_by TEXT,
+              reviewed_by TEXT,
+              submitted_at TEXT,
+              reviewed_at TEXT,
+              completed_at TEXT,
+              comment TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE,
+              FOREIGN KEY (submitted_by) REFERENCES users(id) ON DELETE SET NULL,
+              FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS approval_actions (
+              id TEXT PRIMARY KEY,
+              approval_id TEXT NOT NULL,
+              study_id TEXT NOT NULL,
+              actor_id TEXT,
+              action TEXT NOT NULL,
+              from_status TEXT,
+              to_status TEXT NOT NULL,
+              comment TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (approval_id) REFERENCES approval_requests(id) ON DELETE CASCADE,
+              FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_patients_disease_type ON patients(disease_type);
             CREATE INDEX IF NOT EXISTS idx_visit_plans_study_id ON study_visit_plans(study_id);
             CREATE INDEX IF NOT EXISTS idx_samples_patient_id ON samples(patient_id);
@@ -408,6 +443,8 @@ def initialize_schema() -> None:
             CREATE INDEX IF NOT EXISTS idx_study_members_user_id ON study_members(user_id);
             CREATE INDEX IF NOT EXISTS idx_crf_migration_approvals_study_id ON crf_migration_approvals(study_id);
             CREATE INDEX IF NOT EXISTS idx_crf_migration_execution_logs_migration_id ON crf_migration_execution_logs(migration_id);
+            CREATE INDEX IF NOT EXISTS idx_approval_requests_study_id ON approval_requests(study_id);
+            CREATE INDEX IF NOT EXISTS idx_approval_actions_approval_id ON approval_actions(approval_id);
             """
         )
         migrate_study_schema(conn)
@@ -751,6 +788,16 @@ def row_to_crf_migration_approval(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
     item["preview"] = decode_json(item.pop("preview_json"), {})
     return item
+
+
+def row_to_approval_request(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    item["payload"] = decode_json(item.pop("payload_json"), {})
+    return item
+
+
+def row_to_approval_action(row: sqlite3.Row) -> dict[str, Any]:
+    return dict(row)
 
 
 def row_to_crf_migration_log(row: sqlite3.Row) -> dict[str, Any]:

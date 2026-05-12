@@ -14,6 +14,7 @@ import { authStorageKey, normalizeAuthenticatedUser, roleLabels, userCanAccessSt
 import { patientRecords, type OmicsStatus, type PatientRecord, type SampleCollection } from '../data/patientCohort';
 import type {
   ApiAnalysisSummary,
+  ApiApprovalRequest,
   ApiConsent,
   ApiCrfEntry,
   ApiCrfMigrationApproval,
@@ -260,6 +261,30 @@ export async function createExportJob(exportType = 'cohort_csv'): Promise<ApiExp
     },
     token ? { Authorization: `Bearer ${token}` } : undefined
   );
+}
+
+export async function fetchApprovalRequests(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiApprovalRequest[]> {
+  return getJson<ApiApprovalRequest[]>(`/approvals?study_id=${encodeURIComponent(studyId)}`);
+}
+
+export async function createApprovalRequest(payload: {
+  study_id: string;
+  approval_type: ApiApprovalRequest['approval_type'];
+  entity_type?: string;
+  entity_id?: string;
+  payload?: Record<string, unknown>;
+  comment?: string;
+  submit?: boolean;
+}): Promise<ApiApprovalRequest> {
+  return postJson<ApiApprovalRequest>('/approvals', payload);
+}
+
+export async function approveApprovalRequest(approvalId: string, comment = ''): Promise<ApiApprovalRequest> {
+  return postJson<ApiApprovalRequest>(`/approvals/${encodeURIComponent(approvalId)}/approve`, { comment });
+}
+
+export async function rejectApprovalRequest(approvalId: string, comment = ''): Promise<ApiApprovalRequest> {
+  return postJson<ApiApprovalRequest>(`/approvals/${encodeURIComponent(approvalId)}/reject`, { comment });
 }
 
 export async function downloadExportJob(job: ApiExportJob): Promise<void> {

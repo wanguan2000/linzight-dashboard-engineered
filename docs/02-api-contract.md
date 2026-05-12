@@ -59,9 +59,16 @@
 | 数据分析 | `GET` | `/analytics/summary` | 队列统计、样本和组学概览 |
 | 导出 | `POST` | `/exports` | 创建导出任务 |
 | 导出 | `GET` | `/exports` | 查询导出任务 |
+| 审批 | `GET` | `/approvals` | 查询当前 Study 的审批请求和动作记录 |
+| 审批 | `POST` | `/approvals` | 提交导出、脱敏导出或 CRF 发布审批 |
+| 审批 | `POST` | `/approvals/{approval_id}/approve` | 批准 submitted 审批，禁止提交人自批 |
+| 审批 | `POST` | `/approvals/{approval_id}/reject` | 拒绝 submitted 审批 |
+| 审批 | `POST` | `/approvals/{approval_id}/cancel` | 由提交人或管理员取消 draft/submitted 审批 |
+| 审批 | `POST` | `/approvals/{approval_id}/complete` | 将 approved 审批标记为 completed |
 | 审计 | `GET` | `/audit-logs` | 查询实体操作审计 |
 
 患者、样本、组学、访视、随访和知情同意等响应中的直接标识符会按 `field_permissions` 应用字段级权限。`LZ_DATA_MANAGER`、`STUDY_DATA_MANAGER` 和 `LZ_AUDITOR` 默认只能看到姓名、住院号等字段的脱敏值；导出时这些字段按 `can_export=false` 输出为空，确保前端表格、详情页和 CSV 下载使用同一套权限/脱敏逻辑。
+审批状态机统一使用 `draft / submitted / approved / rejected / cancelled / completed`。每次提交、批准、拒绝、取消和完成都会写入 `approval_actions` 与 `audit_logs`；System Management 的 Approval Center 会读取 `/approvals` 并调用 approve/reject 操作。
 
 ## 角色权限矩阵
 

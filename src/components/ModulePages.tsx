@@ -22,7 +22,9 @@ import { demoUsers, roleLabels, type AuthenticatedUser, type UserRole } from '..
 import { useI18n } from '../i18n/I18nProvider';
 import {
   applyStudyCrfMigration,
+  approveApprovalRequest,
   approveStudyCrfMigration,
+  createApprovalRequest,
   createOmicsRecord,
   createSampleRecord,
   createExportJob,
@@ -40,11 +42,13 @@ import {
   fetchStudyCrfVersions,
   fetchStudyMembers,
   fetchStudyVisitPlans,
+  fetchApprovalRequests,
   filterRecordsByCurrentStudyScope,
   getCurrentScopedStudyId,
   previewStudyCrfMigration,
   recordBelongsToCurrentStudyScope,
   requestStudyCrfMigrationApproval,
+  rejectApprovalRequest,
   runQualityChecks,
   saveClinicalCrfEntry,
   saveVisitFollowUpRecord,
@@ -58,7 +62,7 @@ import {
   upsertStudyMember,
   uploadFileToBackend
 } from '../services/api';
-import type { ApiExportJob, ApiStudyMember, ApiUser } from '../services/contracts';
+import type { ApiApprovalRequest, ApiExportJob, ApiStudyMember, ApiUser } from '../services/contracts';
 import type { CrfMigrationApprovalRecord, CrfMigrationPreview, StudyCrfVersionRecord } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
@@ -2748,6 +2752,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [crfVersionRows, setCrfVersionRows] = useState<StudyCrfVersionRecord[]>([]);
   const [crfMigrationPreview, setCrfMigrationPreview] = useState<CrfMigrationPreview | null>(null);
   const [crfMigrationRows, setCrfMigrationRows] = useState<CrfMigrationApprovalRecord[]>([]);
+  const [approvalRows, setApprovalRows] = useState<ApiApprovalRequest[]>([]);
   const [visitPlanRows, setVisitPlanRows] = useState<StudyVisitPlanRecord[]>(systemVisitPlans);
   const [systemActionStatus, setSystemActionStatus] = useState('等待系统管理操作');
   const normalizedQuery = systemQuery.trim().toLowerCase();
@@ -2793,6 +2798,10 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   }, [crfMigrationRows, scopedStudyId]);
   const activeCrfMigration = visibleCrfMigrations.find((migration) => migration.status === 'pending' || migration.status === 'approved');
   const activeCrfMigrationRequiresSeparateReviewer = Boolean(activeCrfMigration?.requestedBy && activeCrfMigration.requestedBy === currentUser?.id);
+  const visibleApprovals = useMemo(
+    () => approvalRows.filter((approval) => !scopedStudyId || approval.study_id === scopedStudyId).slice(0, 4),
+    [approvalRows, scopedStudyId]
+  );
 
   useEffect(() => {
     if (!availableSystemStudies.includes(selectedSystemStudyId)) {
@@ -2822,9 +2831,10 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       fetchStudyMembers(scopedStudyId),
       fetchStudyCrfFields(scopedStudyId),
       fetchStudyCrfVersions(scopedStudyId),
-      fetchStudyCrfMigrations(scopedStudyId)
+      fetchStudyCrfMigrations(scopedStudyId),
+      fetchApprovalRequests(scopedStudyId)
     ])
-      .then(([visitPlanResult, memberResult, crfFieldResult, crfVersionResult, crfMigrationResult]) => {
+      .then(([visitPlanResult, memberResult, crfFieldResult, crfVersionResult, crfMigrationResult, approvalResult]) => {
         if (ignore) return;
         if (visitPlanResult.status === 'fulfilled' && visitPlanResult.value.length) {
           setVisitPlanRows((rows) => [
@@ -2852,6 +2862,12 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
           setCrfMigrationRows((rows) => [
             ...rows.filter((migration) => migration.studyId !== scopedStudyId),
             ...crfMigrationResult.value
+          ]);
+        }
+        if (approvalResult.status === 'fulfilled') {
+          setApprovalRows((rows) => [
+            ...rows.filter((approval) => approval.study_id !== scopedStudyId),
+            ...approvalResult.value
           ]);
         }
       })
@@ -3062,7 +3078,17 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         targetVersionId: draftCrfVersion.id,
         note: 'Submitted from System Management CRF migration workflow.'
       });
+      const approvalCenterItem = await createApprovalRequest({
+        study_id: draftCrfVersion.studyId,
+        approval_type: 'crf_publish',
+        entity_type: 'study_crf_versions',
+        entity_id: draftCrfVersion.id,
+        payload: { migration_id: approval.id, target_version_id: draftCrfVersion.id },
+        comment: 'CRF publish approval submitted from System Management.',
+        submit: true
+      });
       setCrfMigrationRows((rows) => [approval, ...rows.filter((migration) => migration.id !== approval.id)]);
+      setApprovalRows((rows) => [approvalCenterItem, ...rows.filter((row) => row.id !== approvalCenterItem.id)]);
       setCrfMigrationPreview(approval.preview);
       setSystemActionStatus(`CRF 迁移审批已提交：${approval.id}`);
     } catch {
@@ -3095,6 +3121,28 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       setSystemActionStatus(`CRF 迁移已应用，目标版本已发布：${applied.targetVersionId}`);
     } catch {
       setSystemActionStatus('后端不可用或当前角色无 CRF 迁移应用权限');
+    }
+  }
+
+  async function approveGenericApproval(approval: ApiApprovalRequest) {
+    setSystemActionStatus(`审批 ${approval.id} 正在批准...`);
+    try {
+      const approved = await approveApprovalRequest(approval.id, 'Approved from System Management approval center.');
+      setApprovalRows((rows) => [approved, ...rows.filter((row) => row.id !== approved.id)]);
+      setSystemActionStatus(`审批已批准：${approved.id}`);
+    } catch {
+      setSystemActionStatus('后端不可用、当前角色无审批权限，或提交人不能自批');
+    }
+  }
+
+  async function rejectGenericApproval(approval: ApiApprovalRequest) {
+    setSystemActionStatus(`审批 ${approval.id} 正在拒绝...`);
+    try {
+      const rejected = await rejectApprovalRequest(approval.id, 'Rejected from System Management approval center.');
+      setApprovalRows((rows) => [rejected, ...rows.filter((row) => row.id !== rejected.id)]);
+      setSystemActionStatus(`审批已拒绝：${rejected.id}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无审批拒绝权限');
     }
   }
 
@@ -3381,6 +3429,46 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                   );
                 }) : (
                   <span>{t('No migration approvals yet')}</span>
+                )}
+              </div>
+            </div>
+            <div className="system-crf-approval-panel">
+              <div>
+                <strong>{t('Approval Center')}</strong>
+                <span>{t('Export, de-identified export, and CRF publish approvals')}</span>
+              </div>
+              <div className="system-crf-approval-list">
+                {visibleApprovals.length ? visibleApprovals.map((approval) => (
+                  <div key={approval.id} className="system-crf-approval-row">
+                    <span>{approval.id}</span>
+                    <strong>{t(approval.approval_type)} · {approval.entity_id || '-'}</strong>
+                    <span className={`status-pill status-pill--${approval.status === 'completed' || approval.status === 'approved' ? 'success' : approval.status === 'rejected' || approval.status === 'cancelled' ? 'danger' : 'warning'}`}>
+                      {t(approval.status)}
+                    </span>
+                    <span>{t(approval.comment || 'No approval comment')}</span>
+                    <span>{t('Actions')}: {approval.actions?.length ?? 0}</span>
+                    <div className="module-table-actions">
+                      <button
+                        className="module-link-button"
+                        type="button"
+                        disabled={approval.status !== 'submitted' || approval.submitted_by === currentUser?.id}
+                        title={approval.submitted_by === currentUser?.id ? t('Separate reviewer required') : undefined}
+                        onClick={() => void approveGenericApproval(approval)}
+                      >
+                        {t('Approve')}
+                      </button>
+                      <button
+                        className="module-link-button module-link-button--danger"
+                        type="button"
+                        disabled={approval.status !== 'submitted'}
+                        onClick={() => void rejectGenericApproval(approval)}
+                      >
+                        {t('Reject')}
+                      </button>
+                    </div>
+                  </div>
+                )) : (
+                  <span>{t('No approvals yet')}</span>
                 )}
               </div>
             </div>

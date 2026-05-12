@@ -28,6 +28,8 @@ ConsentStatus = Literal["已签署", "待签署", "已撤回"]
 CrfStatus = Literal["draft", "submitted", "locked"]
 FileCategory = Literal["consent", "clinical", "sample", "omics_result", "analysis_export", "other"]
 ExportStatus = Literal["queued", "running", "ready", "failed"]
+ApprovalType = Literal["export", "deidentified_export", "crf_publish"]
+ApprovalStatus = Literal["draft", "submitted", "approved", "rejected", "cancelled", "completed"]
 QualitySeverity = Literal["info", "warning", "critical"]
 QualityStatus = Literal["open", "resolved", "waived"]
 VisitPlanStatus = Literal["active", "draft", "retired"]
@@ -266,6 +268,20 @@ class ExportJobCreate(BaseModel):
     export_type: str
     scope: dict[str, Any] = Field(default_factory=dict)
     requested_by: str | None = None
+
+
+class ApprovalRequestCreate(BaseModel):
+    study_id: str
+    approval_type: ApprovalType
+    entity_type: str = ""
+    entity_id: str = ""
+    payload: dict[str, Any] = Field(default_factory=dict)
+    comment: str = ""
+    submit: bool = True
+
+
+class ApprovalActionCreate(BaseModel):
+    comment: str = ""
 
 
 class ExportJob(BaseModel):

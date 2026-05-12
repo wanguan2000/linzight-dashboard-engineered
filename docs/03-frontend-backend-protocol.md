@@ -32,6 +32,7 @@ CRF 字段字典当前来自 `resource/sle-crf-v0.1.schema.json`。前端通过 
 系统管理页的 CRF 版本面板通过 `/studies/{study_id}/crf-versions` 读取版本列表。`New Draft` 会从当前字段表生成 schema 并调用 `POST /studies/{study_id}/crf-versions` 创建草稿。正式发布优先走审批流：`Request Approval` 调用 `POST /studies/{study_id}/crf-migrations`，`Approve` 调用 `/approve`，`Apply` 或 `Apply Approved` 调用 `/apply`，由后端发布目标 draft 并退休该 Study 的旧 published 版本。
 `Preview Migration` 调用 `POST /studies/{study_id}/crf-versions/migration-preview`，用当前字段表生成目标 schema，并显示新增、变更、移除和未变化字段数量，同时列出字段级新增、变更项和移除明细。该接口只读，不改变版本状态。
 系统管理页同时读取 `/studies/{study_id}/crf-migrations` 展示最近的 migration approval request 和 execution log 数量；所有提交、批准和应用操作均以 `study_id` 为路径参数，并写入后端 `audit_logs`。后端禁止 request 发起人批准或应用自己的 CRF migration，前端用通用状态消息提示权限或后端拒绝。
+系统管理页的 Approval Center 读取 `/approvals?study_id=...`，展示导出、脱敏导出和 CRF 发布审批的 `draft / submitted / approved / rejected / cancelled / completed` 状态、动作记录数量和评论。Approve/Reject 按钮分别调用 `/approvals/{id}/approve` 与 `/approvals/{id}/reject`；后端禁止提交人自批，并将动作写入 `approval_actions` 和 `audit_logs`。
 
 | 后端字段 | 前端字段 | 说明 |
 | --- | --- | --- |

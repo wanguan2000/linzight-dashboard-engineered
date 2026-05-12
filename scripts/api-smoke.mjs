@@ -399,6 +399,61 @@ async function runSmoke() {
   assert(fieldPermissions.data.every((item) => item.role === 'STUDY_DATA_MANAGER'), 'non-admin field permissions response should be role-scoped');
   assert(fieldPermissions.data.some((item) => item.field_name === 'name' && item.mask_rule === 'name'), 'field permissions should expose patient name masking rule');
 
+  const exportApproval = await request('/approvals', {
+    method: 'POST',
+    token: dataManager.access_token,
+    body: {
+      study_id: 'LZXK-01',
+      approval_type: 'deidentified_export',
+      entity_type: 'export_jobs',
+      entity_id: exportJob.data.id,
+      payload: { export_id: exportJob.data.id, export_type: 'patients' },
+      comment: 'Smoke deidentified export approval',
+      submit: true,
+    },
+  });
+  assert(exportApproval.status === 201, 'export approval create should return 201');
+  assert(exportApproval.data.status === 'submitted', 'approval should start submitted');
+  await request(`/approvals/${exportApproval.data.id}/approve`, {
+    method: 'POST',
+    token: dataManager.access_token,
+    body: { comment: 'self approval should fail' },
+    expectedStatus: 400,
+  });
+  const approvedExport = await request(`/approvals/${exportApproval.data.id}/approve`, {
+    method: 'POST',
+    token: lzAdmin.access_token,
+    body: { comment: 'approved by smoke admin' },
+  });
+  assert(approvedExport.data.status === 'approved', 'approval should approve');
+  const completedExport = await request(`/approvals/${exportApproval.data.id}/complete`, {
+    method: 'POST',
+    token: dataManager.access_token,
+    body: { comment: 'completed after approved export' },
+  });
+  assert(completedExport.data.status === 'completed', 'approval should complete');
+  assert(completedExport.data.actions.some((action) => action.to_status === 'completed'), 'approval actions should record completion');
+
+  const crfPublishApproval = await request('/approvals', {
+    method: 'POST',
+    token: configAdmin.access_token,
+    body: {
+      study_id: 'LZXK-01',
+      approval_type: 'crf_publish',
+      entity_type: 'study_crf_versions',
+      entity_id: draftVersion.data.id,
+      payload: { target_version_id: draftVersion.data.id },
+      comment: 'Smoke CRF publish approval',
+      submit: true,
+    },
+  });
+  const rejectedCrfPublish = await request(`/approvals/${crfPublishApproval.data.id}/reject`, {
+    method: 'POST',
+    token: crfAdmin.access_token,
+    body: { comment: 'reject path covered' },
+  });
+  assert(rejectedCrfPublish.data.status === 'rejected', 'CRF publish approval should reject');
+
   const audits = await request('/audit-logs?study_id=LZXK-01&entity_type=study_crf_versions', { token: configAdmin.access_token });
   assert(audits.data.some((entry) => entry.action === 'update_crf_field'), 'CRF update audit log missing');
   const logout = await request('/auth/logout', { method: 'POST', token: crc.access_token });

@@ -21,6 +21,8 @@ try:
         fetch_one,
         initialize_schema,
         row_to_audit_log,
+        row_to_approval_action,
+        row_to_approval_request,
         row_to_consent,
         row_to_crf_migration_approval,
         row_to_crf_migration_log,
@@ -43,7 +45,7 @@ try:
     )
     from .permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
     from .security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from .schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
+    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
     from .seed import seed_database
 except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from database import (
@@ -54,6 +56,8 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         fetch_one,
         initialize_schema,
         row_to_audit_log,
+        row_to_approval_action,
+        row_to_approval_request,
         row_to_consent,
         row_to_crf_migration_approval,
         row_to_crf_migration_log,
@@ -76,7 +80,7 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
     )
     from permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
     from security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
+    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
     from seed import seed_database
 
 app = FastAPI(title="LinZight RWS Demo API", version="1.0.0")
@@ -278,6 +282,47 @@ def apply_field_permissions_to_records(
     mode: str = "view",
 ) -> list[dict[str, Any]]:
     return [apply_field_permissions_to_record(conn, user, record, resource=resource, mode=mode) for record in records]
+
+
+def approval_with_actions(conn: Any, approval_id: str) -> dict[str, Any]:
+    approval = row_to_approval_request(fetch_one(conn, "SELECT * FROM approval_requests WHERE id = ?", (approval_id,)))
+    approval["actions"] = [
+        row_to_approval_action(row)
+        for row in conn.execute(
+            "SELECT * FROM approval_actions WHERE approval_id = ? ORDER BY created_at",
+            (approval_id,),
+        ).fetchall()
+    ]
+    return approval
+
+
+def record_approval_action(
+    conn: Any,
+    approval: dict[str, Any],
+    actor: dict[str, Any],
+    action: str,
+    to_status: str,
+    comment: str = "",
+) -> None:
+    now = utc_now()
+    conn.execute(
+        """
+        INSERT INTO approval_actions (id, approval_id, study_id, actor_id, action, from_status, to_status, comment, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (f"APR-ACT-{uuid4().hex[:10].upper()}", approval["id"], approval["study_id"], actor["id"], action, approval["status"], to_status, comment, now),
+    )
+    reviewed_by = actor["id"] if action in {"approve", "reject"} else approval.get("reviewed_by")
+    reviewed_at = now if action in {"approve", "reject"} else approval.get("reviewed_at")
+    completed_at = now if to_status == "completed" else approval.get("completed_at")
+    conn.execute(
+        """
+        UPDATE approval_requests
+        SET status = ?, reviewed_by = ?, reviewed_at = ?, completed_at = ?, comment = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (to_status, reviewed_by, reviewed_at, completed_at, comment or approval.get("comment") or "", now, approval["id"]),
+    )
 
 
 def patient_study_id(conn: Any, patient_id: str) -> str:
@@ -2502,6 +2547,126 @@ def create_export_job(payload: ExportJobCreate, authorization: str | None = Head
         job = row_to_export_job(fetch_one(conn, "SELECT * FROM export_jobs WHERE id = ?", (export_id,)))
         insert_audit(conn, user, "export", "export_jobs", export_id, after=job, study_id=requested_study_id)
         return job
+
+
+@app.get("/approvals")
+def list_approvals(
+    study_id: str | None = None,
+    status_filter: str | None = Query(default=None, alias="status"),
+    authorization: str | None = Header(default=None),
+) -> list[dict[str, Any]]:
+    with connect() as conn:
+        user = authorize(authorization, "studies", "read", conn=conn)
+        where: list[str] = []
+        params: list[Any] = []
+        append_study_filter(conn, user, where, params, "study_id", study_id)
+        if status_filter:
+            where.append("status = ?")
+            params.append(status_filter)
+        sql = "SELECT * FROM approval_requests"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY updated_at DESC"
+        approvals = [row_to_approval_request(row) for row in conn.execute(sql, params).fetchall()]
+        for approval in approvals:
+            approval["actions"] = [
+                row_to_approval_action(row)
+                for row in conn.execute("SELECT * FROM approval_actions WHERE approval_id = ? ORDER BY created_at", (approval["id"],)).fetchall()
+            ]
+        return approvals
+
+
+@app.post("/approvals", status_code=status.HTTP_201_CREATED)
+def create_approval(payload: ApprovalRequestCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    approval_id = f"APR-{uuid4().hex[:10].upper()}"
+    now = utc_now()
+    with connect() as conn:
+        resource = "exports" if data["approval_type"] in {"export", "deidentified_export"} else "crf_config"
+        actor = authorize(authorization, resource, "write", study_id=data["study_id"], conn=conn)
+        initial_status = "submitted" if data["submit"] else "draft"
+        conn.execute(
+            """
+            INSERT INTO approval_requests
+              (id, study_id, approval_type, status, entity_type, entity_id, payload_json, submitted_by, submitted_at, comment, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                approval_id,
+                data["study_id"],
+                data["approval_type"],
+                initial_status,
+                data["entity_type"],
+                data["entity_id"],
+                encode_json(data["payload"]),
+                actor["id"],
+                now if initial_status == "submitted" else None,
+                data["comment"],
+                now,
+                now,
+            ),
+        )
+        approval = approval_with_actions(conn, approval_id)
+        record_approval_action(conn, approval, actor, "submit" if initial_status == "submitted" else "draft", initial_status, data["comment"])
+        approval = approval_with_actions(conn, approval_id)
+        insert_audit(conn, actor, "submit_approval", "approval_requests", approval_id, after=approval, study_id=data["study_id"])
+        return approval
+
+
+@app.post("/approvals/{approval_id}/approve")
+def approve_approval(approval_id: str, payload: ApprovalActionCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with connect() as conn:
+        approval = approval_with_actions(conn, approval_id)
+        actor = authorize(authorization, "exports" if approval["approval_type"] in {"export", "deidentified_export"} else "crf_config", "write", study_id=approval["study_id"], conn=conn)
+        if approval["status"] != "submitted":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="approval must be submitted")
+        if approval.get("submitted_by") == actor["id"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="requester cannot approve own request")
+        record_approval_action(conn, approval, actor, "approve", "approved", payload.comment)
+        after = approval_with_actions(conn, approval_id)
+        insert_audit(conn, actor, "approve", "approval_requests", approval_id, before=approval, after=after, study_id=approval["study_id"])
+        return after
+
+
+@app.post("/approvals/{approval_id}/reject")
+def reject_approval(approval_id: str, payload: ApprovalActionCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with connect() as conn:
+        approval = approval_with_actions(conn, approval_id)
+        actor = authorize(authorization, "exports" if approval["approval_type"] in {"export", "deidentified_export"} else "crf_config", "write", study_id=approval["study_id"], conn=conn)
+        if approval["status"] != "submitted":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="approval must be submitted")
+        record_approval_action(conn, approval, actor, "reject", "rejected", payload.comment)
+        after = approval_with_actions(conn, approval_id)
+        insert_audit(conn, actor, "reject", "approval_requests", approval_id, before=approval, after=after, study_id=approval["study_id"])
+        return after
+
+
+@app.post("/approvals/{approval_id}/cancel")
+def cancel_approval(approval_id: str, payload: ApprovalActionCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with connect() as conn:
+        approval = approval_with_actions(conn, approval_id)
+        actor = authorize(authorization, "studies", "read", study_id=approval["study_id"], conn=conn)
+        if approval["status"] not in {"draft", "submitted"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="approval cannot be cancelled")
+        if approval.get("submitted_by") != actor["id"] and user_role(actor) != "LZ_ADMIN":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only requester or LZ_ADMIN can cancel")
+        record_approval_action(conn, approval, actor, "cancel", "cancelled", payload.comment)
+        after = approval_with_actions(conn, approval_id)
+        insert_audit(conn, actor, "cancel", "approval_requests", approval_id, before=approval, after=after, study_id=approval["study_id"])
+        return after
+
+
+@app.post("/approvals/{approval_id}/complete")
+def complete_approval(approval_id: str, payload: ApprovalActionCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with connect() as conn:
+        approval = approval_with_actions(conn, approval_id)
+        actor = authorize(authorization, "exports" if approval["approval_type"] in {"export", "deidentified_export"} else "crf_config", "write", study_id=approval["study_id"], conn=conn)
+        if approval["status"] != "approved":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="approval must be approved")
+        record_approval_action(conn, approval, actor, "complete", "completed", payload.comment)
+        after = approval_with_actions(conn, approval_id)
+        insert_audit(conn, actor, "complete", "approval_requests", approval_id, before=approval, after=after, study_id=approval["study_id"])
+        return after
 
 
 @app.get("/exports")

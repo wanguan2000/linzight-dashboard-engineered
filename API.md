@@ -156,7 +156,7 @@ SQLite 存储层优先使用 JSONB（二进制 JSON）BLOB：
 - `/dictionaries`：字段字典、样本类型、访视窗口、CRF schema。
 - `/queries`：数据质量 query 创建、关闭、审计。
 - `/permissions`：角色、权限矩阵、字段级权限。
-- `/exports/requests`：脱敏导出审批。
+- `/approvals`：导出、脱敏导出和 CRF 发布审批状态机。
 - `/files/presign`：对象存储上传和下载。
 - `/integrations`：EMR/LIS/组学平台接入状态。
 
