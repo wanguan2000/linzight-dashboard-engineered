@@ -257,6 +257,12 @@ def initialize_schema() -> None:
               uploaded_by TEXT,
               uploaded_at TEXT NOT NULL,
               is_deidentified INTEGER NOT NULL DEFAULT 0,
+              storage_backend TEXT NOT NULL DEFAULT 'local',
+              scan_status TEXT NOT NULL DEFAULT 'pending',
+              scan_message TEXT NOT NULL DEFAULT '',
+              archive_status TEXT NOT NULL DEFAULT 'active',
+              archived_at TEXT,
+              retention_until TEXT,
               FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
               FOREIGN KEY (sample_id) REFERENCES samples(id) ON DELETE CASCADE,
               FOREIGN KEY (omics_id) REFERENCES omics_records(id) ON DELETE CASCADE,
@@ -526,6 +532,18 @@ def migrate_json_storage(conn: sqlite3.Connection) -> None:
             ("payload_jsonb", "BLOB"),
             ("payload_version", "TEXT NOT NULL DEFAULT 'legacy'"),
             ("payload_format", "TEXT NOT NULL DEFAULT 'json'"),
+        ],
+    )
+    ensure_columns(
+        conn,
+        "uploaded_files",
+        [
+            ("storage_backend", "TEXT NOT NULL DEFAULT 'local'"),
+            ("scan_status", "TEXT NOT NULL DEFAULT 'pending'"),
+            ("scan_message", "TEXT NOT NULL DEFAULT ''"),
+            ("archive_status", "TEXT NOT NULL DEFAULT 'active'"),
+            ("archived_at", "TEXT"),
+            ("retention_until", "TEXT"),
         ],
     )
 

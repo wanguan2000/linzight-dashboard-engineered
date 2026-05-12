@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -105,6 +106,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class LocalFileStorage:
+    backend = "local"
+
+    def save(self, category: str, stored_filename: str, content: bytes) -> str:
+        target_dir = UPLOADS_DIR / category
+        target_dir.mkdir(parents=True, exist_ok=True)
+        storage_path = target_dir / stored_filename
+        storage_path.write_bytes(content)
+        return str(storage_path)
+
+    def path(self, storage_path: str) -> str:
+        return storage_path
+
+
+class MockVirusScanner:
+    def scan(self, filename: str, content: bytes) -> dict[str, str]:
+        lowered = filename.lower()
+        if b"eicar" in content.lower() or "eicar" in lowered:
+            return {"status": "infected", "message": "mock scanner detected EICAR signature"}
+        return {"status": "clean", "message": "mock scanner clean"}
+
+
+file_storage = LocalFileStorage()
+virus_scanner = MockVirusScanner()
 
 
 @app.on_event("startup")
@@ -2217,10 +2244,10 @@ async def upload_file(
     digest = hashlib.sha256(content).hexdigest()
     suffix = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "bin"
     stored_filename = f"{file_id}.{suffix}"
-    target_dir = UPLOADS_DIR / category
-    target_dir.mkdir(parents=True, exist_ok=True)
-    storage_path = target_dir / stored_filename
-    storage_path.write_bytes(content)
+    scan_result = virus_scanner.scan(file.filename or stored_filename, content)
+    if scan_result["status"] == "infected":
+        raise HTTPException(status_code=400, detail=scan_result["message"])
+    storage_path = file_storage.save(category, stored_filename, content)
     now = utc_now()
     with connect() as conn:
         study_id = "LGL-1111"
@@ -2239,8 +2266,8 @@ async def upload_file(
         conn.execute(
             """
             INSERT INTO uploaded_files
-              (id, study_id, patient_id, sample_id, omics_id, consent_id, category, original_filename, stored_filename, storage_path, content_type, size_bytes, sha256, uploaded_by, uploaded_at, is_deidentified)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (id, study_id, patient_id, sample_id, omics_id, consent_id, category, original_filename, stored_filename, storage_path, content_type, size_bytes, sha256, uploaded_by, uploaded_at, is_deidentified, storage_backend, scan_status, scan_message, archive_status, archived_at, retention_until)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, NULL)
             """,
             (
                 file_id,
@@ -2259,6 +2286,9 @@ async def upload_file(
                 uploaded_by or user["id"],
                 now,
                 1 if is_deidentified else 0,
+                file_storage.backend,
+                scan_result["status"],
+                scan_result["message"],
             ),
         )
         conn.execute(
@@ -2281,6 +2311,37 @@ async def upload_file(
             ),
         )
         return row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)))
+
+
+@app.get("/files/{file_id}/download")
+def download_file(file_id: str, authorization: str | None = Header(default=None)) -> FileResponse:
+    with connect() as conn:
+        file_row = row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)))
+        user = authorize(authorization, "files", "read", study_id=file_row["study_id"], conn=conn)
+        if file_row.get("scan_status") not in {None, "", "clean"}:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="file is not cleared by scanner")
+        if file_row.get("archive_status") == "archived":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="file is archived and must be restored before download")
+        path = file_storage.path(file_row["storage_path"])
+        if not Path(path).exists():
+            raise not_found()
+        insert_audit(conn, user, "download", "uploaded_files", file_id, after={"filename": file_row["original_filename"], "sha256": file_row["sha256"]}, study_id=file_row["study_id"])
+        return FileResponse(path, media_type=file_row["content_type"], filename=file_row["original_filename"])
+
+
+@app.post("/files/{file_id}/archive")
+def archive_file(file_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with connect() as conn:
+        file_row = row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)))
+        user = authorize(authorization, "files", "write", study_id=file_row["study_id"], conn=conn)
+        now = utc_now()
+        conn.execute(
+            "UPDATE uploaded_files SET archive_status = 'archived', archived_at = ? WHERE id = ?",
+            (now, file_id),
+        )
+        after = row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)))
+        insert_audit(conn, user, "archive", "uploaded_files", file_id, before=file_row, after=after, study_id=file_row["study_id"])
+        return after
 
 
 @app.get("/analytics/summary")

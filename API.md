@@ -126,6 +126,7 @@ SQLite 存储层优先使用 JSONB（二进制 JSON）BLOB：
 - `POST /files`
 
 上传分类包括 `consent`、`clinical`、`sample`、`omics_result`、`analysis_export`、`other`。临床、组学结果和分析导出类文件必须标记脱敏。
+文件 API 记录 `study_id`、上传者、MIME type、size、SHA-256、存储后端、mock 病毒扫描状态和归档状态；`GET /files/{file_id}/download` 会校验权限、扫描状态和归档状态，并写入审计日志。
 
 ### Analytics 和 Quality
 

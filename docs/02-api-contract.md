@@ -55,6 +55,8 @@
 | 多组学检测 | `POST` | `/omics` | 新增检测记录 |
 | 文件上传 | `POST` | `/files` | 上传知情、临床、样本、组学结果或导出文件 |
 | 文件上传 | `GET` | `/files?patient_id=...` | 查询患者文件 |
+| 文件上传 | `GET` | `/files/{file_id}/download` | 校验 Study/角色权限、扫描状态和归档状态后下载文件 |
+| 文件上传 | `POST` | `/files/{file_id}/archive` | 将文件标记为长期归档，后续下载需先恢复 |
 | Patient Journey | `GET` | `/patients/{patient_id}/journey` | Journey 页面聚合接口 |
 | 数据分析 | `GET` | `/analytics/summary` | 队列统计、样本和组学概览 |
 | 导出 | `POST` | `/exports` | 创建导出任务 |
@@ -69,6 +71,7 @@
 
 患者、样本、组学、访视、随访和知情同意等响应中的直接标识符会按 `field_permissions` 应用字段级权限。`LZ_DATA_MANAGER`、`STUDY_DATA_MANAGER` 和 `LZ_AUDITOR` 默认只能看到姓名、住院号等字段的脱敏值；导出时这些字段按 `can_export=false` 输出为空，确保前端表格、详情页和 CSV 下载使用同一套权限/脱敏逻辑。
 审批状态机统一使用 `draft / submitted / approved / rejected / cancelled / completed`。每次提交、批准、拒绝、取消和完成都会写入 `approval_actions` 与 `audit_logs`；System Management 的 Approval Center 会读取 `/approvals` 并调用 approve/reject 操作。
+文件上传通过本地存储适配层写入 `uploaded_files`，记录 `study_id`、owner、MIME type、size、SHA-256、`storage_backend`、扫描状态和归档状态。当前病毒扫描器是可替换的 mock scanner，会阻止 EICAR 测试签名；下载和归档动作均写入审计日志。
 
 ## 角色权限矩阵
 

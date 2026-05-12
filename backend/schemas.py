@@ -262,6 +262,12 @@ class FileMetadata(BaseModel):
     uploaded_by: str | None = None
     uploaded_at: str
     is_deidentified: bool = False
+    storage_backend: str = "local"
+    scan_status: str = "pending"
+    scan_message: str = ""
+    archive_status: str = "active"
+    archived_at: str | None = None
+    retention_until: str | None = None
 
 
 class ExportJobCreate(BaseModel):

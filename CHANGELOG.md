@@ -36,6 +36,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Dashboard welcome copy now reflects the authenticated user instead of a hard-coded demo PI.
 - Field-level privacy rules now mask direct identifiers for data-manager/auditor roles and remove non-exportable identifiers from CSV exports.
 - Approval requests now use a persisted status machine for export, de-identified export, and CRF publish workflows, with action history and audit logs.
+- File handling now goes through a local storage adapter with mock virus scanning, archive status fields, permission-checked downloads, and access audit logs.
 - Previously inert or frontend-only buttons across cohort, consent, clinical data capture, samples/testing, analytics, and system management now either call backend APIs, create audit-backed records, export real files, or present an explicit disabled state.
 - English locale coverage was expanded across login, module navigation, patient cohort, informed consent, clinical data capture, sample testing, patient journey, data analysis, and system management.
 - Additional English-locale cleanup covers dashboard KPI helpers, workflow cards, enrollment trend, smart summary markers, sample/testing detail panels, omics result panels, data-analysis pipeline, and system-management overview text.

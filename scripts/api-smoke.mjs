@@ -122,6 +122,15 @@ async function downloadText(path, token) {
   return raw;
 }
 
+async function downloadBlob(path, token, expectedStatus = 200) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const raw = await response.text();
+  assert(response.status === expectedStatus, `download ${path} expected ${expectedStatus}, got ${response.status}: ${raw}`);
+  return raw;
+}
+
 async function runSmoke() {
   startServer();
   await waitForHealth();
@@ -159,6 +168,14 @@ async function runSmoke() {
   const consentFile = await uploadConsentFile(crc.access_token, patientConsent.id, patientConsent.patient_id);
   assert(consentFile.category === 'consent', 'uploaded consent file should use consent category');
   assert(consentFile.consent_id === patientConsent.id, 'uploaded consent file should link consent_id');
+  assert(consentFile.scan_status === 'clean', 'uploaded consent file should be scanner-clean');
+  await downloadBlob(`/files/${consentFile.id}/download`, crc.access_token);
+  const archivedConsentFile = await request(`/files/${consentFile.id}/archive`, {
+    method: 'POST',
+    token: crc.access_token,
+  });
+  assert(archivedConsentFile.data.archive_status === 'archived', 'file archive should persist archived status');
+  await downloadBlob(`/files/${consentFile.id}/download`, crc.access_token, 409);
 
   const createdUser = await request('/users', {
     method: 'POST',

@@ -293,6 +293,12 @@ export type ApiFileMetadata = {
   uploaded_by: string | null;
   uploaded_at: string;
   is_deidentified: boolean;
+  storage_backend?: string;
+  scan_status?: string;
+  scan_message?: string;
+  archive_status?: string;
+  archived_at?: string | null;
+  retention_until?: string | null;
 };
 
 export type ApiExportJob = {
