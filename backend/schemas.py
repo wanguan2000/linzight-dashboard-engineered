@@ -290,6 +290,36 @@ class ApprovalActionCreate(BaseModel):
     comment: str = ""
 
 
+class SiteCreate(BaseModel):
+    id: str | None = None
+    code: str
+    name: str
+    status: Literal["active", "disabled"] = "active"
+
+
+class SiteUserAssign(BaseModel):
+    user_id: str
+    role: str
+    status: Literal["active", "disabled"] = "active"
+
+
+class DataQueryCreate(BaseModel):
+    study_id: str
+    patient_id: str
+    visit_id: str | None = None
+    form_id: str = ""
+    field_name: str = ""
+    title: str
+    description: str = ""
+    assigned_to: str | None = None
+
+
+class DataQueryUpdate(BaseModel):
+    status: Literal["open", "answered", "closed", "cancelled"] | None = None
+    assigned_to: str | None = None
+    response: str | None = None
+
+
 class ExportJob(BaseModel):
     id: str
     study_id: str

@@ -26,6 +26,9 @@
 | Study | `GET` | `/studies` | 当前用户可访问 Study |
 | Study 成员 | `GET` | `/studies/{study_id}/members` | 查询 Study 成员 |
 | Study 成员 | `POST` | `/studies/{study_id}/members` | 分配或更新研究级角色，返回与列表一致的成员展示字段 |
+| Study 中心 | `GET` | `/studies/{study_id}/sites` | 查询 Study 下的 site/中心 |
+| Study 中心 | `POST` | `/studies/{study_id}/sites` | 新增或更新 Study site |
+| Study 中心 | `POST` | `/studies/{study_id}/sites/{site_id}/users` | 分配 site 用户 |
 | Study 访视计划 | `GET` | `/studies/{study_id}/visit-plans` | 查询 Study 访视计划配置 |
 | Study 访视计划 | `POST` | `/studies/{study_id}/visit-plans` | 新增或按 code 更新 Study 访视计划 |
 | Study 访视计划 | `PUT` | `/studies/{study_id}/visit-plans/{plan_id}` | 更新指定访视计划 |
@@ -67,6 +70,9 @@
 | 审批 | `POST` | `/approvals/{approval_id}/reject` | 拒绝 submitted 审批 |
 | 审批 | `POST` | `/approvals/{approval_id}/cancel` | 由提交人或管理员取消 draft/submitted 审批 |
 | 审批 | `POST` | `/approvals/{approval_id}/complete` | 将 approved 审批标记为 completed |
+| Query | `GET` | `/queries` | 按 Study/患者查询数据 Query |
+| Query | `POST` | `/queries` | 创建并指派 Query |
+| Query | `PUT` | `/queries/{query_id}` | 回复、关闭或取消 Query |
 | 审计 | `GET` | `/audit-logs` | 查询实体操作审计 |
 
 患者、样本、组学、访视、随访和知情同意等响应中的直接标识符会按 `field_permissions` 应用字段级权限。`LZ_DATA_MANAGER`、`STUDY_DATA_MANAGER` 和 `LZ_AUDITOR` 默认只能看到姓名、住院号等字段的脱敏值；导出时这些字段按 `can_export=false` 输出为空，确保前端表格、详情页和 CSV 下载使用同一套权限/脱敏逻辑。

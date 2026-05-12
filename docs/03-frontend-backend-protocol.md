@@ -28,6 +28,7 @@ CRF 字段字典当前来自 `resource/sle-crf-v0.1.schema.json`。前端通过 
 系统管理页的账号创建通过 `POST /users` 执行。前端传入 `username`、`display_name`、`role`、`password`、`study_id` 和 `member_status`；后端创建用户前会执行基础密码策略，密码使用 PBKDF2-HMAC-SHA256 加盐哈希保存。如果是研究级角色，会同步创建当前 Study 的 `study_members` 记录并返回 `study_memberships`。Create Account 按钮必须使用该接口，不应只在前端插入本地账号。
 
 系统管理页的 Study 成员列表通过 `/studies/{study_id}/members` 读取，已有成员启用/停用研究级角色通过同一路径 `POST` upsert。平台级 `LZ_ADMIN` 启用/禁用账号时调用 `PATCH /users/{user_id}/status`，该接口会影响登录生命周期。该响应必须包含 `username` 和 `display_name`，与列表接口一致，前端才能在保存后直接更新账号行。
+多中心配置由 `/studies/{study_id}/sites` 和 `/studies/{study_id}/sites/{site_id}/users` 管理，所有 site 与 site-user assignment 都带 `study_id`，后端按当前用户 Study scope 校验。Query 管理由 `/queries` 提供创建、指派、回复和关闭基础状态，绑定 `study_id / patient_id / visit_id / form_id / field_name` 并写入审计。
 
 系统管理页的 CRF 字段配置通过 `/studies/{study_id}/crf-fields` 读取当前 Study CRF version 的字段列表。新增字段调用 `POST /studies/{study_id}/crf-fields`，编辑字段调用 `PUT /studies/{study_id}/crf-fields/{field_id}`。前端可编辑字段名称、类型、模块、状态、下拉选项、必填状态、校验规则和条件逻辑；后端将字段写回 `study_crf_versions.schema_json.sections[].fields[]`，并为新增或更新操作写入 `audit_logs`。
 

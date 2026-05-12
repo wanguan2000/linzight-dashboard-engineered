@@ -206,6 +206,20 @@ async function runSmoke() {
     },
     expectedStatus: 422,
   });
+
+  const site = await request('/studies/LZXK-01/sites', {
+    method: 'POST',
+    token: configAdmin.access_token,
+    body: { code: `SMK-${Date.now().toString().slice(-4)}`, name: 'Smoke Site', status: 'active' },
+  });
+  assert(site.status === 201, 'site create should return 201');
+  assert(site.data.study_id === 'LZXK-01', 'site should stay scoped to LZXK-01');
+  const siteAssignment = await request(`/studies/LZXK-01/sites/${site.data.id}/users`, {
+    method: 'POST',
+    token: configAdmin.access_token,
+    body: { user_id: crc.user.id, role: 'site_crc', status: 'active' },
+  });
+  assert(siteAssignment.data.site_id === site.data.id, 'site user assignment should link site');
   const disabledUser = await request(`/users/${createdUser.data.id}/status`, {
     method: 'PATCH',
     token: lzAdmin.access_token,
@@ -386,6 +400,33 @@ async function runSmoke() {
   });
   assert(omics.status === 201, 'omics create should return 201');
   assert(omics.data.study_id === 'LZXK-01', 'omics should inherit patient study_id');
+
+  const query = await request('/queries', {
+    method: 'POST',
+    token: dataManager.access_token,
+    body: {
+      study_id: 'LZXK-01',
+      patient_id: patient.id,
+      form_id: 'baseline',
+      field_name: '治疗线数',
+      title: 'Smoke query',
+      description: 'Please verify treatment line value.',
+      assigned_to: crc.user.id,
+    },
+  });
+  assert(query.status === 201, 'query create should return 201');
+  const answeredQuery = await request(`/queries/${query.data.id}`, {
+    method: 'PUT',
+    token: dataManager.access_token,
+    body: { status: 'answered', response: 'Verified in source record.' },
+  });
+  assert(answeredQuery.data.status === 'answered', 'query should be answerable');
+  const closedQuery = await request(`/queries/${query.data.id}`, {
+    method: 'PUT',
+    token: dataManager.access_token,
+    body: { status: 'closed' },
+  });
+  assert(closedQuery.data.closed_at, 'closed query should set closed_at');
 
   await request('/exports', {
     method: 'POST',

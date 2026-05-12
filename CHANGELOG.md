@@ -39,6 +39,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - File handling now goes through a local storage adapter with mock virus scanning, archive status fields, permission-checked downloads, and access audit logs.
 - Database productionization now records schema versions, includes an optional PostgreSQL Compose profile, and provides a SQLite table export script for PostgreSQL migration rehearsals.
 - Browser interaction regression scaffolding was added with a Playwright-first runner and explicit limitation reporting when Playwright is not installed.
+- Product foundations now include Study-scoped Query management APIs, multi-site configuration/assignment APIs, and a monitoring/backup drill document.
 - Previously inert or frontend-only buttons across cohort, consent, clinical data capture, samples/testing, analytics, and system management now either call backend APIs, create audit-backed records, export real files, or present an explicit disabled state.
 - English locale coverage was expanded across login, module navigation, patient cohort, informed consent, clinical data capture, sample testing, patient journey, data analysis, and system management.
 - Additional English-locale cleanup covers dashboard KPI helpers, workflow cards, enrollment trend, smart summary markers, sample/testing detail panels, omics result panels, data-analysis pipeline, and system-management overview text.

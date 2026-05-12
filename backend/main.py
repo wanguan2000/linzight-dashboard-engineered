@@ -29,6 +29,7 @@ try:
         row_to_crf_migration_log,
         row_to_crf_version,
         row_to_crf_entry,
+        row_to_data_query,
         row_to_export_job,
         row_to_file,
         row_to_follow_up_record,
@@ -36,6 +37,8 @@ try:
         row_to_patient,
         row_to_quality_issue,
         row_to_sample,
+        row_to_site,
+        row_to_site_user,
         row_to_study,
         row_to_study_member,
         row_to_study_visit_plan,
@@ -46,7 +49,7 @@ try:
     )
     from .permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
     from .security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
+    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
     from .seed import seed_database
 except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from database import (
@@ -64,6 +67,7 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         row_to_crf_migration_log,
         row_to_crf_version,
         row_to_crf_entry,
+        row_to_data_query,
         row_to_export_job,
         row_to_file,
         row_to_follow_up_record,
@@ -71,6 +75,8 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         row_to_patient,
         row_to_quality_issue,
         row_to_sample,
+        row_to_site,
+        row_to_site_user,
         row_to_study,
         row_to_study_member,
         row_to_study_visit_plan,
@@ -81,7 +87,7 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
     )
     from permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
     from security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
+    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
     from seed import seed_database
 
 app = FastAPI(title="LinZight RWS Demo API", version="1.0.0")
@@ -2341,6 +2347,116 @@ def archive_file(file_id: str, authorization: str | None = Header(default=None))
         )
         after = row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)))
         insert_audit(conn, user, "archive", "uploaded_files", file_id, before=file_row, after=after, study_id=file_row["study_id"])
+        return after
+
+
+@app.get("/studies/{study_id}/sites")
+def list_study_sites(study_id: str, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    with connect() as conn:
+        authorize(authorization, "studies", "read", study_id=study_id, conn=conn)
+        return [row_to_site(row) for row in conn.execute("SELECT * FROM sites WHERE study_id = ? ORDER BY code", (study_id,)).fetchall()]
+
+
+@app.post("/studies/{study_id}/sites", status_code=status.HTTP_201_CREATED)
+def create_study_site(study_id: str, payload: SiteCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    site_id = data["id"] or f"SITE-{uuid4().hex[:8].upper()}"
+    now = utc_now()
+    with connect() as conn:
+        user = authorize(authorization, "studies", "write", study_id=study_id, conn=conn)
+        conn.execute(
+            """
+            INSERT INTO sites (id, study_id, code, name, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(study_id, code) DO UPDATE SET name = excluded.name, status = excluded.status, updated_at = excluded.updated_at
+            """,
+            (site_id, study_id, data["code"], data["name"], data["status"], now, now),
+        )
+        site = row_to_site(fetch_one(conn, "SELECT * FROM sites WHERE study_id = ? AND code = ?", (study_id, data["code"])))
+        insert_audit(conn, user, "upsert", "sites", site["id"], after=site, study_id=study_id)
+        return site
+
+
+@app.post("/studies/{study_id}/sites/{site_id}/users", status_code=status.HTTP_201_CREATED)
+def assign_site_user(study_id: str, site_id: str, payload: SiteUserAssign, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    now = utc_now()
+    assignment_id = f"SU-{uuid4().hex[:10].upper()}"
+    with connect() as conn:
+        user = authorize(authorization, "study_members", "write", study_id=study_id, conn=conn)
+        fetch_one(conn, "SELECT * FROM sites WHERE id = ? AND study_id = ?", (site_id, study_id))
+        fetch_one(conn, "SELECT * FROM users WHERE id = ?", (data["user_id"],))
+        conn.execute(
+            """
+            INSERT INTO site_users (id, study_id, site_id, user_id, role, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(site_id, user_id) DO UPDATE SET role = excluded.role, status = excluded.status, updated_at = excluded.updated_at
+            """,
+            (assignment_id, study_id, site_id, data["user_id"], data["role"], data["status"], now, now),
+        )
+        site_user = row_to_site_user(fetch_one(conn, "SELECT * FROM site_users WHERE site_id = ? AND user_id = ?", (site_id, data["user_id"])))
+        insert_audit(conn, user, "assign", "site_users", site_user["id"], after=site_user, study_id=study_id)
+        return site_user
+
+
+@app.get("/queries")
+def list_data_queries(study_id: str | None = None, patient_id: str | None = None, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    sql = "SELECT * FROM data_queries"
+    where: list[str] = []
+    params: list[Any] = []
+    with connect() as conn:
+        user = authorize(authorization, "quality", "read", conn=conn)
+        append_study_filter(conn, user, where, params, "study_id", study_id)
+        if patient_id:
+            where.append("patient_id = ?")
+            params.append(patient_id)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY updated_at DESC"
+        return [row_to_data_query(row) for row in conn.execute(sql, params).fetchall()]
+
+
+@app.post("/queries", status_code=status.HTTP_201_CREATED)
+def create_data_query(payload: DataQueryCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    query_id = f"QRY-{uuid4().hex[:10].upper()}"
+    now = utc_now()
+    with connect() as conn:
+        user = authorize(authorization, "quality", "write", study_id=data["study_id"], conn=conn)
+        if patient_study_id(conn, data["patient_id"]) != data["study_id"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="patient does not belong to study")
+        conn.execute(
+            """
+            INSERT INTO data_queries
+              (id, study_id, patient_id, visit_id, form_id, field_name, title, description, status, assigned_to, created_by, response, created_at, updated_at, closed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, '', ?, ?, NULL)
+            """,
+            (query_id, data["study_id"], data["patient_id"], data["visit_id"], data["form_id"], data["field_name"], data["title"], data["description"], data["assigned_to"], user["id"], now, now),
+        )
+        query = row_to_data_query(fetch_one(conn, "SELECT * FROM data_queries WHERE id = ?", (query_id,)))
+        insert_audit(conn, user, "create", "data_queries", query_id, after=query, study_id=data["study_id"])
+        return query
+
+
+@app.put("/queries/{query_id}")
+def update_data_query(query_id: str, payload: DataQueryUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload, exclude_unset=True)
+    with connect() as conn:
+        before = row_to_data_query(fetch_one(conn, "SELECT * FROM data_queries WHERE id = ?", (query_id,)))
+        user = authorize(authorization, "quality", "write", study_id=before["study_id"], conn=conn)
+        columns: list[str] = []
+        values: list[Any] = []
+        for key, value in data.items():
+            columns.append(f"{key} = ?")
+            values.append(value)
+        if data.get("status") == "closed":
+            columns.append("closed_at = ?")
+            values.append(utc_now())
+        columns.append("updated_at = ?")
+        values.extend([utc_now(), query_id])
+        conn.execute(f"UPDATE data_queries SET {', '.join(columns)} WHERE id = ?", values)
+        after = row_to_data_query(fetch_one(conn, "SELECT * FROM data_queries WHERE id = ?", (query_id,)))
+        insert_audit(conn, user, "update", "data_queries", query_id, before=before, after=after, study_id=after["study_id"])
         return after
 
 

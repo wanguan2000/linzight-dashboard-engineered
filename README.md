@@ -10,7 +10,8 @@
 2. `AI_HANDOFF.md`
 3. `ARCHITECTURE.md`
 4. `ROADMAP.md`
-5. 本文件
+5. `docs/monitoring-backup-drill.md`
+6. 本文件
 
 ## 技术栈
 

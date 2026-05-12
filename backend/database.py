@@ -442,6 +442,56 @@ def initialize_schema() -> None:
               FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL
             );
 
+            CREATE TABLE IF NOT EXISTS sites (
+              id TEXT PRIMARY KEY,
+              study_id TEXT NOT NULL,
+              code TEXT NOT NULL,
+              name TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'active',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE (study_id, code),
+              FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS site_users (
+              id TEXT PRIMARY KEY,
+              study_id TEXT NOT NULL,
+              site_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              role TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'active',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE (site_id, user_id),
+              FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE,
+              FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS data_queries (
+              id TEXT PRIMARY KEY,
+              study_id TEXT NOT NULL,
+              patient_id TEXT NOT NULL,
+              visit_id TEXT,
+              form_id TEXT NOT NULL DEFAULT '',
+              field_name TEXT NOT NULL DEFAULT '',
+              title TEXT NOT NULL,
+              description TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'open',
+              assigned_to TEXT,
+              created_by TEXT,
+              response TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              closed_at TEXT,
+              FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE,
+              FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+              FOREIGN KEY (visit_id) REFERENCES visits(id) ON DELETE SET NULL,
+              FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL,
+              FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_patients_disease_type ON patients(disease_type);
             CREATE INDEX IF NOT EXISTS idx_visit_plans_study_id ON study_visit_plans(study_id);
             CREATE INDEX IF NOT EXISTS idx_samples_patient_id ON samples(patient_id);
@@ -457,6 +507,9 @@ def initialize_schema() -> None:
             CREATE INDEX IF NOT EXISTS idx_crf_migration_execution_logs_migration_id ON crf_migration_execution_logs(migration_id);
             CREATE INDEX IF NOT EXISTS idx_approval_requests_study_id ON approval_requests(study_id);
             CREATE INDEX IF NOT EXISTS idx_approval_actions_approval_id ON approval_actions(approval_id);
+            CREATE INDEX IF NOT EXISTS idx_sites_study_id ON sites(study_id);
+            CREATE INDEX IF NOT EXISTS idx_site_users_study_site ON site_users(study_id, site_id);
+            CREATE INDEX IF NOT EXISTS idx_data_queries_study_id ON data_queries(study_id);
             """
         )
         migrate_study_schema(conn)
@@ -836,6 +889,18 @@ def row_to_approval_request(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def row_to_approval_action(row: sqlite3.Row) -> dict[str, Any]:
+    return dict(row)
+
+
+def row_to_site(row: sqlite3.Row) -> dict[str, Any]:
+    return dict(row)
+
+
+def row_to_site_user(row: sqlite3.Row) -> dict[str, Any]:
+    return dict(row)
+
+
+def row_to_data_query(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 
 
