@@ -24,6 +24,16 @@ export type ApiUser = {
   study_memberships?: StudyMembership[];
 };
 
+export type ApiUserCreate = {
+  username: string;
+  display_name: string;
+  role: ApiUserRole;
+  password?: string;
+  status?: 'active' | 'disabled';
+  study_id?: string;
+  member_status?: 'active' | 'pending' | 'disabled';
+};
+
 export type ApiLoginResponse = {
   access_token: string;
   token_type: 'bearer';
@@ -111,6 +121,101 @@ export type ApiStudyVisitPlan = {
   sort_order: number;
   created_at: string;
   updated_at: string;
+};
+
+export type ApiStudyMember = {
+  id: string;
+  study_id: string;
+  user_id: string;
+  username: string;
+  display_name: string;
+  study_role: 'STUDY_PI' | 'STUDY_CRC' | 'STUDY_CONFIG_ADMIN' | 'STUDY_DATA_MANAGER';
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiStudyCrfField = {
+  study_id: string;
+  crf_version_id: string;
+  crf_version: string;
+  id: string;
+  name: string;
+  type: 'Text' | 'Number' | 'Dropdown' | 'Boolean';
+  module: string;
+  status: '启用' | '草稿' | '停用';
+  options: string[];
+  required: boolean;
+  validation_rule: string;
+  conditional_logic: string;
+  updated_at: string;
+};
+
+export type ApiStudyCrfVersion = {
+  id: string;
+  study_id: string;
+  template_id?: string | null;
+  version: string;
+  status: 'draft' | 'published' | 'retired';
+  schema: Record<string, unknown>;
+  change_summary: string;
+  created_by?: string | null;
+  published_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiCrfMigrationPreview = {
+  study_id: string;
+  source_version_id: string;
+  source_version: string;
+  summary: {
+    added: number;
+    removed: number;
+    changed: number;
+    unchanged: number;
+    source_field_count: number;
+    target_field_count: number;
+  };
+  added: ApiStudyCrfField[];
+  removed: ApiStudyCrfField[];
+  changed: Array<{
+    id: string;
+    name: string;
+    changes: string[];
+    before: Partial<ApiStudyCrfField>;
+    after: Partial<ApiStudyCrfField>;
+  }>;
+};
+
+export type ApiCrfMigrationApproval = {
+  id: string;
+  study_id: string;
+  source_version_id: string;
+  target_version_id: string;
+  status: 'pending' | 'approved' | 'applied' | 'rejected';
+  preview: ApiCrfMigrationPreview & {
+    target_version_id?: string;
+    target_version?: string;
+  };
+  note: string;
+  requested_by?: string | null;
+  approved_by?: string | null;
+  requested_at: string;
+  reviewed_at?: string | null;
+  applied_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  execution_logs?: Array<{
+    id: string;
+    study_id: string;
+    migration_id: string;
+    step: string;
+    status: string;
+    message: string;
+    actor_id?: string | null;
+    created_at: string;
+  }>;
 };
 
 export type ApiFollowUpRecord = {

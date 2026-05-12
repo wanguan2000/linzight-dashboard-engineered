@@ -1,20 +1,23 @@
+import { useI18n } from '../i18n/I18nProvider';
 import { Card } from './Card';
 
 export function EnrollmentTrendCard({ enrolled = '2,842', helper = '累计入组', delta = '较上季度 18.6%' }: { enrolled?: string; helper?: string; delta?: string }) {
+  const { t } = useI18n();
+
   return (
     <Card
       title="入组趋势"
       action={
-        <select className="select-sm" aria-label="入组时间范围">
-          <option>本季度</option>
+        <select className="select-sm" aria-label={t('入组时间范围')}>
+          <option>{t('本季度')}</option>
         </select>
       }
     >
       <div className="trend-card__value">{enrolled}</div>
-      <div className="trend-card__label">{helper}</div>
-      <div className="trend-card__delta">{delta}</div>
+      <div className="trend-card__label">{t(helper)}</div>
+      <div className="trend-card__delta">{t(delta)}</div>
 
-      <div className="mini-chart" aria-label="入组趋势图">
+      <div className="mini-chart" aria-label={t('入组趋势图')}>
         <svg viewBox="0 0 220 80" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -48,7 +51,7 @@ export function EnrollmentTrendCard({ enrolled = '2,842', helper = '累计入组
           <circle cx="210" cy="8" r="4" fill="#3a7bd5" stroke="#fff" strokeWidth="2" />
         </svg>
       </div>
-      <div className="chart-axis"><span>4月</span><span>5月</span><span>6月</span></div>
+      <div className="chart-axis"><span>{t('4月')}</span><span>{t('5月')}</span><span>{t('6月')}</span></div>
     </Card>
   );
 }

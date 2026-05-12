@@ -12,7 +12,7 @@ import {
 import { PatientCohortPage } from './components/PatientCohortPage';
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
-import { authStorageKey, normalizeAuthenticatedUser, type AuthenticatedUser } from './data/auth';
+import { authStorageKey, normalizeAuthenticatedUser, userCanAccessStudy, type AuthenticatedUser } from './data/auth';
 import { navItems } from './data/dashboard';
 import type { PatientRecord } from './data/patientCohort';
 import { useI18n } from './i18n/I18nProvider';
@@ -98,7 +98,7 @@ function syncModuleRoute(label: string) {
 function getTopbarCopy(activeModule: string) {
   const copy: Record<string, { title: string; subtitle: string; aiPlaceholder?: string; showAiPrompts?: boolean }> = {
     首页工作台: {
-      title: '欢迎回来，约翰·伦格博士',
+      title: '欢迎回来，任约翰博士',
       subtitle: '这里是今日临床研究运营概览。'
     },
     患者队列管理: {
@@ -179,6 +179,13 @@ export default function App() {
     setActiveModule(visibleNavItems[0]?.label ?? '首页工作台');
   }, [activeModule, currentUser, visibleNavItems]);
 
+  useEffect(() => {
+    if (!currentUser || !selectedPatient) return;
+    if (!selectedPatient.studyId || !userCanAccessStudy(currentUser, selectedPatient.studyId)) {
+      setSelectedPatient(null);
+    }
+  }, [currentUser, selectedPatient]);
+
   function openPatientJourney(patient: PatientRecord) {
     setSelectedPatient(patient);
     setActiveModule('患者旅程');
@@ -209,7 +216,7 @@ export default function App() {
 
   function renderActiveModule() {
     if (activeModule === '患者队列管理') {
-      return <PatientCohortPage onCreatePatient={createPatient} onEditPatient={openClinicalData} onViewPatient={openPatientJourney} />;
+      return <PatientCohortPage currentUser={currentUser} onCreatePatient={createPatient} onEditPatient={openClinicalData} onViewPatient={openPatientJourney} />;
     }
     if (activeModule === '知情同意') return <ConsentManagementPage />;
     if (activeModule === '临床数据采集') {
@@ -217,9 +224,16 @@ export default function App() {
     }
     if (activeModule === '样本及检测') return <SampleTestingPage />;
     if (activeModule === '患者旅程') return <PatientJourneyPage selectedPatient={selectedPatient} onPatientChange={setSelectedPatient} />;
-    if (activeModule === '数据分析') return <ReportsPage />;
-    if (activeModule === '系统管理') return <SystemManagementPage />;
-    return <Dashboard selectedModule={activeModule === '首页工作台' ? undefined : activeModule} selectedPatient={selectedPatient} />;
+    if (activeModule === '数据分析') return <ReportsPage currentUser={currentUser} />;
+    if (activeModule === '系统管理') return <SystemManagementPage currentUser={currentUser} />;
+    return (
+      <Dashboard
+        currentUser={currentUser}
+        selectedModule={activeModule === '首页工作台' ? undefined : activeModule}
+        selectedPatient={selectedPatient}
+        onNavigate={setActiveModule}
+      />
+    );
   }
 
   if (!currentUser) {

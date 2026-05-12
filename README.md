@@ -26,11 +26,14 @@
 ```text
 .
 ├── backend/                       # FastAPI + SQLite Demo 后端
-├── docs/                          # 既有工程文档和协议说明
+├── docs/                          # 工程文档、协议说明和部署运维说明
 ├── exports/html/                  # npm run export:html 生成的可交互 HTML 页面
 ├── public/                        # Vite 静态资源
 ├── resource/                      # 产品参考资料、截图、模板和历史原型
 ├── scripts/export-html-pages.mjs  # 静态 HTML 导出脚本
+├── scripts/export-openapi.mjs     # OpenAPI schema 导出脚本
+├── scripts/backup-sqlite.mjs      # Demo SQLite/上传目录备份脚本
+├── scripts/restore-sqlite.mjs     # Demo SQLite/上传目录恢复脚本
 ├── src/                           # React 前端源码
 ├── uploads/.gitkeep               # 本地上传目录占位；真实上传内容不提交
 ├── AGENTS.md                      # Codex/AI 长期项目规则
@@ -125,6 +128,55 @@ npm run build
 npm run export:html
 ```
 
+OpenAPI schema 导出：
+
+```bash
+npm run export:openapi
+```
+
+生成文件为 `docs/openapi.json`，用于和 `docs/02-api-contract.md`、`src/services/contracts.ts` 一起核对接口契约。
+
+后端 API smoke（会启动临时 SQLite 后端、seed 测试数据并自动清理）：
+
+```bash
+npm run smoke:api
+```
+
+静态 UI smoke（检查导出 manifest、8 个 HTML 页面、关键按钮文案、CRF migration approval、execution logs、separate reviewer 和多 Study selector 文案）：
+
+```bash
+npm run smoke:ui
+```
+
+发布检查（检查必备脚本/文档/CI gate、静态导出、敏感文件和大文件跟踪风险）：
+
+```bash
+npm run release:check
+```
+
+综合 smoke 测试（API smoke、OpenAPI 导出、静态导出、UI smoke、release gate）：
+
+```bash
+npm test
+```
+
+Docker Compose 一键 Demo 环境：
+
+```bash
+docker compose up --build
+```
+
+Compose 会构建 `Dockerfile.backend` 和 `Dockerfile.frontend`，首次启动时在持久化 volume 中 seed SQLite Demo 数据，前端通过 `http://127.0.0.1:8000` 访问后端。浏览器打开 `http://127.0.0.1:5173/`。
+
+Demo SQLite / 上传目录备份恢复：
+
+```bash
+npm run backup:sqlite
+npm run restore:sqlite -- backups/linzight-<timestamp>
+```
+
+部署运维说明见 `docs/deployment-ops.md`。
+
 导出文件位于 `exports/html/`，包括：
 
 - `index.html`
@@ -156,6 +208,7 @@ cp backend/.env.example backend/.env
 | `LINZIGHT_DATABASE_URL` | 后端 SQLite 数据库 URL |
 | `LINZIGHT_POSTGRES_URL` | 预留 PostgreSQL 配置 |
 | `LINZIGHT_UPLOADS_DIR` | 后端本地上传目录 |
+| `LINZIGHT_BACKUP_DIR` | Demo SQLite 备份目录，默认 `./backups` |
 
 不要提交 `.env`、`.env.local`、真实 token、真实患者数据或真实医疗敏感数据。
 
@@ -185,6 +238,12 @@ cp backend/.env.example backend/.env
 git clone <repo-url>
 cd linzight-dashboard-engineered
 npm install
+npm run smoke:api
+npm run export:html
+npm run smoke:ui
+npm run release:check
+npm test
+docker compose config
 npm run build
 npm run dev
 ```

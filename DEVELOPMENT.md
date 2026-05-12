@@ -7,6 +7,7 @@
 - Python：建议 3.11+，仅在运行 FastAPI Demo 后端时需要。
 - Git：用于分支、提交和发布。
 - GitHub CLI：可选，用于创建 private repo、tag release 和 prerelease。
+- Docker：可选，用于 `docker compose up --build` 一键启动 Demo。
 
 ## 安装依赖
 
@@ -64,12 +65,22 @@ npm run lint
 
 ## 测试
 
-当前项目没有配置 `test` 脚本。发布前至少执行：
+当前 `npm test` 会依次运行 API smoke、OpenAPI 导出、静态 HTML 导出、UI smoke 和 release gate。发布前至少执行：
 
 ```bash
 npm run lint
 npm run build
+npm run export:openapi
+npm test
+docker compose config
 python3 -m compileall -q backend
+```
+
+如需保留或回滚本地 Demo 数据：
+
+```bash
+npm run backup:sqlite
+npm run restore:sqlite -- backups/linzight-<timestamp>
 ```
 
 未来建议增加：
@@ -77,7 +88,7 @@ python3 -m compileall -q backend
 - React component smoke tests。
 - API contract tests。
 - Playwright 核心路径测试。
-- GitHub Actions 自动执行 lint/build/test。
+- 更完整的权限矩阵和真实浏览器交互回归测试。
 
 ## 推荐 Git 工作流
 

@@ -1,4 +1,5 @@
 import { kpiMetrics } from '../data/dashboard';
+import { useI18n } from '../i18n/I18nProvider';
 import type { KpiMetric } from '../types';
 import { Icon } from './Icon';
 
@@ -15,15 +16,17 @@ export function KpiProgress({ progress }: { progress: number }) {
 }
 
 function KpiCard({ metric }: { metric: KpiMetric }) {
+  const { t } = useI18n();
+
   return (
     <article className="kpi-card">
       <div>
-        <p className="kpi-card__label">{metric.label}</p>
+        <p className="kpi-card__label">{t(metric.label)}</p>
         <strong className="kpi-card__value">{metric.value}</strong>
         <p className={`kpi-card__delta${metric.delta ? ' is-up' : ''}`}>
           {metric.delta && <span className="delta-arrow">↑</span>}
           {metric.delta && <span>{metric.delta}</span>}
-          <span>{metric.helper}</span>
+          <span>{t(metric.helper)}</span>
         </p>
       </div>
       {metric.progress ? <KpiProgress progress={metric.progress} /> : <Icon className="kpi-card__icon" name={metric.icon} size={44} />}
@@ -32,8 +35,10 @@ function KpiCard({ metric }: { metric: KpiMetric }) {
 }
 
 export function MetricGrid({ metrics = kpiMetrics }: { metrics?: KpiMetric[] }) {
+  const { t } = useI18n();
+
   return (
-    <section className="kpi-grid" aria-label="研究关键指标">
+    <section className="kpi-grid" aria-label={t('研究关键指标')}>
       {metrics.map((metric) => (
         <KpiCard key={metric.label} metric={metric} />
       ))}

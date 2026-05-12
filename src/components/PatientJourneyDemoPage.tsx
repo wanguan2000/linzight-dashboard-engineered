@@ -22,7 +22,8 @@ import {
   type VisitRecord
 } from '../data/operations';
 import { patientRecords, type PatientRecord } from '../data/patientCohort';
-import { fetchDemoDataset, filterRecordsByCurrentStudyScope } from '../services/api';
+import { useI18n } from '../i18n/I18nProvider';
+import { fetchDemoDataset, filterRecordsByCurrentStudyScope, recordBelongsToCurrentStudyScope } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 
@@ -651,8 +652,10 @@ export function PatientJourneyDemoPage({
   selectedPatient?: PatientRecord | null;
   onPatientChange?: (patient: PatientRecord) => void;
 }) {
+  const { t } = useI18n();
   const scopedFallbackPatients = filterRecordsByCurrentStudyScope(patientRecords);
-  const initialPatient = selectedPatient ?? scopedFallbackPatients[0] ?? getSelectedPatient(selectedPatient);
+  const scopedSelectedPatient = selectedPatient && recordBelongsToCurrentStudyScope(selectedPatient) ? selectedPatient : null;
+  const initialPatient = scopedSelectedPatient ?? scopedFallbackPatients[0] ?? getSelectedPatient(null);
   const [patients, setPatients] = useState<PatientRecord[]>(scopedFallbackPatients);
   const [journeySource, setJourneySource] = useState<PatientJourneySource>({
     visits: filterRecordsByCurrentStudyScope(fallbackJourneySource.visits),
@@ -686,7 +689,7 @@ export function PatientJourneyDemoPage({
           omics: dataset.omics
         });
         setActivePatient((current) => {
-          if (selectedPatient) return selectedPatient;
+          if (scopedSelectedPatient) return scopedSelectedPatient;
           return dataset.patients.find((item) => item.id === current.id || item.name === current.name) ?? dataset.patients[0];
         });
       })
@@ -695,7 +698,7 @@ export function PatientJourneyDemoPage({
     return () => {
       ignore = true;
     };
-  }, [selectedPatient]);
+  }, [scopedSelectedPatient]);
 
   useEffect(() => {
     if (selectedPatient) {
@@ -805,17 +808,17 @@ export function PatientJourneyDemoPage({
         <div className="journey-demo-patient">
           <div className="journey-demo-avatar">PJ</div>
           <div>
-            <h2>临床 Patient Journey</h2>
+            <h2>{t('临床 Patient Journey')}</h2>
             <p>
-              {patient.studyId} / {patient.name} · {patient.sex} · {patient.age} 岁 · {patient.diseaseType}
+              {t(`${patient.studyId} / ${patient.name} · ${patient.sex} · ${patient.age}岁 · ${patient.diseaseType}`)}
             </p>
           </div>
         </div>
         <div className="journey-demo-patient-picker">
           <div className="journey-demo-patient-picker__header">
             <div>
-              <strong>查找患者</strong>
-              <span>{patientResultSummary}</span>
+              <strong>{t('查找患者')}</strong>
+              <span>{t(patientResultSummary)}</span>
             </div>
             {patientQuery ? (
               <button
@@ -826,7 +829,7 @@ export function PatientJourneyDemoPage({
                 }}
                 type="button"
               >
-                清空
+                {t('清空')}
               </button>
             ) : null}
           </div>
@@ -840,12 +843,12 @@ export function PatientJourneyDemoPage({
               onFocus={() => {
                 if (patientQuery.trim()) setPatientPickerOpen(true);
               }}
-              placeholder="搜索患者编号、住院号、疾病类型、性别或受累脏器"
+              placeholder={t('搜索患者编号、住院号、疾病类型、性别或受累脏器')}
               value={patientQuery}
             />
           </label>
           {showPatientMatches ? (
-            <div className="journey-demo-patient-results" aria-label="患者查找结果">
+            <div className="journey-demo-patient-results" aria-label={t('患者查找结果')}>
               {patientMatches.map((item) => (
                 <button
                   className={item.name === patient.name ? 'is-active' : undefined}
@@ -858,10 +861,10 @@ export function PatientJourneyDemoPage({
                   type="button"
                 >
                   <strong>{item.name}</strong>
-                  <span>{item.hospitalNo} · {item.sex} · {item.age} 岁 · {item.diseaseType}</span>
+                  <span>{t(`${item.hospitalNo} · ${item.sex} · ${item.age}岁 · ${item.diseaseType}`)}</span>
                 </button>
               ))}
-              {!patientMatches.length ? <span className="journey-demo-patient-empty">无匹配患者</span> : null}
+              {!patientMatches.length ? <span className="journey-demo-patient-empty">{t('无匹配患者')}</span> : null}
             </div>
           ) : null}
         </div>
@@ -941,6 +944,7 @@ function JourneyTimeline({
   timelineDomain: TimelineDomain;
   zoomRange: TimelineZoomRange;
 }) {
+  const { t } = useI18n();
   const visibleEvents = events.filter((event) => eventIntersectsZoom(event, zoomRange, timelineDomain));
   const selectedDateVisible = dateIsVisible(selectedDate, zoomRange, timelineDomain);
   const selectedDatePosition = datePercentInZoom(selectedDate, zoomRange, timelineDomain);
@@ -951,11 +955,11 @@ function JourneyTimeline({
       <header className="journey-demo-card__header">
         <div>
           <span>Multi-track Event Timeline</span>
-          <h2>多轨临床事件轴</h2>
+          <h2>{t('多轨临床事件轴')}</h2>
         </div>
       </header>
       <div className="journey-demo-timeline-controls">
-        <div className="journey-demo-categories journey-demo-timeline-categories" aria-label="旅程事件分类筛选">
+        <div className="journey-demo-categories journey-demo-timeline-categories" aria-label={t('旅程事件分类筛选')}>
           {categoryOrder.map((category) => {
             const config = journeyCategoryConfig[category];
             const active = enabledCategories.includes(category);
@@ -972,7 +976,7 @@ function JourneyTimeline({
                 type="button"
               >
                 <Icon name={categoryIcons[category]} />
-                {config.label}
+                {t(config.label)}
               </button>
             );
           })}
@@ -980,11 +984,11 @@ function JourneyTimeline({
         <div className="journey-demo-actions journey-demo-timeline-actions">
           <label className="journey-demo-search journey-demo-timeline-search">
             <Icon name="search" />
-            <input onChange={(event) => onQueryChange(event.target.value)} placeholder="搜索事件、治疗或样本" value={query} />
+            <input onChange={(event) => onQueryChange(event.target.value)} placeholder={t('搜索事件、治疗或样本')} value={query} />
           </label>
           <button className="module-link-button" onClick={onResetView} type="button">
             <Icon name="clock" />
-            重置视图
+            {t('重置视图')}
           </button>
         </div>
       </div>
@@ -1003,7 +1007,7 @@ function JourneyTimeline({
           const trackEvents = visibleEvents.filter((event) => event.track === track);
           return (
             <div className="journey-demo-track-row" key={track}>
-              <div className="journey-demo-track-label">{track}</div>
+              <div className="journey-demo-track-label">{t(track)}</div>
               <div className="journey-demo-track-axis">
                 {selectedDateVisible ? <span className="journey-demo-selected-date-line" style={{ left: `${selectedDatePosition}%` }} /> : null}
                 {trackEvents.map((event) =>
@@ -1036,10 +1040,10 @@ function JourneyTimeline({
                         borderColor: event.borderColor,
                         color: event.color
                       }}
-                      title={`${event.title} ${event.subtitle ?? ''}`}
+                      title={`${t(event.title)} ${event.subtitle ? t(event.subtitle) : ''}`}
                       type="button"
                     >
-                      {event.title}
+                      {t(event.title)}
                     </button>
                   ) : (
                     <button
@@ -1060,10 +1064,10 @@ function JourneyTimeline({
                         borderColor: event.borderColor,
                         color: event.color
                       }}
-                      title={`${event.title} ${event.date}`}
+                      title={`${t(event.title)} ${event.date}`}
                       type="button"
                     >
-                      <span>{event.title}</span>
+                      <span>{t(event.title)}</span>
                     </button>
                   )
                 )}
@@ -1074,7 +1078,7 @@ function JourneyTimeline({
       </div>
       <RangeBrush
         className="journey-demo-brush--timeline"
-        label="患者旅程时间范围"
+        label={t('患者旅程时间范围')}
         onChange={onZoomChange}
         range={zoomRange}
         timelineDomain={timelineDomain}
@@ -1100,6 +1104,7 @@ function JourneyBiomarkers({
   timelineDomain: TimelineDomain;
   zoomRange: TimelineZoomRange;
 }) {
+  const { t } = useI18n();
   const [chartRef, chartWidth] = useElementWidth(chartLayout.minWidth);
   const chartFrame = getChartFrame(chartWidth);
   const visiblePoints = getVisibleBiomarkerPoints(zoomRange, points, timelineDomain);
@@ -1142,7 +1147,7 @@ function JourneyBiomarkers({
         <div className="journey-demo-trend-title">
           <span>Clinical Trend</span>
           <div className="journey-demo-trend-title-row">
-            <h2>关键指标趋势</h2>
+            <h2>{t('关键指标趋势')}</h2>
             <div className="journey-demo-metrics">
               {metricLines.map((metric) => (
                 <div
@@ -1150,7 +1155,7 @@ function JourneyBiomarkers({
                   key={metric.key}
                   style={{ '--metric-color': metric.color } as CSSProperties}
                 >
-                  <span>{metric.label}</span>
+                  <span>{t(metric.label)}</span>
                   <strong>
                     {getMetricValue(currentPoint, metric.key)}
                     {metric.suffix ? <small>{metric.suffix}</small> : null}
@@ -1161,7 +1166,7 @@ function JourneyBiomarkers({
           </div>
         </div>
         <label className="journey-demo-date-picker">
-          指标日期
+          {t('指标日期')}
           <input
             max={timelineDomain.end}
             min={timelineDomain.start}
@@ -1173,7 +1178,7 @@ function JourneyBiomarkers({
       </header>
       <div className="journey-demo-chart" ref={chartRef}>
         <svg
-          aria-label="患者关键指标趋势"
+          aria-label={t('患者关键指标趋势')}
           onPointerDown={handleChartPointer}
           onPointerLeave={() => setHoveredMetricKey(null)}
           onPointerMove={handleChartPointerMove}
@@ -1198,14 +1203,14 @@ function JourneyBiomarkers({
                 <line stroke={metric.color} strokeDasharray={metric.dash} strokeWidth="2.4" x1="0" x2="30" y1="0" y2="0" />
                 <circle cx="15" cy="0" fill="#ffffff" r="3.5" stroke={metric.color} strokeWidth="2" />
                 <text x="38" y="4">
-                  {metric.label}
+                  {t(metric.label)}
                 </text>
               </g>
             ))}
             <g transform={`translate(${selectedLegendX}, 0)`}>
               <circle cx="4" cy="0" fill="rgba(47, 120, 255, 0.78)" r="4" />
               <text x="14" y="4">
-                选中时间点
+                {t('选中时间点')}
               </text>
             </g>
           </g>
@@ -1279,7 +1284,7 @@ function JourneyBiomarkers({
                     x={labelPoint.x > chartFrame.right - 92 ? chartFrame.right - 8 : labelPoint.x + 10}
                     y={labelPoint.y + 4}
                   >
-                    {metric.label}
+                    {t(metric.label)}
                   </text>
                 ) : null}
               </g>
@@ -1320,7 +1325,7 @@ function JourneyBiomarkers({
         </svg>
         <RangeBrush
           className="journey-demo-brush--chart"
-          label="指标趋势时间范围"
+          label={t('指标趋势时间范围')}
           onChange={onZoomChange}
           range={zoomRange}
           timelineDomain={timelineDomain}
@@ -1349,6 +1354,7 @@ function JourneyEventStream({
   onSelect: (event: JourneyDemoEvent) => void;
   selectedEvent: JourneyDemoEvent;
 }) {
+  const { t } = useI18n();
   const totalPages = Math.max(1, Math.ceil(events.length / pageSize));
   const safePage = Math.min(totalPages, Math.max(1, currentPage));
   const pageStart = (safePage - 1) * pageSize;
@@ -1361,14 +1367,14 @@ function JourneyEventStream({
       <header className="journey-demo-card__header">
         <div>
           <span>Event Detail Stream</span>
-          <h2>事件明细流</h2>
+          <h2>{t('事件明细流')}</h2>
         </div>
         <strong>{events.length}</strong>
       </header>
       <div className="journey-demo-selected-event" style={{ borderColor: selectedConfig.borderColor, backgroundColor: selectedConfig.softColor }}>
-        <span style={{ color: selectedConfig.color }}>{selectedConfig.label}</span>
-        <h3>{selectedEvent.title}</h3>
-        <p>{selectedEvent.description}</p>
+        <span style={{ color: selectedConfig.color }}>{t(selectedConfig.label)}</span>
+        <h3>{t(selectedEvent.title)}</h3>
+        <p>{t(selectedEvent.description)}</p>
         <small>
           {formatDate(selectedEvent.date)}
           {selectedEvent.endDate ? ` - ${formatDate(selectedEvent.endDate)}` : ''}
@@ -1396,10 +1402,10 @@ function JourneyEventStream({
                 <Icon name={categoryIcons[event.category]} />
               </span>
               <span>
-                <strong>{event.title}</strong>
+                <strong>{t(event.title)}</strong>
                 <small>
                   {formatDate(event.date)}
-                  {event.subtitle ? ` · ${event.subtitle}` : ''}
+                  {event.subtitle ? ` · ${t(event.subtitle)}` : ''}
                 </small>
               </span>
               <Icon name="chevronRight" />
@@ -1408,9 +1414,9 @@ function JourneyEventStream({
         })}
       </div>
       {events.length > pageSize ? (
-        <div className="journey-demo-pagination" aria-label="事件分页">
+        <div className="journey-demo-pagination" aria-label={t('事件分页')}>
           <button disabled={safePage <= 1} onClick={() => onPageChange(safePage - 1)} type="button">
-            上一页
+            {t('上一页')}
           </button>
           <div>
             <strong>
@@ -1421,7 +1427,7 @@ function JourneyEventStream({
             </span>
           </div>
           <button disabled={safePage >= totalPages} onClick={() => onPageChange(safePage + 1)} type="button">
-            下一页
+            {t('下一页')}
           </button>
         </div>
       ) : null}
@@ -1442,6 +1448,7 @@ function RangeBrush({
   range: TimelineZoomRange;
   timelineDomain: TimelineDomain;
 }) {
+  const { t } = useI18n();
   const labelTicks = getBrushLabelTicks(timelineDomain);
   const ticks = getBrushTicks(timelineDomain);
 
@@ -1466,7 +1473,7 @@ function RangeBrush({
         </div>
         <span className="journey-demo-brush__selection" style={{ left: `${range.start}%`, width: `${range.end - range.start}%` }} />
         <input
-          aria-label={`${label}开始`}
+          aria-label={`${t(label)} ${t('开始')}`}
           max="100"
           min="0"
           onChange={(event) => updateStart(Number(event.target.value))}
@@ -1474,7 +1481,7 @@ function RangeBrush({
           value={range.start}
         />
         <input
-          aria-label={`${label}结束`}
+          aria-label={`${t(label)} ${t('结束')}`}
           max="100"
           min="0"
           onChange={(event) => updateEnd(Number(event.target.value))}

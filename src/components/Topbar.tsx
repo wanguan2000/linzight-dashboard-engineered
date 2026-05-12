@@ -3,6 +3,7 @@ import { visibleStudyLabel, type AuthenticatedUser } from '../data/auth';
 import { AiCommandBar } from './AiCommandBar';
 import { Icon } from './Icon';
 import { LanguageToggle } from './LanguageToggle';
+import { useI18n } from '../i18n/I18nProvider';
 
 interface TopbarProps {
   aiPlaceholder?: string;
@@ -16,11 +17,12 @@ interface TopbarProps {
 export function Topbar({
   aiPlaceholder,
   showAiPrompts = true,
-  title = '欢迎回来，约翰·伦格博士',
+  title = '欢迎回来，任约翰博士',
   subtitle = '这里是今日临床研究运营概览。',
   currentUser,
   onLogout
 }: TopbarProps) {
+  const { t } = useI18n();
   const profile = currentUser ?? userProfile;
   const roleLabel = currentUser ? currentUser.roleLabel : userProfile.role;
   const studyLabel = visibleStudyLabel(currentUser);
@@ -29,29 +31,29 @@ export function Topbar({
     <header className="topbar">
       <div className="topbar__row">
         <div className="topbar__title">
-          <h1 className="page-title">{title}</h1>
-          <p className="page-subtitle">{subtitle}</p>
+          <h1 className="page-title">{t(title)}</h1>
+          <p className="page-subtitle">{t(subtitle)}</p>
         </div>
 
         <div className="topbar__actions">
           <LanguageToggle />
-          <div className="study-badge" aria-label={`Study 范围：${studyLabel}`}>
-            <span>Study 范围</span>
-            <strong>{studyLabel}</strong>
+          <div className="study-badge" aria-label={`${t('Study 范围')}：${t(studyLabel)}`}>
+            <span>{t('Study 范围')}</span>
+            <strong>{t(studyLabel)}</strong>
           </div>
-          <div className="role-badge" aria-label={`当前角色：${roleLabel}`}>
-            <span>当前角色</span>
-            <strong>{roleLabel}</strong>
+          <div className="role-badge" aria-label={`${t('当前角色')}：${t(roleLabel)}`}>
+            <span>{t('当前角色')}</span>
+            <strong>{t(roleLabel)}</strong>
           </div>
-          <button className="icon-button" type="button" aria-label="通知">
+          <button className="icon-button" type="button" aria-label={t('通知')} disabled title={t('通知功能将在生产环境接入')}>
             <Icon name="bell" />
           </button>
           {onLogout ? (
-            <button className="icon-button" type="button" aria-label="退出登录" onClick={onLogout}>
+            <button className="icon-button" type="button" aria-label={t('退出登录')} onClick={onLogout}>
               <Icon name="lock" />
             </button>
           ) : null}
-          <div className="avatar avatar--top" aria-label={profile.name}>
+          <div className="avatar avatar--top" aria-label={t(profile.name)}>
             {profile.initials}
           </div>
         </div>

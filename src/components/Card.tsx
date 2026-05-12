@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 
 type CardProps = {
   title?: string;
@@ -8,11 +9,13 @@ type CardProps = {
 };
 
 export function Card({ title, action, className = '', children }: CardProps) {
+  const { t } = useI18n();
+
   return (
     <section className={`card ${className}`.trim()}>
       {(title || action) && (
         <header className="card__header">
-          {title && <h2 className="card__title">{title}</h2>}
+          {title && <h2 className="card__title">{t(title)}</h2>}
           {action && <div className="card__action">{action}</div>}
         </header>
       )}

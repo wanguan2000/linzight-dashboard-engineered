@@ -347,6 +347,42 @@ def initialize_schema() -> None:
               FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             );
 
+            CREATE TABLE IF NOT EXISTS crf_migration_approvals (
+              id TEXT PRIMARY KEY,
+              study_id TEXT NOT NULL,
+              source_version_id TEXT NOT NULL,
+              target_version_id TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              preview_json TEXT NOT NULL DEFAULT '{}',
+              note TEXT NOT NULL DEFAULT '',
+              requested_by TEXT,
+              approved_by TEXT,
+              requested_at TEXT NOT NULL,
+              reviewed_at TEXT,
+              applied_at TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE,
+              FOREIGN KEY (source_version_id) REFERENCES study_crf_versions(id) ON DELETE CASCADE,
+              FOREIGN KEY (target_version_id) REFERENCES study_crf_versions(id) ON DELETE CASCADE,
+              FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
+              FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS crf_migration_execution_logs (
+              id TEXT PRIMARY KEY,
+              study_id TEXT NOT NULL,
+              migration_id TEXT NOT NULL,
+              step TEXT NOT NULL,
+              status TEXT NOT NULL,
+              message TEXT NOT NULL DEFAULT '',
+              actor_id TEXT,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE,
+              FOREIGN KEY (migration_id) REFERENCES crf_migration_approvals(id) ON DELETE CASCADE,
+              FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_patients_disease_type ON patients(disease_type);
             CREATE INDEX IF NOT EXISTS idx_visit_plans_study_id ON study_visit_plans(study_id);
             CREATE INDEX IF NOT EXISTS idx_samples_patient_id ON samples(patient_id);
@@ -358,6 +394,8 @@ def initialize_schema() -> None:
             CREATE INDEX IF NOT EXISTS idx_quality_patient_status ON data_quality_issues(patient_id, status);
             CREATE INDEX IF NOT EXISTS idx_study_members_study_id ON study_members(study_id);
             CREATE INDEX IF NOT EXISTS idx_study_members_user_id ON study_members(user_id);
+            CREATE INDEX IF NOT EXISTS idx_crf_migration_approvals_study_id ON crf_migration_approvals(study_id);
+            CREATE INDEX IF NOT EXISTS idx_crf_migration_execution_logs_migration_id ON crf_migration_execution_logs(migration_id);
             """
         )
         migrate_study_schema(conn)
@@ -666,6 +704,16 @@ def row_to_crf_version(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
     item["schema"] = decode_json(item.pop("schema_json"), {})
     return item
+
+
+def row_to_crf_migration_approval(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    item["preview"] = decode_json(item.pop("preview_json"), {})
+    return item
+
+
+def row_to_crf_migration_log(row: sqlite3.Row) -> dict[str, Any]:
+    return dict(row)
 
 
 def row_to_crf_entry(row: sqlite3.Row) -> dict[str, Any]:

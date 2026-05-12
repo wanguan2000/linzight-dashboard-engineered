@@ -3,6 +3,7 @@ import type { AuthenticatedUser } from '../data/auth';
 import { navItems, userProfile } from '../data/dashboard';
 import { Icon } from './Icon';
 import type { NavItem } from '../types';
+import { useI18n } from '../i18n/I18nProvider';
 
 interface SidebarProps {
   activeIndex: number;
@@ -12,11 +13,12 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeIndex, items = navItems, onSelect, currentUser }: SidebarProps) {
+  const { t } = useI18n();
   const profile = currentUser ?? userProfile;
   const roleLabel = currentUser ? currentUser.roleLabel : userProfile.role;
 
   return (
-    <aside className="sidebar" aria-label="主导航">
+    <aside className="sidebar" aria-label={t('主导航')}>
       <div className="logo">
         <img className="logo__image" src={linzightLogo} alt="LinZight" />
       </div>
@@ -30,7 +32,7 @@ export function Sidebar({ activeIndex, items = navItems, onSelect, currentUser }
             onClick={() => onSelect(index)}
           >
             <Icon name={item.icon} />
-            <span>{item.label}</span>
+            <span>{t(item.label)}</span>
             {item.hasChildren && <Icon className="nav-item__chevron" name="chevronRight" />}
           </button>
         ))}
@@ -40,8 +42,8 @@ export function Sidebar({ activeIndex, items = navItems, onSelect, currentUser }
         <div className="user-card">
           <div className="avatar avatar--small">{profile.initials}</div>
           <div>
-            <strong>{profile.name}</strong>
-            <span>● {roleLabel}</span>
+            <strong>{t(profile.name)}</strong>
+            <span>● {t(roleLabel)}</span>
           </div>
         </div>
       </footer>

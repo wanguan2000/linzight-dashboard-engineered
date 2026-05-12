@@ -7,6 +7,7 @@ import {
   type FollowUpRecord,
   type OmicsRecord,
   type SampleRecord,
+  type StudyVisitPlanRecord,
   type VisitRecord
 } from '../data/operations';
 import { authStorageKey, normalizeAuthenticatedUser, roleLabels, userCanAccessStudy, type AuthenticatedUser } from '../data/auth';
@@ -14,6 +15,8 @@ import { patientRecords, type OmicsStatus, type PatientRecord, type SampleCollec
 import type {
   ApiAnalysisSummary,
   ApiConsent,
+  ApiCrfEntry,
+  ApiCrfMigrationApproval,
   ApiExportJob,
   ApiFileMetadata,
   ApiFollowUpRecord,
@@ -22,6 +25,13 @@ import type {
   ApiPanorama,
   ApiPatient,
   ApiSample,
+  ApiCrfMigrationPreview,
+  ApiStudyCrfField,
+  ApiStudyCrfVersion,
+  ApiStudyMember,
+  ApiStudyVisitPlan,
+  ApiUser,
+  ApiUserCreate,
   ApiVisit
 } from './contracts';
 
@@ -33,9 +43,69 @@ export type DemoDataset = {
   followUps: FollowUpRecord[];
 };
 
+export type StudyCrfFieldRecord = {
+  studyId: string;
+  crfVersionId?: string;
+  crfVersion?: string;
+  id: string;
+  name: string;
+  type: ApiStudyCrfField['type'];
+  module: string;
+  updatedAt: string;
+  status: ApiStudyCrfField['status'];
+  options: string[];
+  required: boolean;
+  validationRule: string;
+  conditionalLogic: string;
+};
+
+export type StudyCrfVersionRecord = {
+  id: string;
+  studyId: string;
+  version: string;
+  status: ApiStudyCrfVersion['status'];
+  changeSummary: string;
+  publishedAt?: string | null;
+  updatedAt: string;
+  schema: Record<string, unknown>;
+};
+
+export type CrfMigrationPreview = ApiCrfMigrationPreview;
+
+export type CrfMigrationApprovalRecord = {
+  id: string;
+  studyId: string;
+  sourceVersionId: string;
+  targetVersionId: string;
+  status: ApiCrfMigrationApproval['status'];
+  preview: ApiCrfMigrationApproval['preview'];
+  note: string;
+  requestedBy?: string | null;
+  approvedBy?: string | null;
+  requestedAt: string;
+  reviewedAt?: string | null;
+  appliedAt?: string | null;
+  updatedAt: string;
+  executionLogs: NonNullable<ApiCrfMigrationApproval['execution_logs']>;
+};
+
 const configuredBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
 const apiBases = Array.from(new Set([configuredBase, 'http://127.0.0.1:8000', 'http://127.0.0.1:8001'].filter(Boolean))) as string[];
 type FetchInit = Parameters<typeof window.fetch>[1];
+
+export class ApiRequestError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+  }
+}
+
+export function isPermissionError(error: unknown) {
+  return error instanceof ApiRequestError && (error.status === 401 || error.status === 403);
+}
 
 async function getJson<T>(path: string): Promise<T> {
   return requestJson<T>(path);
@@ -44,6 +114,14 @@ async function getJson<T>(path: string): Promise<T> {
 async function postJson<T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> {
   return requestJson<T>(path, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body)
+  });
+}
+
+async function putJson<T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> {
+  return requestJson<T>(path, {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body)
   });
@@ -63,9 +141,15 @@ async function requestJson<T>(path: string, init?: FetchInit): Promise<T> {
         headers.set('Authorization', `Bearer ${token}`);
       }
       const response = await window.fetch(`${base}${path}`, { ...init, headers, signal: controller.signal });
-      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        const error = new ApiRequestError(response.status, `${response.status} ${response.statusText}${detail ? ` ${detail}` : ''}`);
+        if (response.status === 401 || response.status === 403) throw error;
+        throw error;
+      }
       return (await response.json()) as T;
     } catch (error) {
+      if (isPermissionError(error)) throw error;
       lastError = error;
     } finally {
       window.clearTimeout(timeout);
@@ -137,24 +221,258 @@ export async function uploadFileToBackend(
 
 export async function createExportJob(exportType = 'cohort_csv'): Promise<ApiExportJob> {
   const token = window.localStorage.getItem('linzight-demo-token');
+  const studyId = getCurrentScopedStudyId() ?? 'LGL-1111';
   return postJson<ApiExportJob>(
     '/exports',
     {
       export_type: exportType,
-      scope: { study_id: 'LGL-1111' },
+      scope: { study_id: studyId },
       requested_by: null
     },
     token ? { Authorization: `Bearer ${token}` } : undefined
   );
 }
 
+export async function downloadExportJob(job: ApiExportJob): Promise<void> {
+  const token = window.localStorage.getItem('linzight-demo-token');
+  const response = await window.fetch(`${apiBases[0]}/exports/${encodeURIComponent(job.id)}/download`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined
+  });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const anchor = window.document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${job.study_id}-${job.export_type}-${job.id}.csv`;
+  window.document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+function toStudyVisitPlanRecord(plan: ApiStudyVisitPlan): StudyVisitPlanRecord {
+  return {
+    id: plan.id,
+    studyId: plan.study_id,
+    code: plan.code,
+    name: plan.name,
+    visitType: plan.visit_type,
+    dayOffset: plan.day_offset,
+    windowBeforeDays: plan.window_before_days,
+    windowAfterDays: plan.window_after_days,
+    requiredForms: plan.required_forms,
+    requiredSamples: plan.required_samples,
+    status: plan.status,
+    sortOrder: plan.sort_order
+  };
+}
+
+function toStudyCrfFieldRecord(field: ApiStudyCrfField): StudyCrfFieldRecord {
+  return {
+    studyId: field.study_id,
+    crfVersionId: field.crf_version_id,
+    crfVersion: field.crf_version,
+    id: field.id,
+    name: field.name,
+    type: field.type,
+    module: field.module,
+    updatedAt: field.updated_at.slice(0, 10),
+    status: field.status,
+    options: field.options ?? [],
+    required: Boolean(field.required),
+    validationRule: field.validation_rule ?? '',
+    conditionalLogic: field.conditional_logic ?? ''
+  };
+}
+
+function toStudyCrfVersionRecord(version: ApiStudyCrfVersion): StudyCrfVersionRecord {
+  return {
+    id: version.id,
+    studyId: version.study_id,
+    version: version.version,
+    status: version.status,
+    changeSummary: version.change_summary,
+    publishedAt: version.published_at,
+    updatedAt: version.updated_at.slice(0, 10),
+    schema: version.schema
+  };
+}
+
+function toCrfMigrationApprovalRecord(record: ApiCrfMigrationApproval): CrfMigrationApprovalRecord {
+  return {
+    id: record.id,
+    studyId: record.study_id,
+    sourceVersionId: record.source_version_id,
+    targetVersionId: record.target_version_id,
+    status: record.status,
+    preview: record.preview,
+    note: record.note,
+    requestedBy: record.requested_by,
+    approvedBy: record.approved_by,
+    requestedAt: record.requested_at,
+    reviewedAt: record.reviewed_at,
+    appliedAt: record.applied_at,
+    updatedAt: record.updated_at.slice(0, 10),
+    executionLogs: record.execution_logs ?? []
+  };
+}
+
+export async function fetchStudyVisitPlans(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<StudyVisitPlanRecord[]> {
+  return (await getJson<ApiStudyVisitPlan[]>(`/studies/${encodeURIComponent(studyId)}/visit-plans`)).map(toStudyVisitPlanRecord);
+}
+
+export async function createStudyVisitPlan(plan: StudyVisitPlanRecord): Promise<StudyVisitPlanRecord> {
+  const response = await postJson<ApiStudyVisitPlan>(`/studies/${encodeURIComponent(plan.studyId)}/visit-plans`, {
+    id: plan.id.startsWith('LOCAL-VP-') ? undefined : plan.id,
+    code: plan.code,
+    name: plan.name,
+    visit_type: plan.visitType,
+    day_offset: plan.dayOffset,
+    window_before_days: plan.windowBeforeDays,
+    window_after_days: plan.windowAfterDays,
+    required_forms: plan.requiredForms,
+    required_samples: plan.requiredSamples,
+    status: plan.status,
+    sort_order: plan.sortOrder
+  });
+  return toStudyVisitPlanRecord(response);
+}
+
+export async function fetchStudyMembers(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiStudyMember[]> {
+  return getJson<ApiStudyMember[]>(`/studies/${encodeURIComponent(studyId)}/members`);
+}
+
+export async function createUserAccount(payload: ApiUserCreate): Promise<ApiUser> {
+  return postJson<ApiUser>('/users', payload);
+}
+
+export async function upsertStudyMember(
+  studyId: string,
+  payload: { userId: string; studyRole: ApiStudyMember['study_role']; status: string }
+): Promise<ApiStudyMember> {
+  return postJson<ApiStudyMember>(`/studies/${encodeURIComponent(studyId)}/members`, {
+    user_id: payload.userId,
+    study_role: payload.studyRole,
+    status: payload.status
+  });
+}
+
+export async function fetchStudyCrfFields(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<StudyCrfFieldRecord[]> {
+  return (await getJson<ApiStudyCrfField[]>(`/studies/${encodeURIComponent(studyId)}/crf-fields`)).map(toStudyCrfFieldRecord);
+}
+
+export async function fetchStudyCrfVersions(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<StudyCrfVersionRecord[]> {
+  return (await getJson<ApiStudyCrfVersion[]>(`/studies/${encodeURIComponent(studyId)}/crf-versions`)).map(toStudyCrfVersionRecord);
+}
+
+export async function createStudyCrfVersion(
+  studyId: string,
+  payload: { version: string; status: ApiStudyCrfVersion['status']; schema: Record<string, unknown>; changeSummary: string }
+): Promise<StudyCrfVersionRecord> {
+  return toStudyCrfVersionRecord(
+    await postJson<ApiStudyCrfVersion>(`/studies/${encodeURIComponent(studyId)}/crf-versions`, {
+      version: payload.version,
+      status: payload.status,
+      schema: payload.schema,
+      change_summary: payload.changeSummary
+    })
+  );
+}
+
+export async function updateStudyCrfVersion(
+  studyId: string,
+  versionId: string,
+  payload: { status?: ApiStudyCrfVersion['status']; schema?: Record<string, unknown>; changeSummary?: string }
+): Promise<StudyCrfVersionRecord> {
+  return toStudyCrfVersionRecord(
+    await putJson<ApiStudyCrfVersion>(`/studies/${encodeURIComponent(studyId)}/crf-versions/${encodeURIComponent(versionId)}`, {
+      status: payload.status,
+      schema: payload.schema,
+      change_summary: payload.changeSummary
+    })
+  );
+}
+
+export async function previewStudyCrfMigration(
+  studyId: string,
+  payload: { sourceVersionId?: string; schema: Record<string, unknown> }
+): Promise<CrfMigrationPreview> {
+  return postJson<CrfMigrationPreview>(`/studies/${encodeURIComponent(studyId)}/crf-versions/migration-preview`, {
+    source_version_id: payload.sourceVersionId,
+    schema: payload.schema
+  });
+}
+
+export async function fetchStudyCrfMigrations(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<CrfMigrationApprovalRecord[]> {
+  return (await getJson<ApiCrfMigrationApproval[]>(`/studies/${encodeURIComponent(studyId)}/crf-migrations`)).map(toCrfMigrationApprovalRecord);
+}
+
+export async function requestStudyCrfMigrationApproval(
+  studyId: string,
+  payload: { sourceVersionId?: string; targetVersionId: string; note?: string }
+): Promise<CrfMigrationApprovalRecord> {
+  return toCrfMigrationApprovalRecord(
+    await postJson<ApiCrfMigrationApproval>(`/studies/${encodeURIComponent(studyId)}/crf-migrations`, {
+      source_version_id: payload.sourceVersionId,
+      target_version_id: payload.targetVersionId,
+      note: payload.note ?? ''
+    })
+  );
+}
+
+export async function approveStudyCrfMigration(studyId: string, migrationId: string, note = ''): Promise<CrfMigrationApprovalRecord> {
+  return toCrfMigrationApprovalRecord(
+    await postJson<ApiCrfMigrationApproval>(`/studies/${encodeURIComponent(studyId)}/crf-migrations/${encodeURIComponent(migrationId)}/approve`, {
+      note
+    })
+  );
+}
+
+export async function applyStudyCrfMigration(studyId: string, migrationId: string, note = ''): Promise<CrfMigrationApprovalRecord> {
+  return toCrfMigrationApprovalRecord(
+    await postJson<ApiCrfMigrationApproval>(`/studies/${encodeURIComponent(studyId)}/crf-migrations/${encodeURIComponent(migrationId)}/apply`, {
+      note
+    })
+  );
+}
+
+export async function createStudyCrfField(field: StudyCrfFieldRecord): Promise<StudyCrfFieldRecord> {
+  const response = await postJson<ApiStudyCrfField>(`/studies/${encodeURIComponent(field.studyId)}/crf-fields`, {
+    id: field.id.startsWith('LOCAL-FIELD-') ? undefined : field.id,
+    name: field.name,
+    type: field.type,
+    module: field.module,
+    status: field.status,
+    options: field.options,
+    required: field.required,
+    validation_rule: field.validationRule,
+    conditional_logic: field.conditionalLogic
+  });
+  return toStudyCrfFieldRecord(response);
+}
+
+export async function updateStudyCrfField(field: StudyCrfFieldRecord): Promise<StudyCrfFieldRecord> {
+  const response = await putJson<ApiStudyCrfField>(`/studies/${encodeURIComponent(field.studyId)}/crf-fields/${encodeURIComponent(field.id)}`, {
+    name: field.name,
+    type: field.type,
+    module: field.module,
+    status: field.status,
+    options: field.options,
+    required: field.required,
+    validation_rule: field.validationRule,
+    conditional_logic: field.conditionalLogic
+  });
+  return toStudyCrfFieldRecord(response);
+}
+
 export async function runQualityChecks(): Promise<{ status: string; created: number }> {
   const token = window.localStorage.getItem('linzight-demo-token');
-  return postJson<{ status: string; created: number }>('/quality/run', {}, token ? { Authorization: `Bearer ${token}` } : undefined);
+  return postJson<{ status: string; created: number }>(withCurrentStudyQuery('/quality/run'), {}, token ? { Authorization: `Bearer ${token}` } : undefined);
 }
 
 export async function fetchAnalyticsSummary(): Promise<ApiAnalysisSummary> {
-  return getJson<ApiAnalysisSummary>('/analytics/summary');
+  return getJson<ApiAnalysisSummary>(withCurrentStudyQuery('/analytics/summary'));
 }
 
 function toConsentRecord(record: ApiConsent): ConsentRecord {
@@ -173,7 +491,7 @@ function toConsentRecord(record: ApiConsent): ConsentRecord {
 }
 
 export async function fetchConsentRecords(): Promise<ConsentRecord[]> {
-  return filterRecordsByCurrentStudyScope((await getJson<ApiConsent[]>('/consents')).map(toConsentRecord));
+  return filterRecordsByCurrentStudyScope((await getJson<ApiConsent[]>(withCurrentStudyQuery('/consents'))).map(toConsentRecord));
 }
 
 export async function updateConsentRecord(id: string, payload: Partial<Pick<ConsentRecord, 'status' | 'signedAt' | 'version' | 'method'>>): Promise<ConsentRecord> {
@@ -192,6 +510,136 @@ export async function updateConsentRecord(id: string, payload: Partial<Pick<Cons
     })
   });
   return toConsentRecord(response);
+}
+
+export async function updatePatientClinicalData(patient: PatientRecord, clinicalData: PatientRecord['clinicalData']): Promise<PatientRecord> {
+  if (!patient.id) throw new Error('patient id is required');
+  const response = await putJson<ApiPatient>(`/patients/${patient.id}`, { clinical_data: clinicalData });
+  return toPatientRecord(response, [], []);
+}
+
+export async function createPatientRecord(patient: PatientRecord): Promise<PatientRecord> {
+  const response = await postJson<ApiPatient>('/patients', {
+    study_id: patient.studyId || getCurrentScopedStudyId() || 'LGL-1111',
+    name: patient.name,
+    hospital_no: patient.hospitalNo,
+    sex: patient.sex,
+    age: patient.age,
+    disease_type: patient.diseaseType,
+    organs: patient.organs,
+    note: patient.note,
+    clinical_data: patient.clinicalData
+  });
+  return toPatientRecord(response, [], []);
+}
+
+export async function updatePatientRecord(patient: PatientRecord): Promise<PatientRecord> {
+  if (!patient.id) throw new Error('patient id is required');
+  const response = await putJson<ApiPatient>(`/patients/${patient.id}`, {
+    name: patient.name,
+    hospital_no: patient.hospitalNo,
+    sex: patient.sex,
+    age: patient.age,
+    disease_type: patient.diseaseType,
+    organs: patient.organs,
+    note: patient.note,
+    clinical_data: patient.clinicalData
+  });
+  return toPatientRecord(response, [], []);
+}
+
+export async function fetchCrfEntries(patientId: string): Promise<ApiCrfEntry[]> {
+  return getJson<ApiCrfEntry[]>(`/crf?patient_id=${encodeURIComponent(patientId)}`);
+}
+
+export async function saveClinicalCrfEntry(patient: PatientRecord, payload: PatientRecord['clinicalData'], status: ApiCrfEntry['status']): Promise<ApiCrfEntry> {
+  if (!patient.id) throw new Error('patient id is required');
+  const existingEntries = await fetchCrfEntries(patient.id).catch(() => []);
+  const existingEntry = existingEntries.find((entry) => entry.form_id === 'clinical_capture' || entry.module === 'clinical_capture') ?? existingEntries[0];
+  const body = {
+    study_id: patient.studyId,
+    patient_id: patient.id,
+    visit_id: null,
+    form_id: 'clinical_capture',
+    module: 'clinical_capture',
+    payload,
+    status
+  };
+
+  if (existingEntry) {
+    return putJson<ApiCrfEntry>(`/crf/${existingEntry.id}`, body);
+  }
+  return postJson<ApiCrfEntry>('/crf', body);
+}
+
+export async function createSampleRecord(record: SampleRecord): Promise<SampleRecord> {
+  if (!record.patientId) throw new Error('patient id is required');
+  const response = await postJson<ApiSample>('/samples', {
+    id: record.id.startsWith('SPL-NEW-') ? undefined : record.id,
+    patient_id: record.patientId,
+    patient_name: record.patientName,
+    hospital_no: record.hospitalNo,
+    sample_type: record.sampleType,
+    visit: record.visit,
+    collected_at: record.collectedAt,
+    storage: record.storage,
+    status: record.status,
+    linked_omics: record.linkedOmics
+  });
+  return toSampleRecord(response);
+}
+
+export async function updateSampleRecord(record: SampleRecord): Promise<SampleRecord> {
+  const response = await putJson<ApiSample>(`/samples/${record.id}`, {
+    patient_id: record.patientId,
+    patient_name: record.patientName,
+    hospital_no: record.hospitalNo,
+    sample_type: record.sampleType,
+    visit: record.visit,
+    collected_at: record.collectedAt,
+    storage: record.storage,
+    status: record.status,
+    linked_omics: record.linkedOmics
+  });
+  return toSampleRecord(response);
+}
+
+export async function createOmicsRecord(record: OmicsRecord): Promise<OmicsRecord> {
+  if (!record.patientId) throw new Error('patient id is required');
+  const response = await postJson<ApiOmics>('/omics', {
+    id: record.id.startsWith('OMX-NEW-') ? undefined : record.id,
+    testing_project_id: record.testingProjectId ?? testingProjectIdForStudy(record.studyId),
+    patient_id: record.patientId,
+    patient_name: record.patientName,
+    sample_id: record.sampleId,
+    sample_type: record.sampleType,
+    assay: record.assay,
+    platform: record.platform,
+    run_id: record.runId,
+    status: record.status,
+    qc: record.qc,
+    sent_at: record.sentAt,
+    completed_at: record.completedAt
+  });
+  return toOmicsRecord(response);
+}
+
+export async function updateOmicsRecord(record: OmicsRecord): Promise<OmicsRecord> {
+  const response = await putJson<ApiOmics>(`/omics/${record.id}`, {
+    testing_project_id: record.testingProjectId,
+    patient_id: record.patientId,
+    patient_name: record.patientName,
+    sample_id: record.sampleId,
+    sample_type: record.sampleType,
+    assay: record.assay,
+    platform: record.platform,
+    run_id: record.runId,
+    status: record.status,
+    qc: record.qc,
+    sent_at: record.sentAt,
+    completed_at: record.completedAt
+  });
+  return toOmicsRecord(response);
 }
 
 function toSamplesByType(records: ApiSample[]): SampleCollection[] {
@@ -327,10 +775,36 @@ function getStoredUser(): AuthenticatedUser | null {
   }
 }
 
+function testingProjectIdForStudy(studyId?: string): string {
+  if (studyId === 'LZXK-01') return 'TP-LUNG-RESIST-OMICS';
+  if (studyId === 'RWD-NMO-2026') return 'TP-NMO-OMICS';
+  return 'TP-SLE-OMICS';
+}
+
+export function getCurrentScopedStudyId(): string | undefined {
+  const user = getStoredUser();
+  if (!user || !user.studyScope?.scopeType || user.studyScope.scopeType === 'all_studies') return undefined;
+  const studyIds = user.studyScope.studyIds ?? [];
+  return studyIds.length === 1 ? studyIds[0] : undefined;
+}
+
+function withCurrentStudyQuery(path: string): string {
+  const studyId = getCurrentScopedStudyId();
+  if (!studyId) return path;
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}study_id=${encodeURIComponent(studyId)}`;
+}
+
+export function recordBelongsToCurrentStudyScope(record: { studyId?: string }): boolean {
+  const user = getStoredUser();
+  if (!user || !user.studyScope?.scopeType || user.studyScope.scopeType === 'all_studies') return true;
+  return Boolean(record.studyId && userCanAccessStudy(user, record.studyId));
+}
+
 export function filterRecordsByCurrentStudyScope<T extends { studyId?: string }>(records: T[]): T[] {
   const user = getStoredUser();
   if (!user || !user.studyScope?.scopeType || user.studyScope.scopeType === 'all_studies') return records;
-  return records.filter((record) => !record.studyId || userCanAccessStudy(user, record.studyId));
+  return records.filter((record) => Boolean(record.studyId && userCanAccessStudy(user, record.studyId)));
 }
 
 function filterDatasetByStudyScope(dataset: DemoDataset): DemoDataset {
@@ -342,21 +816,33 @@ function filterDatasetByStudyScope(dataset: DemoDataset): DemoDataset {
 
   return {
     patients,
-    samples: dataset.samples.filter((sample) => (sample.patientId ? patientIds.has(sample.patientId) : patientNames.has(sample.patientName))),
-    omics: dataset.omics.filter((record) => (record.patientId ? patientIds.has(record.patientId) : patientNames.has(record.patientName))),
-    visits: dataset.visits.filter((visit) => (visit.patientId ? patientIds.has(visit.patientId) : patientNames.has(visit.patientName))),
-    followUps: dataset.followUps.filter((followUp) => (followUp.patientId ? patientIds.has(followUp.patientId) : patientNames.has(followUp.patientName)))
+    samples: dataset.samples.filter((sample) => {
+      if (sample.studyId) return userCanAccessStudy(user, sample.studyId);
+      return sample.patientId ? patientIds.has(sample.patientId) : patientNames.has(sample.patientName);
+    }),
+    omics: dataset.omics.filter((record) => {
+      if (record.studyId) return userCanAccessStudy(user, record.studyId);
+      return record.patientId ? patientIds.has(record.patientId) : patientNames.has(record.patientName);
+    }),
+    visits: dataset.visits.filter((visit) => {
+      if (visit.studyId) return userCanAccessStudy(user, visit.studyId);
+      return visit.patientId ? patientIds.has(visit.patientId) : patientNames.has(visit.patientName);
+    }),
+    followUps: dataset.followUps.filter((followUp) => {
+      if (followUp.studyId) return userCanAccessStudy(user, followUp.studyId);
+      return followUp.patientId ? patientIds.has(followUp.patientId) : patientNames.has(followUp.patientName);
+    })
   };
 }
 
 export async function fetchDemoDataset(): Promise<DemoDataset> {
   try {
     const [apiPatients, apiSamples, apiOmics, apiVisits, apiFollowUps] = await Promise.all([
-      getJson<ApiPatient[]>('/patients'),
-      getJson<ApiSample[]>('/samples'),
-      getJson<ApiOmics[]>('/omics'),
-      getJson<ApiVisit[]>('/visits'),
-      getJson<ApiFollowUpRecord[]>('/follow-up-records')
+      getJson<ApiPatient[]>(withCurrentStudyQuery('/patients')),
+      getJson<ApiSample[]>(withCurrentStudyQuery('/samples')),
+      getJson<ApiOmics[]>(withCurrentStudyQuery('/omics')),
+      getJson<ApiVisit[]>(withCurrentStudyQuery('/visits')),
+      getJson<ApiFollowUpRecord[]>(withCurrentStudyQuery('/follow-up-records'))
     ]);
 
     return filterDatasetByStudyScope({
@@ -379,7 +865,7 @@ export async function fetchDemoDataset(): Promise<DemoDataset> {
 
 export async function fetchSamples(): Promise<SampleRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiSample[]>('/samples')).map(toSampleRecord));
+    return filterRecordsByCurrentStudyScope((await getJson<ApiSample[]>(withCurrentStudyQuery('/samples'))).map(toSampleRecord));
   } catch {
     return filterRecordsByCurrentStudyScope(samples);
   }
@@ -387,7 +873,7 @@ export async function fetchSamples(): Promise<SampleRecord[]> {
 
 export async function fetchOmicsRecords(): Promise<OmicsRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiOmics[]>('/omics')).map(toOmicsRecord));
+    return filterRecordsByCurrentStudyScope((await getJson<ApiOmics[]>(withCurrentStudyQuery('/omics'))).map(toOmicsRecord));
   } catch {
     return filterRecordsByCurrentStudyScope(omicsRecords);
   }
@@ -395,7 +881,7 @@ export async function fetchOmicsRecords(): Promise<OmicsRecord[]> {
 
 export async function fetchVisits(): Promise<VisitRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiVisit[]>('/visits')).map(toVisitRecord));
+    return filterRecordsByCurrentStudyScope((await getJson<ApiVisit[]>(withCurrentStudyQuery('/visits'))).map(toVisitRecord));
   } catch {
     return filterRecordsByCurrentStudyScope(visits);
   }
@@ -403,10 +889,83 @@ export async function fetchVisits(): Promise<VisitRecord[]> {
 
 export async function fetchFollowUpRecords(): Promise<FollowUpRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiFollowUpRecord[]>('/follow-up-records')).map(toFollowUpRecord));
+    return filterRecordsByCurrentStudyScope((await getJson<ApiFollowUpRecord[]>(withCurrentStudyQuery('/follow-up-records'))).map(toFollowUpRecord));
   } catch {
     return filterRecordsByCurrentStudyScope(followUpRecords);
   }
+}
+
+function followUpMethodFromVisitType(visitType: string): FollowUpRecord['followUpMethod'] {
+  if (visitType.includes('电话')) return '电话';
+  if (visitType.includes('线上')) return '线上';
+  if (visitType.includes('家访')) return '家访';
+  if (visitType.includes('门诊') || visitType.includes('访视') || visitType.includes('基线')) return '门诊';
+  return '其他';
+}
+
+function visitRecordToFollowUpPayload(record: VisitRecord, patient: PatientRecord) {
+  const method = followUpMethodFromVisitType(record.visitType);
+  return {
+    study_id: record.studyId ?? patient.studyId ?? getCurrentScopedStudyId() ?? 'LGL-1111',
+    patient_id: record.patientId ?? patient.id,
+    visit_id: record.id.startsWith('V-NEW-') || record.id.startsWith('FUP-') ? null : record.id,
+    follow_up_date: record.visitDate,
+    follow_up_method: method,
+    followed_by: 'LinZight Demo',
+    survival_status: '存活',
+    disease_status: record.status,
+    symptoms_signs: `SLEDAI ${record.sleDai}`,
+    imaging_lab_summary: record.sampleCollection,
+    efficacy_assessment: record.completeness ? `完整度 ${record.completeness}%` : '未评估',
+    metastasis_status: '-',
+    adverse_events: record.medication,
+    quality_of_life: '-',
+    lost_to_follow_up_reason: '',
+    recorded_at: new Date().toISOString()
+  };
+}
+
+function followUpRecordToVisitRecord(record: FollowUpRecord, base: VisitRecord): VisitRecord {
+  return {
+    ...base,
+    id: record.id,
+    studyId: record.studyId ?? base.studyId,
+    patientId: record.patientId ?? base.patientId,
+    patientName: record.patientName || base.patientName,
+    visitDate: record.followUpDate,
+    visitType: record.followUpMethod,
+    medication: base.medication || record.adverseEvents,
+    sampleCollection: base.sampleCollection || record.imagingLabSummary,
+    status: base.status
+  };
+}
+
+export async function saveVisitFollowUpRecord(record: VisitRecord, patient: PatientRecord): Promise<VisitRecord> {
+  if (!patient.id && !record.patientId) throw new Error('patient id is required');
+  const patientId = record.patientId ?? patient.id;
+  const payload = visitRecordToFollowUpPayload(record, patient);
+
+  if (record.id.startsWith('FUP-')) {
+    const response = await putJson<ApiFollowUpRecord>(`/follow-up-records/${encodeURIComponent(record.id)}`, payload);
+    return followUpRecordToVisitRecord(toFollowUpRecord(response), record);
+  }
+
+  const existingRecords = await getJson<ApiFollowUpRecord[]>(`/follow-up-records?patient_id=${encodeURIComponent(patientId ?? '')}`)
+    .then((rows) => rows.map(toFollowUpRecord))
+    .catch(() => [] as FollowUpRecord[]);
+  const existing = existingRecords.find((item) => item.visitId === record.id)
+    ?? existingRecords.find((item) => item.followUpDate === record.visitDate && item.followUpMethod === payload.follow_up_method);
+
+  if (existing) {
+    const response = await putJson<ApiFollowUpRecord>(`/follow-up-records/${encodeURIComponent(existing.id)}`, payload);
+    return followUpRecordToVisitRecord(toFollowUpRecord(response), record);
+  }
+
+  const response = await postJson<ApiFollowUpRecord>('/follow-up-records', {
+    id: record.id.startsWith('V-NEW-') ? undefined : `FUP-${record.id}`,
+    ...payload
+  });
+  return followUpRecordToVisitRecord(toFollowUpRecord(response), record);
 }
 
 export async function fetchPatientPanorama(patientId: string): Promise<DemoDataset> {

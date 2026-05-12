@@ -16,6 +16,15 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Patient-owned follow-up records via `follow_up_records`, including follow-up method, follower, survival and disease status, efficacy, metastasis, adverse events, quality of life, and loss-to-follow-up reason.
 - `docs/04-study-permissions.md` documenting the Study role and isolation model.
 - `docs/05-beta-release-readiness.md` documenting beta release validation, security checks, CRUD smoke coverage, and remaining production-readiness work.
+- `docs/frontend-function-gap-audit.md` tracking frontend button/API/i18n/layout gaps and fix status by module.
+- GitHub Actions CI covering lint, build, backend compile, API smoke, OpenAPI export, static HTML export, UI smoke, release gate, and static export artifact upload.
+- API and UI smoke scripts plus `npm test` as the combined beta validation entrypoint.
+- OpenAPI schema export via `npm run export:openapi`, with `docs/openapi.json` tracked as the backend contract snapshot.
+- Docker Compose Demo startup with frontend/backend images, SQLite and upload volumes, healthcheck, and first-run seed behavior.
+- Docker frontend image build now includes the CRF schema file required by `src/data/crfTemplate.ts`.
+- Docker smoke validation via `npm run smoke:docker`, wired into CI with automatic compose cleanup.
+- `docs/deployment-ops.md` with environment variables, Docker Compose notes, Nginx reverse proxy example, and Demo backup/restore instructions.
+- Demo SQLite/upload backup and restore scripts: `npm run backup:sqlite` and `npm run restore:sqlite -- backups/<dir>`.
 
 ### Changed
 
@@ -25,6 +34,16 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Backend list/detail routes now apply Study scope filtering, and the frontend filters menus plus local fallback data by the logged-in user's Study scope.
 - Backend SQLite connections now honor `LINZIGHT_DATABASE_URL`, allowing smoke tests and local installs to use an isolated database path.
 - Dashboard welcome copy now reflects the authenticated user instead of a hard-coded demo PI.
+- Previously inert or frontend-only buttons across cohort, consent, clinical data capture, samples/testing, analytics, and system management now either call backend APIs, create audit-backed records, export real files, or present an explicit disabled state.
+- English locale coverage was expanded across login, module navigation, patient cohort, informed consent, clinical data capture, sample testing, patient journey, data analysis, and system management.
+- Additional English-locale cleanup covers dashboard KPI helpers, workflow cards, enrollment trend, smart summary markers, sample/testing detail panels, omics result panels, data-analysis pipeline, and system-management overview text.
+- Release hygiene now blocks accidental tracking of local env files, local databases, upload payloads, dependency folders, build caches, private keys, SQLite files, and large non-resource files.
+
+### Fixed
+
+- Study-scoped views now consistently use `study_id` boundaries so one Study does not see another Study's patients, visits, samples, omics records, consents, CRF versions, visit plans, exports, quality data, or members.
+- CRF migration approval requires a separate reviewer; self-approval/self-apply are blocked in both backend and UI.
+- Consent file upload persists through the backend file endpoint and links the uploaded artifact to the consent record.
 
 ## [0.0.1-beta.0] - 2026-05-01
 
@@ -43,6 +62,5 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ### Known Issues
 
-- No dedicated `test` script is configured yet.
 - FastAPI backend is Demo-grade and uses local SQLite plus demo token authentication.
-- Production API, CI/CD, Docker deployment, and automated browser tests are still planned work.
+- Production API, production authentication, field-level privacy controls, object storage, and full browser/component test coverage are still planned work.

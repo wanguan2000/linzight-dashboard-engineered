@@ -16,11 +16,14 @@ try:
     from .database import (
         UPLOADS_DIR,
         connect,
+        decode_json,
         encode_json,
         fetch_one,
         initialize_schema,
         row_to_audit_log,
         row_to_consent,
+        row_to_crf_migration_approval,
+        row_to_crf_migration_log,
         row_to_crf_version,
         row_to_crf_entry,
         row_to_export_job,
@@ -39,17 +42,20 @@ try:
         utc_now,
     )
     from .permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
-    from .schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfVersionCreate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate
+    from .schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate
     from .seed import seed_database
 except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from database import (
         UPLOADS_DIR,
         connect,
+        decode_json,
         encode_json,
         fetch_one,
         initialize_schema,
         row_to_audit_log,
         row_to_consent,
+        row_to_crf_migration_approval,
+        row_to_crf_migration_log,
         row_to_crf_version,
         row_to_crf_entry,
         row_to_export_job,
@@ -68,10 +74,22 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         utc_now,
     )
     from permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
-    from schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfVersionCreate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate
+    from schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate
     from seed import seed_database
 
 app = FastAPI(title="LinZight RWS Demo API", version="1.0.0")
+
+LEGACY_ROLE_BY_ROLE_CODE = {
+    "LZ_ADMIN": "sys_admin",
+    "LZ_CRC": "crc",
+    "LZ_CRF_ADMIN": "project_admin",
+    "LZ_DATA_MANAGER": "data_manager",
+    "LZ_AUDITOR": "viewer",
+    "STUDY_PI": "investigator",
+    "STUDY_CRC": "crc",
+    "STUDY_CONFIG_ADMIN": "project_admin",
+    "STUDY_DATA_MANAGER": "data_manager",
+}
 
 app.add_middleware(
     CORSMiddleware,
@@ -238,6 +256,204 @@ def latest_published_crf_version_id(conn: Any, study_id: str) -> str:
     return "CRFV-LGL-1111-V0.1"
 
 
+def ui_crf_field_type(schema_type: str | None) -> str:
+    if schema_type == "number":
+        return "Number"
+    if schema_type == "select":
+        return "Dropdown"
+    if schema_type == "boolean":
+        return "Boolean"
+    return "Text"
+
+
+def schema_crf_field_type(ui_type: str | None) -> str:
+    if ui_type == "Number":
+        return "number"
+    if ui_type == "Dropdown":
+        return "select"
+    if ui_type == "Boolean":
+        return "boolean"
+    return "text"
+
+
+def load_crf_version_for_fields(conn: Any, study_id: str) -> dict[str, Any]:
+    row = fetch_one(
+        conn,
+        """
+        SELECT *
+        FROM study_crf_versions
+        WHERE study_id = ?
+        ORDER BY
+          CASE status WHEN 'draft' THEN 0 WHEN 'published' THEN 1 ELSE 2 END,
+          updated_at DESC,
+          created_at DESC
+        LIMIT 1
+        """,
+        (study_id,),
+    )
+    item = dict(row)
+    item["schema"] = decode_json(item.pop("schema_json"), {})
+    return item
+
+
+def schema_sections(schema: dict[str, Any]) -> list[dict[str, Any]]:
+    sections = schema.setdefault("sections", [])
+    if not isinstance(sections, list):
+        schema["sections"] = []
+        return schema["sections"]
+    return sections
+
+
+def crf_fields_from_version(version: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for section in schema_sections(version["schema"]):
+        module = str(section.get("title") or section.get("id") or "CRF")
+        fields = section.get("fields") if isinstance(section.get("fields"), list) else []
+        for field in fields:
+            if not isinstance(field, dict):
+                continue
+            field_id = str(field.get("id") or field.get("name") or "")
+            if not field_id:
+                continue
+            rows.append(
+                {
+                    "study_id": version["study_id"],
+                    "crf_version_id": version["id"],
+                    "crf_version": version["version"],
+                    "id": field_id,
+                    "name": str(field.get("name") or field_id),
+                    "type": ui_crf_field_type(field.get("type")),
+                    "module": module,
+                    "status": str(field.get("status") or "启用"),
+                    "options": field.get("options") if isinstance(field.get("options"), list) else [],
+                    "required": bool(field.get("required") or False),
+                    "validation_rule": str(field.get("validationRule") or field.get("validation_rule") or ""),
+                    "conditional_logic": str(field.get("conditionalLogic") or field.get("conditional_logic") or ""),
+                    "updated_at": version["updated_at"],
+                }
+            )
+    return rows
+
+
+def crf_field_map_from_schema(schema: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    version = {
+        "study_id": "",
+        "id": "",
+        "version": "",
+        "schema": schema,
+        "updated_at": "",
+    }
+    return {
+        field["id"]: {
+            "id": field["id"],
+            "name": field["name"],
+            "type": field["type"],
+            "module": field["module"],
+            "status": field["status"],
+            "options": field["options"],
+            "required": field["required"],
+            "validation_rule": field["validation_rule"],
+            "conditional_logic": field["conditional_logic"],
+        }
+        for field in crf_fields_from_version(version)
+    }
+
+
+def crf_migration_preview(source_schema: dict[str, Any], target_schema: dict[str, Any]) -> dict[str, Any]:
+    source_fields = crf_field_map_from_schema(source_schema)
+    target_fields = crf_field_map_from_schema(target_schema)
+    added = [target_fields[field_id] for field_id in sorted(set(target_fields) - set(source_fields))]
+    removed = [source_fields[field_id] for field_id in sorted(set(source_fields) - set(target_fields))]
+    changed: list[dict[str, Any]] = []
+    unchanged = 0
+    for field_id in sorted(set(source_fields) & set(target_fields)):
+        before = source_fields[field_id]
+        after = target_fields[field_id]
+        changes = [
+            key
+            for key in ("name", "type", "module", "status", "options", "required", "validation_rule", "conditional_logic")
+            if before.get(key) != after.get(key)
+        ]
+        if changes:
+            changed.append({"id": field_id, "name": after["name"], "changes": changes, "before": before, "after": after})
+        else:
+            unchanged += 1
+    return {
+        "summary": {
+            "added": len(added),
+            "removed": len(removed),
+            "changed": len(changed),
+            "unchanged": unchanged,
+            "source_field_count": len(source_fields),
+            "target_field_count": len(target_fields),
+        },
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+    }
+
+
+def insert_crf_migration_log(conn: Any, user: dict[str, Any], migration_id: str, study_id: str, step: str, status_value: str, message: str = "") -> dict[str, Any]:
+    log_id = f"CRFML-{study_id}-{uuid4().hex[:8].upper()}"
+    now = utc_now()
+    conn.execute(
+        """
+        INSERT INTO crf_migration_execution_logs
+          (id, study_id, migration_id, step, status, message, actor_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (log_id, study_id, migration_id, step, status_value, message, user["id"], now),
+    )
+    return row_to_crf_migration_log(fetch_one(conn, "SELECT * FROM crf_migration_execution_logs WHERE id = ?", (log_id,)))
+
+
+def crf_migration_logs(conn: Any, migration_id: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM crf_migration_execution_logs
+        WHERE migration_id = ?
+        ORDER BY created_at ASC
+        """,
+        (migration_id,),
+    ).fetchall()
+    return [row_to_crf_migration_log(row) for row in rows]
+
+
+def crf_migration_approval_with_logs(conn: Any, approval: dict[str, Any]) -> dict[str, Any]:
+    return {**approval, "execution_logs": crf_migration_logs(conn, approval["id"])}
+
+
+def set_schema_field_count(schema: dict[str, Any]) -> None:
+    count = 0
+    for section in schema_sections(schema):
+        fields = section.get("fields") if isinstance(section.get("fields"), list) else []
+        count += len(fields)
+    schema["fieldCount"] = count
+
+
+def find_schema_field(schema: dict[str, Any], field_id: str) -> tuple[dict[str, Any], dict[str, Any]] | tuple[None, None]:
+    for section in schema_sections(schema):
+        fields = section.get("fields") if isinstance(section.get("fields"), list) else []
+        for field in fields:
+            if isinstance(field, dict) and field.get("id") == field_id:
+                return section, field
+    return None, None
+
+
+def ensure_schema_section(schema: dict[str, Any], module: str) -> dict[str, Any]:
+    sections = schema_sections(schema)
+    for section in sections:
+        if section.get("title") == module:
+            if not isinstance(section.get("fields"), list):
+                section["fields"] = []
+            return section
+    section_id = f"custom_{len(sections) + 1}"
+    section = {"id": section_id, "title": module, "fields": []}
+    sections.append(section)
+    return section
+
+
 def active_study_visit_plans(conn: Any, study_id: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
@@ -386,6 +602,75 @@ def me(token: str | None = Query(default=None), authorization: str | None = Head
             raise not_found() from exc
 
 
+@app.post("/users", status_code=status.HTTP_201_CREATED)
+def create_user(payload: UserCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    role_code = data["role"]
+    study_id = data.get("study_id")
+    user_id = data.get("id") or f"USR-{uuid4().hex[:10].upper()}"
+    now = utc_now()
+    with connect() as conn:
+        actor = authorize(
+            authorization,
+            "study_members" if study_id else "studies",
+            "write",
+            study_id=study_id,
+            conn=conn,
+        )
+        if not study_id and user_role(actor) != "LZ_ADMIN":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="study_id is required for study account creation")
+        if role_code.startswith("LZ_") and user_role(actor) != "LZ_ADMIN":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can create platform users")
+        if study_id:
+            fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,))
+            if not role_code.startswith("STUDY_") and user_role(actor) != "LZ_ADMIN":
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="study account role required")
+        if conn.execute("SELECT 1 FROM users WHERE username = ?", (data["username"],)).fetchone():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username already exists")
+        conn.execute(
+            """
+            INSERT INTO users (id, username, display_name, role, role_code, password_hash, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                data["username"],
+                data["display_name"],
+                LEGACY_ROLE_BY_ROLE_CODE.get(role_code, "investigator"),
+                role_code,
+                password_hash(data["password"]),
+                data["status"],
+                now,
+                now,
+            ),
+        )
+        if study_id and role_code.startswith("STUDY_"):
+            member_id = f"SMB-{uuid4().hex[:10].upper()}"
+            conn.execute(
+                """
+                INSERT INTO study_members (id, study_id, user_id, study_role, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (member_id, study_id, user_id, role_code, data["member_status"], now, now),
+            )
+        created = row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,)))
+        created["study_scope"] = get_user_study_scope(conn, created)
+        created["study_memberships"] = [
+            row_to_study_member(row)
+            for row in conn.execute(
+                """
+                SELECT id, study_id, user_id, study_role, status, created_at, updated_at
+                FROM study_members
+                WHERE user_id = ?
+                ORDER BY study_id
+                """,
+                (user_id,),
+            ).fetchall()
+        ]
+        insert_audit(conn, actor, "create", "users", user_id, after=created, study_id=study_id or first_accessible_study_id(conn, actor) or "LGL-1111")
+        return created
+
+
 @app.get("/studies")
 def list_studies(authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
     with connect() as conn:
@@ -445,7 +730,27 @@ def create_study_member(study_id: str, payload: StudyMemberCreate, authorization
             """,
             (member_id, study_id, payload.user_id, payload.study_role, payload.status, now, now),
         )
-        member = row_to_study_member(fetch_one(conn, "SELECT * FROM study_members WHERE study_id = ? AND user_id = ?", (study_id, payload.user_id)))
+        member = row_to_study_member(
+            fetch_one(
+                conn,
+                """
+                SELECT
+                  sm.id,
+                  sm.study_id,
+                  sm.user_id,
+                  u.username,
+                  u.display_name,
+                  sm.study_role,
+                  sm.status,
+                  sm.created_at,
+                  sm.updated_at
+                FROM study_members sm
+                JOIN users u ON u.id = sm.user_id
+                WHERE sm.study_id = ? AND sm.user_id = ?
+                """,
+                (study_id, payload.user_id),
+            )
+        )
         insert_audit(conn, user, "upsert_member", "study_members", member["id"], after=member, study_id=study_id)
         return member
 
@@ -563,8 +868,16 @@ def create_study_crf_version(study_id: str, payload: StudyCrfVersionCreate, auth
         user = authorize(authorization, "crf_config", "write", study_id=study_id, conn=conn)
         fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,))
         version_id = f"CRFV-{study_id}-{payload.version.replace('.', '-')}"
+        existing_version = conn.execute("SELECT id FROM study_crf_versions WHERE study_id = ? AND version = ?", (study_id, payload.version)).fetchone()
+        if existing_version:
+            raise HTTPException(status_code=409, detail="CRF version already exists for this Study")
         now = utc_now()
         published_at = now if payload.status == "published" else None
+        if payload.status == "published":
+            conn.execute(
+                "UPDATE study_crf_versions SET status = 'retired', updated_at = ? WHERE study_id = ? AND status = 'published'",
+                (now, study_id),
+            )
         conn.execute(
             """
             INSERT INTO study_crf_versions
@@ -588,6 +901,331 @@ def create_study_crf_version(study_id: str, payload: StudyCrfVersionCreate, auth
         version = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ?", (version_id,)))
         insert_audit(conn, user, "create_crf_version", "study_crf_versions", version_id, after=version, study_id=study_id)
         return version
+
+
+@app.post("/studies/{study_id}/crf-versions/migration-preview")
+def preview_study_crf_migration(study_id: str, payload: StudyCrfMigrationPreviewRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    with connect() as conn:
+        authorize(authorization, "crf_config", "read", study_id=study_id, conn=conn)
+        if data.get("source_version_id"):
+            source = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ? AND study_id = ?", (data["source_version_id"], study_id)))
+        else:
+            source_row = conn.execute(
+                """
+                SELECT *
+                FROM study_crf_versions
+                WHERE study_id = ? AND status = 'published'
+                ORDER BY COALESCE(published_at, created_at) DESC, created_at DESC
+                LIMIT 1
+                """,
+                (study_id,),
+            ).fetchone()
+            source = row_to_crf_version(source_row) if source_row else load_crf_version_for_fields(conn, study_id)
+        preview = crf_migration_preview(source["schema"], data["schema_payload"])
+        return {
+            "study_id": study_id,
+            "source_version_id": source["id"],
+            "source_version": source["version"],
+            **preview,
+        }
+
+
+@app.get("/studies/{study_id}/crf-migrations")
+def list_study_crf_migrations(study_id: str, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    with connect() as conn:
+        authorize(authorization, "crf_config", "read", study_id=study_id, conn=conn)
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM crf_migration_approvals
+            WHERE study_id = ?
+            ORDER BY created_at DESC
+            """,
+            (study_id,),
+        ).fetchall()
+        return [crf_migration_approval_with_logs(conn, row_to_crf_migration_approval(row)) for row in rows]
+
+
+@app.post("/studies/{study_id}/crf-migrations", status_code=status.HTTP_201_CREATED)
+def request_study_crf_migration(study_id: str, payload: StudyCrfMigrationApprovalCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    with connect() as conn:
+        user = authorize(authorization, "crf_config", "write", study_id=study_id, conn=conn)
+        target = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ? AND study_id = ?", (data["target_version_id"], study_id)))
+        if target["status"] != "draft":
+            raise HTTPException(status_code=400, detail="Only draft CRF versions can be submitted for migration approval")
+        if data.get("source_version_id"):
+            source = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ? AND study_id = ?", (data["source_version_id"], study_id)))
+        else:
+            source_row = conn.execute(
+                """
+                SELECT *
+                FROM study_crf_versions
+                WHERE study_id = ? AND status = 'published'
+                ORDER BY COALESCE(published_at, created_at) DESC, created_at DESC
+                LIMIT 1
+                """,
+                (study_id,),
+            ).fetchone()
+            source = row_to_crf_version(source_row) if source_row else load_crf_version_for_fields(conn, study_id)
+        preview = {
+            "study_id": study_id,
+            "source_version_id": source["id"],
+            "source_version": source["version"],
+            "target_version_id": target["id"],
+            "target_version": target["version"],
+            **crf_migration_preview(source["schema"], target["schema"]),
+        }
+        existing_pending = conn.execute(
+            """
+            SELECT *
+            FROM crf_migration_approvals
+            WHERE study_id = ? AND target_version_id = ? AND status IN ('pending', 'approved')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (study_id, target["id"]),
+        ).fetchone()
+        if existing_pending:
+            approval = row_to_crf_migration_approval(existing_pending)
+            insert_crf_migration_log(conn, user, approval["id"], study_id, "request", "reused", "Existing pending or approved migration request reused")
+            approval = crf_migration_approval_with_logs(conn, approval)
+            insert_audit(conn, user, "reuse_crf_migration_approval", "crf_migration_approvals", approval["id"], after=approval, study_id=study_id)
+            return approval
+
+        now = utc_now()
+        approval_id = f"CRFM-{study_id}-{uuid4().hex[:8].upper()}"
+        conn.execute(
+            """
+            INSERT INTO crf_migration_approvals
+              (id, study_id, source_version_id, target_version_id, status, preview_json, note, requested_by, requested_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                approval_id,
+                study_id,
+                source["id"],
+                target["id"],
+                encode_json(preview),
+                data.get("note") or "",
+                user["id"],
+                now,
+                now,
+                now,
+            ),
+        )
+        approval = row_to_crf_migration_approval(fetch_one(conn, "SELECT * FROM crf_migration_approvals WHERE id = ?", (approval_id,)))
+        insert_crf_migration_log(conn, user, approval_id, study_id, "request", "pending", f"Migration request created for target {target['version']}")
+        approval = crf_migration_approval_with_logs(conn, approval)
+        insert_audit(conn, user, "request_crf_migration_approval", "crf_migration_approvals", approval_id, after=approval, study_id=study_id)
+        return approval
+
+
+@app.post("/studies/{study_id}/crf-migrations/{migration_id}/approve")
+def approve_study_crf_migration(study_id: str, migration_id: str, payload: StudyCrfMigrationApprovalAction, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    with connect() as conn:
+        before = row_to_crf_migration_approval(fetch_one(conn, "SELECT * FROM crf_migration_approvals WHERE id = ? AND study_id = ?", (migration_id, study_id)))
+        user = authorize(authorization, "crf_config", "write", study_id=study_id, conn=conn)
+        if before["status"] != "pending":
+            raise HTTPException(status_code=400, detail="Only pending CRF migrations can be approved")
+        if before["requested_by"] == user["id"]:
+            insert_crf_migration_log(conn, user, migration_id, study_id, "approve", "blocked", "Requester attempted to approve their own CRF migration")
+            raise HTTPException(status_code=400, detail="CRF migration requester cannot approve their own request")
+        now = utc_now()
+        note = data.get("note") or before["note"]
+        conn.execute(
+            """
+            UPDATE crf_migration_approvals
+            SET status = 'approved', approved_by = ?, reviewed_at = ?, note = ?, updated_at = ?
+            WHERE id = ? AND study_id = ?
+            """,
+            (user["id"], now, note, now, migration_id, study_id),
+        )
+        after = row_to_crf_migration_approval(fetch_one(conn, "SELECT * FROM crf_migration_approvals WHERE id = ? AND study_id = ?", (migration_id, study_id)))
+        insert_crf_migration_log(conn, user, migration_id, study_id, "approve", "approved", "Migration approved by a separate reviewer")
+        after = crf_migration_approval_with_logs(conn, after)
+        insert_audit(conn, user, "approve_crf_migration", "crf_migration_approvals", migration_id, before=before, after=after, study_id=study_id)
+        return after
+
+
+@app.post("/studies/{study_id}/crf-migrations/{migration_id}/apply")
+def apply_study_crf_migration(study_id: str, migration_id: str, payload: StudyCrfMigrationApprovalAction, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    with connect() as conn:
+        before = row_to_crf_migration_approval(fetch_one(conn, "SELECT * FROM crf_migration_approvals WHERE id = ? AND study_id = ?", (migration_id, study_id)))
+        user = authorize(authorization, "crf_config", "write", study_id=study_id, conn=conn)
+        if before["status"] != "approved":
+            raise HTTPException(status_code=400, detail="Only approved CRF migrations can be applied")
+        if before["requested_by"] == user["id"]:
+            insert_crf_migration_log(conn, user, migration_id, study_id, "apply", "blocked", "Requester attempted to apply their own CRF migration")
+            raise HTTPException(status_code=400, detail="CRF migration requester cannot apply their own request")
+        target = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ? AND study_id = ?", (before["target_version_id"], study_id)))
+        if target["status"] != "draft":
+            raise HTTPException(status_code=400, detail="Target CRF version must still be a draft")
+        now = utc_now()
+        conn.execute(
+            "UPDATE study_crf_versions SET status = 'retired', updated_at = ? WHERE study_id = ? AND id <> ? AND status = 'published'",
+            (now, study_id, target["id"]),
+        )
+        conn.execute(
+            """
+            UPDATE study_crf_versions
+            SET status = 'published', published_at = ?, updated_at = ?
+            WHERE id = ? AND study_id = ?
+            """,
+            (now, now, target["id"], study_id),
+        )
+        note = data.get("note") or before["note"]
+        conn.execute(
+            """
+            UPDATE crf_migration_approvals
+            SET status = 'applied', note = ?, applied_at = ?, updated_at = ?
+            WHERE id = ? AND study_id = ?
+            """,
+            (note, now, now, migration_id, study_id),
+        )
+        after = row_to_crf_migration_approval(fetch_one(conn, "SELECT * FROM crf_migration_approvals WHERE id = ? AND study_id = ?", (migration_id, study_id)))
+        published = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ? AND study_id = ?", (target["id"], study_id)))
+        insert_crf_migration_log(conn, user, migration_id, study_id, "apply", "applied", f"Target CRF version {published['version']} published")
+        after = crf_migration_approval_with_logs(conn, after)
+        insert_audit(conn, user, "apply_crf_migration", "crf_migration_approvals", migration_id, before=before, after={**after, "published_version": published}, study_id=study_id)
+        return after
+
+
+@app.put("/studies/{study_id}/crf-versions/{version_id}")
+def update_study_crf_version(study_id: str, version_id: str, payload: StudyCrfVersionUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload, exclude_unset=True)
+    with connect() as conn:
+        before = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ? AND study_id = ?", (version_id, study_id)))
+        user = authorize(authorization, "crf_config", "write", study_id=study_id, conn=conn)
+        if not data:
+            return before
+        now = utc_now()
+        columns: list[str] = []
+        values: list[Any] = []
+        if "status" in data:
+            if data["status"] == "published":
+                conn.execute(
+                    "UPDATE study_crf_versions SET status = 'retired', updated_at = ? WHERE study_id = ? AND id <> ? AND status = 'published'",
+                    (now, study_id, version_id),
+                )
+                columns.append("published_at = ?")
+                values.append(now)
+            columns.append("status = ?")
+            values.append(data["status"])
+        if "schema_payload" in data and data["schema_payload"] is not None:
+            columns.append("schema_json = ?")
+            values.append(encode_json(data["schema_payload"]))
+        if "change_summary" in data and data["change_summary"] is not None:
+            columns.append("change_summary = ?")
+            values.append(data["change_summary"])
+        columns.append("updated_at = ?")
+        values.extend([now, version_id, study_id])
+        result = conn.execute(f"UPDATE study_crf_versions SET {', '.join(columns)} WHERE id = ? AND study_id = ?", values)
+        if result.rowcount == 0:
+            raise not_found()
+        after = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ? AND study_id = ?", (version_id, study_id)))
+        insert_audit(conn, user, "update_crf_version", "study_crf_versions", version_id, before=before, after=after, study_id=study_id)
+        return after
+
+
+@app.get("/studies/{study_id}/crf-fields")
+def list_study_crf_fields(study_id: str, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    with connect() as conn:
+        authorize(authorization, "crf_config", "read", study_id=study_id, conn=conn)
+        version = load_crf_version_for_fields(conn, study_id)
+        return crf_fields_from_version(version)
+
+
+@app.post("/studies/{study_id}/crf-fields", status_code=status.HTTP_201_CREATED)
+def create_study_crf_field(study_id: str, payload: StudyCrfFieldCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    now = utc_now()
+    with connect() as conn:
+        user = authorize(authorization, "crf_config", "write", study_id=study_id, conn=conn)
+        version = load_crf_version_for_fields(conn, study_id)
+        schema = version["schema"]
+        field_id = data["id"] or f"CRF-{study_id}-{uuid4().hex[:8].upper()}"
+        _, existing_field = find_schema_field(schema, field_id)
+        if existing_field is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="field already exists")
+
+        before = crf_fields_from_version(version)
+        section = ensure_schema_section(schema, data["module"])
+        fields = section.setdefault("fields", [])
+        source_column = 9000 + len(crf_fields_from_version(version)) + 1
+        fields.append(
+            {
+                "id": field_id,
+                "name": data["name"],
+                "sourceName": data["name"],
+                "sourceColumn": source_column,
+                "type": schema_crf_field_type(data["type"]),
+                "status": data["status"],
+                "options": data["options"],
+                "required": data["required"],
+                "validationRule": data["validation_rule"],
+                "conditionalLogic": data["conditional_logic"],
+            }
+        )
+        set_schema_field_count(schema)
+        conn.execute(
+            "UPDATE study_crf_versions SET schema_json = ?, updated_at = ? WHERE id = ? AND study_id = ?",
+            (encode_json(schema), now, version["id"], study_id),
+        )
+        after_version = load_crf_version_for_fields(conn, study_id)
+        created = next(field for field in crf_fields_from_version(after_version) if field["id"] == field_id)
+        insert_audit(conn, user, "create_crf_field", "study_crf_versions", version["id"], before=before, after=created, study_id=study_id)
+        return created
+
+
+@app.put("/studies/{study_id}/crf-fields/{field_id}")
+def update_study_crf_field(study_id: str, field_id: str, payload: StudyCrfFieldUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload, exclude_unset=True)
+    with connect() as conn:
+        user = authorize(authorization, "crf_config", "write", study_id=study_id, conn=conn)
+        version = load_crf_version_for_fields(conn, study_id)
+        schema = version["schema"]
+        old_section, field = find_schema_field(schema, field_id)
+        if field is None or old_section is None:
+            raise not_found()
+        before = next(item for item in crf_fields_from_version(version) if item["id"] == field_id)
+        if not data:
+            return before
+
+        if "name" in data:
+            field["name"] = data["name"]
+            field["sourceName"] = data["name"]
+        if "type" in data:
+            field["type"] = schema_crf_field_type(data["type"])
+        if "status" in data:
+            field["status"] = data["status"]
+        if "options" in data:
+            field["options"] = data["options"]
+        if "required" in data:
+            field["required"] = data["required"]
+        if "validation_rule" in data:
+            field["validationRule"] = data["validation_rule"]
+        if "conditional_logic" in data:
+            field["conditionalLogic"] = data["conditional_logic"]
+        if "module" in data and data["module"] != old_section.get("title"):
+            fields = old_section.get("fields") if isinstance(old_section.get("fields"), list) else []
+            old_section["fields"] = [item for item in fields if not (isinstance(item, dict) and item.get("id") == field_id)]
+            next_section = ensure_schema_section(schema, data["module"])
+            next_section.setdefault("fields", []).append(field)
+
+        set_schema_field_count(schema)
+        now = utc_now()
+        conn.execute(
+            "UPDATE study_crf_versions SET schema_json = ?, updated_at = ? WHERE id = ? AND study_id = ?",
+            (encode_json(schema), now, version["id"], study_id),
+        )
+        after_version = load_crf_version_for_fields(conn, study_id)
+        after = next(item for item in crf_fields_from_version(after_version) if item["id"] == field_id)
+        insert_audit(conn, user, "update_crf_field", "study_crf_versions", version["id"], before=before, after=after, study_id=study_id)
+        return after
 
 
 @app.get("/patients")

@@ -37,6 +37,16 @@ cp backend/.env.example backend/.env
 5. 初始化后端数据：`python seed.py`
 6. 启动后端：`uvicorn main:app --reload --port 8000`
 
+## Docker Compose 启动
+
+如果本机已安装 Docker，可以直接启动前后端 Demo：
+
+```bash
+docker compose up --build
+```
+
+首次启动会在 Docker volume 中 seed SQLite Demo 数据。前端地址为 `http://127.0.0.1:5173/`，后端健康检查为 `http://127.0.0.1:8000/health`。
+
 ## 常见启动失败原因
 
 - Node.js 版本过旧：升级到 Node.js 20 LTS 或更新 LTS。
@@ -53,6 +63,9 @@ cp backend/.env.example backend/.env
 ```bash
 npm run lint
 npm run build
+npm run export:openapi
+npm test
+docker compose config
 ```
 
 前端运行后确认：
@@ -76,3 +89,12 @@ curl -X POST http://127.0.0.1:8000/auth/login \
 ```
 
 患者、CRF、样本、导出和审计接口都需要 Bearer token，并会按当前用户的 `study_id` 授权范围过滤。`lung-crc@demo.linzight` 只访问 `LZXK-01` 的 20 名肺癌耐药研究患者。常用 Demo 账号见 `README.md` 和 `src/data/auth.ts`。
+
+## Demo 数据备份恢复
+
+```bash
+npm run backup:sqlite
+npm run restore:sqlite -- backups/linzight-<timestamp>
+```
+
+备份路径默认是 `./backups`，已被 Git ignore。更多部署与运维说明见 `docs/deployment-ops.md`。

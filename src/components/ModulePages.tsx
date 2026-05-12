@@ -10,6 +10,7 @@ import {
   samples,
   studyVisitPlans,
   type ConsentRecord,
+  type FollowUpRecord,
   type OmicsRecord,
   type ReportRecord,
   type SampleRecord,
@@ -17,18 +18,47 @@ import {
   type VisitRecord
 } from '../data/operations';
 import type { PatientRecord } from '../data/patientCohort';
-import type { UserRole } from '../data/auth';
+import { demoUsers, roleLabels, type AuthenticatedUser, type UserRole } from '../data/auth';
+import { useI18n } from '../i18n/I18nProvider';
 import {
+  applyStudyCrfMigration,
+  approveStudyCrfMigration,
+  createOmicsRecord,
+  createSampleRecord,
   createExportJob,
+  createStudyCrfField,
+  createStudyCrfVersion,
+  createStudyVisitPlan,
+  createUserAccount,
+  downloadExportJob,
   fetchConsentRecords,
   fetchDemoDataset,
   fetchOmicsRecords,
   fetchSamples,
+  fetchStudyCrfFields,
+  fetchStudyCrfMigrations,
+  fetchStudyCrfVersions,
+  fetchStudyMembers,
+  fetchStudyVisitPlans,
   filterRecordsByCurrentStudyScope,
+  getCurrentScopedStudyId,
+  previewStudyCrfMigration,
+  recordBelongsToCurrentStudyScope,
+  requestStudyCrfMigrationApproval,
   runQualityChecks,
+  saveClinicalCrfEntry,
+  saveVisitFollowUpRecord,
+  updatePatientClinicalData,
   updateConsentRecord,
+  updateOmicsRecord,
+  updateSampleRecord,
+  updateStudyCrfField,
+  updateStudyCrfVersion,
+  upsertStudyMember,
   uploadFileToBackend
 } from '../services/api';
+import type { ApiExportJob, ApiStudyMember, ApiUser } from '../services/contracts';
+import type { CrfMigrationApprovalRecord, CrfMigrationPreview, StudyCrfVersionRecord } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 import { PatientListModule } from './PatientCohortPage';
@@ -222,7 +252,8 @@ function statusTone(status: string) {
 }
 
 function StatusPill({ value }: { value: string }) {
-  return <span className={`status-pill status-pill--${statusTone(value)}`}>{value}</span>;
+  const { t } = useI18n();
+  return <span className={`status-pill status-pill--${statusTone(value)}`}>{t(value)}</span>;
 }
 
 function ConsentSectionPreview({
@@ -236,15 +267,16 @@ function ConsentSectionPreview({
   onUnderstand: () => void;
   onUpload: () => void;
 }) {
+  const { t } = useI18n();
   const [selectedChoice, setSelectedChoice] = useState('同意');
 
   return (
     <div className="consent-section-body">
       {section.blocks.map((block, blockIndex) => (
         <article className="consent-section-block" key={`${section.title}-${block.title ?? blockIndex}`}>
-          {block.title ? <h4>{block.title}</h4> : null}
+          {block.title ? <h4>{t(block.title)}</h4> : null}
           {block.paragraphs?.map((paragraph) => (
-            <p key={paragraph}>{paragraph}</p>
+            <p key={paragraph}>{t(paragraph)}</p>
           ))}
           {block.items && block.variant === 'choice' ? (
             <div className="consent-choice-buttons">
@@ -259,16 +291,16 @@ function ConsentSectionPreview({
                     if (item === '同意') onUnderstand();
                   }}
                 >
-                  {item}
+                  {t(item)}
                 </button>
               ))}
             </div>
           ) : null}
           {block.items && block.variant === 'documentActions' ? (
             <div className="consent-document-actions">
-              <button type="button" onClick={onPrint}><Icon name="reports" />打印知情</button>
-              <button type="button" onClick={onUpload}><Icon name="filePlus" />上传知情</button>
-              <a href={consentPreviewPdfUrl} target="_blank" rel="noreferrer"><Icon name="search" />查看知情</a>
+              <button type="button" onClick={onPrint}><Icon name="reports" />{t('打印知情')}</button>
+              <button type="button" onClick={onUpload}><Icon name="filePlus" />{t('上传知情')}</button>
+              <a href={consentPreviewPdfUrl} target="_blank" rel="noreferrer"><Icon name="search" />{t('查看知情')}</a>
             </div>
           ) : null}
           {block.items && block.variant !== 'choice' && block.variant !== 'documentActions' ? (
@@ -276,7 +308,7 @@ function ConsentSectionPreview({
               {block.items.map((item) => (
                 <li key={item}>
                   {block.variant === 'checklist' ? <Icon name="check" /> : null}
-                  <span>{item}</span>
+                  <span>{t(item)}</span>
                 </li>
               ))}
             </ul>
@@ -300,23 +332,26 @@ function ModuleKpi({
   helper: string;
   tone?: 'blue' | 'green' | 'orange' | 'purple';
 }) {
+  const { t } = useI18n();
   return (
     <article className={`module-kpi module-kpi--${tone}`}>
       <div className="module-kpi__icon">
         <Icon name={icon} />
       </div>
       <div>
-        <span>{label}</span>
+        <span>{t(label)}</span>
         <strong>{value}</strong>
-        <small>{helper}</small>
+        <small>{t(helper)}</small>
       </div>
     </article>
   );
 }
 
 function MiniTrend({ label = '近30天趋势' }: { label?: string }) {
+  const { t } = useI18n();
+
   return (
-    <div className="module-mini-trend" aria-label={label}>
+    <div className="module-mini-trend" aria-label={t(label)}>
       <svg viewBox="0 0 360 120" preserveAspectRatio="none">
         <line x1="0" y1="24" x2="360" y2="24" />
         <line x1="0" y1="60" x2="360" y2="60" />
@@ -324,18 +359,19 @@ function MiniTrend({ label = '近30天趋势' }: { label?: string }) {
         <path d="M0 86 C36 78 58 88 92 62 C128 36 162 62 204 44 C248 26 278 40 320 26 C340 20 350 18 360 16 L360 120 L0 120Z" />
         <path d="M0 86 C36 78 58 88 92 62 C128 36 162 62 204 44 C248 26 278 40 320 26 C340 20 350 18 360 16" />
       </svg>
-      <div className="module-chart-axis"><span>5月1日</span><span>5月15日</span><span>5月29日</span></div>
+      <div className="module-chart-axis"><span>{t('5月1日')}</span><span>{t('5月15日')}</span><span>{t('5月29日')}</span></div>
     </div>
   );
 }
 
 function DetailList({ rows }: { rows: Array<[string, string]> }) {
+  const { t } = useI18n();
   return (
     <dl className="module-detail-list">
       {rows.map(([label, value]) => (
         <div key={label}>
-          <dt>{label}</dt>
-          <dd>{value}</dd>
+          <dt>{t(label)}</dt>
+          <dd>{t(value)}</dd>
         </div>
       ))}
     </dl>
@@ -343,14 +379,16 @@ function DetailList({ rows }: { rows: Array<[string, string]> }) {
 }
 
 function SimpleTimeline({ items }: { items: Array<{ label: string; helper: string; done?: boolean }> }) {
+  const { t } = useI18n();
+
   return (
     <div className="simple-timeline">
       {items.map((item) => (
         <div className={item.done === false ? 'simple-timeline__item is-pending' : 'simple-timeline__item'} key={item.label}>
           <span />
           <div>
-            <strong>{item.label}</strong>
-            <small>{item.helper}</small>
+            <strong>{t(item.label)}</strong>
+            <small>{t(item.helper)}</small>
           </div>
         </div>
       ))}
@@ -394,6 +432,10 @@ type SampleLedgerRow = {
   collectedAt: string;
   note: string;
 };
+
+type SampleTestingEditor =
+  | { kind: 'sample'; draft: SampleRecord }
+  | { kind: 'omics'; draft: OmicsRecord };
 
 function normalizeOmicsDisplayStatus(status?: OmicsRecord['status'], sampleStatus?: SampleRecord['status']): OmicsDisplayStatus {
   if (status === '结果归档') return '已归档';
@@ -482,12 +524,17 @@ function buildSampleLedgerRows(sampleRows: SampleRecord[]): SampleLedgerRow[] {
 
 const clinicalSectionUpdatedAt = ['2026-04-27', '2026-04-27', '2026-04-26', '2026-04-26', '2026-04-25', '2026-04-25', '2026-04-24', '2026-04-24'];
 
+type ClinicalFormSection = {
+  title: string;
+  items: Array<[string, string]>;
+};
+
 function formatClinicalValue(value: string | number | undefined) {
   if (value === undefined || value === null || value === '') return '-';
   return String(value);
 }
 
-function buildClinicalSectionsFromPatient(patient: PatientRecord) {
+function buildClinicalSectionsFromPatient(patient: PatientRecord): ClinicalFormSection[] {
   const consumedFields = new Set<string>();
   const sections = clinicalDataGroups
     .map((group) => {
@@ -507,7 +554,7 @@ function buildClinicalSectionsFromPatient(patient: PatientRecord) {
 
   if (otherItems.length) sections.push({ title: '其他已录入字段', items: otherItems });
 
-  return sections.length ? sections : [{ title: '等待 API 数据', items: [['数据源', '等待 FastAPI / SQLite']] }];
+  return sections.length ? sections : [{ title: '等待 API 数据', items: [['数据源', '等待 FastAPI / SQLite'] as [string, string]] }];
 }
 
 const emptyClinicalPatient: PatientRecord = {
@@ -524,6 +571,31 @@ const emptyClinicalPatient: PatientRecord = {
   clinicalData: {}
 };
 
+function followUpRecordToClinicalVisit(record: FollowUpRecord): VisitRecord {
+  const completenessMatch = record.efficacyAssessment.match(/完整度\s*(\d+)%/);
+  const completeness = completenessMatch ? Number(completenessMatch[1]) : 0;
+  const status: VisitRecord['status'] = record.diseaseStatus === '进行中'
+    ? '进行中'
+    : record.diseaseStatus === '已预约'
+      ? '已预约'
+      : '已完成';
+
+  return {
+    id: record.id,
+    studyId: record.studyId,
+    patientId: record.patientId,
+    patientName: record.patientName,
+    visit: `随访记录 · ${record.followUpMethod}`,
+    visitDate: record.followUpDate,
+    visitType: record.followUpMethod,
+    sleDai: record.symptomsSigns.replace(/^SLEDAI\s*/, '') || '待录入',
+    medication: record.adverseEvents || '待录入',
+    sampleCollection: record.imagingLabSummary || '待录入',
+    completeness,
+    status
+  };
+}
+
 export function ClinicalDataCapturePage({
   selectedPatient,
   onPatientChange,
@@ -533,16 +605,19 @@ export function ClinicalDataCapturePage({
   onPatientChange?: (patient: PatientRecord) => void;
   onOpenPatientJourney?: (patient: PatientRecord) => void;
 }) {
+  const { t } = useI18n();
   const pageRef = useRef<HTMLDivElement | null>(null);
-  const [patients, setPatients] = useState<PatientRecord[]>(selectedPatient ? [selectedPatient] : []);
-  const [activePatientName, setActivePatientName] = useState(() => selectedPatient?.name ?? '');
+  const scopedSelectedPatient = selectedPatient && recordBelongsToCurrentStudyScope(selectedPatient) ? selectedPatient : null;
+  const [patients, setPatients] = useState<PatientRecord[]>(scopedSelectedPatient ? [scopedSelectedPatient] : []);
+  const [activePatientName, setActivePatientName] = useState(() => scopedSelectedPatient?.name ?? '');
   const [visitRows, setVisitRows] = useState<VisitRecord[]>([]);
   const [sampleRows, setSampleRows] = useState<SampleRecord[]>([]);
   const [newVisitEditId, setNewVisitEditId] = useState<string | null>(null);
   const [newSampleEditId, setNewSampleEditId] = useState<string | null>(null);
-  const [clinicalFormSections, setClinicalFormSections] = useState(() => buildClinicalSectionsFromPatient(selectedPatient ?? emptyClinicalPatient));
+  const [clinicalFormSections, setClinicalFormSections] = useState(() => buildClinicalSectionsFromPatient(scopedSelectedPatient ?? emptyClinicalPatient));
   const [editingSection, setEditingSection] = useState<string | null>(null);
   const [sectionBackups, setSectionBackups] = useState<Record<string, Array<[string, string]>>>({});
+  const [clinicalSaveStatus, setClinicalSaveStatus] = useState('等待保存');
 
   useEffect(() => {
     let ignore = false;
@@ -552,7 +627,7 @@ export function ClinicalDataCapturePage({
         if (ignore) return;
         if (dataset.patients.length) setPatients(dataset.patients);
         setSampleRows(dataset.samples);
-        setVisitRows(dataset.visits);
+        setVisitRows([...dataset.visits, ...dataset.followUps.map(followUpRecordToClinicalVisit)]);
       })
       .catch(() => undefined);
 
@@ -562,21 +637,21 @@ export function ClinicalDataCapturePage({
   }, []);
 
   useEffect(() => {
-    if (selectedPatient) setActivePatientName(selectedPatient.name);
-  }, [selectedPatient]);
+    if (scopedSelectedPatient) setActivePatientName(scopedSelectedPatient.name);
+  }, [scopedSelectedPatient]);
 
   useEffect(() => {
-    if (!selectedPatient && patients.length && (!activePatientName || !patients.some((record) => record.name === activePatientName))) {
+    if (!scopedSelectedPatient && patients.length && (!activePatientName || !patients.some((record) => record.name === activePatientName))) {
       setActivePatientName(patients[0].name);
     }
-  }, [activePatientName, patients, selectedPatient]);
+  }, [activePatientName, patients, scopedSelectedPatient]);
 
   useEffect(() => {
     pageRef.current?.scrollTo({ top: 0, left: 0 });
     window.requestAnimationFrame(() => pageRef.current?.scrollTo({ top: 0, left: 0 }));
   }, []);
 
-  const patient = patients.find((record) => record.name === activePatientName) ?? selectedPatient ?? patients[0] ?? emptyClinicalPatient;
+  const patient = patients.find((record) => record.name === activePatientName) ?? scopedSelectedPatient ?? patients[0] ?? emptyClinicalPatient;
   const patientVisitRows = useMemo(() => visitRows.filter((record) => record.patientName === patient.name), [patient.name, visitRows]);
   const patientSampleRows = useMemo(() => patientSamples(patient, sampleRows), [patient, sampleRows]);
 
@@ -623,17 +698,58 @@ export function ClinicalDataCapturePage({
     );
   }
 
+  function getNextClinicalFieldLabel(sectionTitle: string, currentItems: Array<[string, string]>) {
+    const group = clinicalDataGroups.find((item) => item.title === sectionTitle);
+    const usedFields = new Set(currentItems.map(([label]) => label));
+    const nextTemplateField = group?.fields.find((field) => !usedFields.has(field));
+
+    return nextTemplateField ?? `新增记录 ${currentItems.length + 1}`;
+  }
+
   function addClinicalField(sectionTitle: string) {
     const section = clinicalFormSections.find((item) => item.title === sectionTitle);
     if (section) setSectionBackups((backups) => ({ ...backups, [sectionTitle]: section.items.map((item) => [...item] as [string, string]) }));
     setClinicalFormSections((sections) =>
       sections.map((section) =>
         section.title === sectionTitle
-          ? { ...section, items: [...section.items, [`记录日期${section.items.length + 1}`, '2026-04-28'], [`新增字段${section.items.length + 2}`, '待录入']] }
+          ? { ...section, items: [...section.items, [getNextClinicalFieldLabel(sectionTitle, section.items), ''] as [string, string]] }
           : section
       )
     );
     setEditingSection(sectionTitle);
+  }
+
+  function clinicalSectionsToPayload() {
+    const payload: PatientRecord['clinicalData'] = { ...patient.clinicalData };
+    for (const section of clinicalFormSections) {
+      for (const [field, value] of section.items) {
+        if (!field.startsWith('新增记录')) payload[field] = value;
+      }
+    }
+    return payload;
+  }
+
+  async function saveClinicalForm(status: 'draft' | 'submitted') {
+    const payload = clinicalSectionsToPayload();
+    const nextPatient = { ...patient, clinicalData: payload };
+    setPatients((records) => records.map((record) => (record.name === patient.name ? nextPatient : record)));
+    onPatientChange?.(nextPatient);
+    setEditingSection(null);
+    setClinicalSaveStatus(status === 'draft' ? '草稿保存中...' : '提交中...');
+
+    try {
+      if (patient.id) {
+        const updatedPatient = await updatePatientClinicalData(nextPatient, payload);
+        await saveClinicalCrfEntry(updatedPatient, payload, status);
+        setPatients((records) => records.map((record) => (record.id === updatedPatient.id ? { ...record, ...updatedPatient } : record)));
+        onPatientChange?.({ ...nextPatient, ...updatedPatient });
+        setClinicalSaveStatus(status === 'draft' ? '草稿已保存到后端' : 'CRF 已提交到后端');
+      } else {
+        setClinicalSaveStatus(status === 'draft' ? '草稿已保存到本地' : 'CRF 已提交到本地');
+      }
+    } catch {
+      setClinicalSaveStatus(status === 'draft' ? '后端不可用，草稿已保存在本页' : '后端不可用，提交已保存在本页');
+    }
   }
 
   function addVisitRow() {
@@ -642,6 +758,8 @@ export function ClinicalDataCapturePage({
     setVisitRows((rows) => [
       {
         id,
+        studyId: patient.studyId,
+        patientId: patient.id,
         patientName: patient.name,
         visit: `V${nextIndex} 新建随访`,
         visitDate: '2026-04-28',
@@ -657,12 +775,33 @@ export function ClinicalDataCapturePage({
     setNewVisitEditId(id);
   }
 
+  async function saveClinicalVisit(record: VisitRecord) {
+    const nextRecord = {
+      ...record,
+      studyId: record.studyId ?? patient.studyId,
+      patientId: record.patientId ?? patient.id,
+      patientName: record.patientName || patient.name
+    };
+    setClinicalSaveStatus(`随访 ${nextRecord.visit} 正在同步后端...`);
+    try {
+      const saved = await saveVisitFollowUpRecord(nextRecord, patient);
+      setVisitRows((rows) => rows.map((item) => (item.id === record.id ? saved : item)));
+      setClinicalSaveStatus(`随访 ${saved.visit} 已写入 follow_up_records`);
+      return saved;
+    } catch {
+      setClinicalSaveStatus(`后端不可用，随访 ${nextRecord.visit} 已保存在本页`);
+      return nextRecord;
+    }
+  }
+
   function addSampleRow() {
     const nextIndex = patientSampleRows.length + 1;
     const id = `SPL-NEW-${Date.now()}`;
     setSampleRows((rows) => [
       {
         id,
+        studyId: patient.studyId,
+        patientId: patient.id,
         patientName: patient.name,
         hospitalNo: patient.hospitalNo,
         sampleType: '血液',
@@ -675,6 +814,18 @@ export function ClinicalDataCapturePage({
       ...rows
     ]);
     setNewSampleEditId(id);
+  }
+
+  async function saveClinicalSample(record: SampleRecord) {
+    const nextRecord = { ...record, studyId: record.studyId ?? patient.studyId, patientId: record.patientId ?? patient.id };
+    setClinicalSaveStatus(`样本 ${nextRecord.id} 正在同步后端...`);
+    try {
+      const saved = nextRecord.id.startsWith('SPL-NEW-') ? await createSampleRecord(nextRecord) : await updateSampleRecord(nextRecord);
+      setSampleRows((rows) => rows.map((item) => (item.id === record.id ? saved : item)));
+      setClinicalSaveStatus(`样本 ${saved.id} 已同步后端`);
+    } catch {
+      setClinicalSaveStatus(`后端不可用，样本 ${nextRecord.id} 已保存在本页`);
+    }
   }
 
   return (
@@ -691,14 +842,14 @@ export function ClinicalDataCapturePage({
         <div className="module-stack">
           <section className="module-card module-card--wide">
             <header className="module-card__header">
-              <h2>患者数据录入</h2>
-              <span>SLE CRF {crfTemplateVersion} · {crfTemplateFieldCount} 字段</span>
+              <h2>{t('患者数据录入')}</h2>
+              <span>SLE CRF {crfTemplateVersion} · {crfTemplateFieldCount} {t('字段')}</span>
             </header>
             <div className="clinical-entry-summary">
               <div className="clinical-entry-summary__icon"><Icon name="patients" size={24} /></div>
               <div className="clinical-entry-metrics">
                 <div className="clinical-entry-metric clinical-entry-metric--primary">
-                  <span>患者ID</span>
+                  <span>{t('患者ID')}</span>
                   <strong>{patient.name}</strong>
                 </div>
             {[
@@ -710,18 +861,22 @@ export function ClinicalDataCapturePage({
               ['最近更新', 'SQLite 实时']
             ].map(([label, value]) => (
                   <div className="clinical-entry-metric" key={label}>
-                    <span>{label}</span>
-                    <strong>{value}</strong>
+                    <span>{t(label)}</span>
+                    <strong>{t(value)}</strong>
                   </div>
                 ))}
               </div>
               <div className="clinical-entry-actions">
-                <button className="module-link-button" type="button"><Icon name="file" />保存草稿</button>
-                <button className="module-primary-button" type="button"><Icon name="check" />提交</button>
+                <button className="module-link-button" type="button" onClick={() => void saveClinicalForm('draft')}><Icon name="file" />{t('保存草稿')}</button>
+                <button className="module-primary-button" type="button" onClick={() => void saveClinicalForm('submitted')}><Icon name="check" />{t('提交')}</button>
                 <button className="module-link-button module-link-button--primary" type="button" onClick={() => onOpenPatientJourney?.(patient)}>
-                  <Icon name="activity" />患者旅程
+                  <Icon name="activity" />{t('患者旅程')}
                 </button>
               </div>
+            </div>
+            <div className="module-upload-status">
+              <Icon name="shield" />
+              <span>{t(clinicalSaveStatus)}</span>
             </div>
             <div className="clinical-section-grid">
               {clinicalFormSections.map((section, index) => {
@@ -731,34 +886,35 @@ export function ClinicalDataCapturePage({
                 <article className="clinical-section" key={section.title}>
                   <header className="clinical-section__header">
                     <div>
-                      <h3>{index + 1}. {section.title}</h3>
-                      <span>最近更新 {clinicalSectionUpdatedAt[index] ?? '2026-04-27'}</span>
+                      <h3>{index + 1}. {t(section.title)}</h3>
+                      <span>{t('最近更新')} {clinicalSectionUpdatedAt[index] ?? '2026-04-27'}</span>
                     </div>
                     <div className="clinical-section__actions">
                       {isEditing ? (
                         <>
-                          <button className="module-link-button module-link-button--primary" type="button" onClick={() => setEditingSection(null)}>保存</button>
-                          <button className="module-link-button" type="button" onClick={() => cancelClinicalSectionEdit(section.title)}>取消</button>
+                          <button className="module-link-button module-link-button--primary" type="button" onClick={() => setEditingSection(null)}>{t('保存')}</button>
+                          <button className="module-link-button" type="button" onClick={() => cancelClinicalSectionEdit(section.title)}>{t('取消')}</button>
                         </>
                       ) : (
-                        <button className="module-link-button" type="button" onClick={() => startClinicalSectionEdit(section.title)}>编辑</button>
+                        <button className="module-link-button" type="button" onClick={() => startClinicalSectionEdit(section.title)}>{t('编辑')}</button>
                       )}
-                      <button className="module-link-button module-link-button--primary" type="button" onClick={() => addClinicalField(section.title)}>新增</button>
+                      <button className="module-link-button module-link-button--primary" type="button" onClick={() => addClinicalField(section.title)}>{t('新增')}</button>
                     </div>
                   </header>
-                  <div className="clinical-field-table" role="table" aria-label={`${section.title}字段`}>
+                  <div className="clinical-field-table" role="table" aria-label={`${t(section.title)} ${t('字段')}`}>
                     {section.items.map(([label, value], fieldIndex) => (
                       <div className="clinical-field-row" role="row" key={label}>
-                        <span role="cell">{label}</span>
+                        <span role="cell">{t(label)}</span>
                         {isEditing ? (
                           <input
-                            aria-label={`${section.title}-${label}`}
+                            aria-label={`${t(section.title)}-${t(label)}`}
                             role="cell"
                             value={value}
+                            placeholder={t('待录入')}
                             onChange={(event) => updateClinicalField(section.title, fieldIndex, event.target.value)}
                           />
                         ) : (
-                          <strong role="cell">{value}</strong>
+                          <strong role="cell">{t(value || '待录入')}</strong>
                         )}
                       </div>
                     ))}
@@ -771,18 +927,32 @@ export function ClinicalDataCapturePage({
 
           <section className="module-card">
             <header className="module-card__header">
-              <h2>多次随访模块</h2>
-              <button className="module-link-button module-link-button--primary" type="button" onClick={addVisitRow}>新建随访</button>
+              <h2>{t('多次随访模块')}</h2>
+              <button className="module-link-button module-link-button--primary" type="button" onClick={addVisitRow}>{t('新建随访')}</button>
             </header>
-            <VisitTable records={patientVisitRows} onChange={(nextRows) => setVisitRows((rows) => [...rows.filter((record) => record.patientName !== patient.name), ...nextRows])} initialEditingId={newVisitEditId} onInitialEditingHandled={() => setNewVisitEditId(null)} />
+            <VisitTable
+              records={patientVisitRows}
+              onChange={(nextRows) => setVisitRows((rows) => [...rows.filter((record) => record.patientName !== patient.name), ...nextRows])}
+              onSave={(record) => saveClinicalVisit(record)}
+              initialEditingId={newVisitEditId}
+              onInitialEditingHandled={() => setNewVisitEditId(null)}
+            />
           </section>
 
           <section className="module-card">
             <header className="module-card__header">
-              <h2>样本采集模块</h2>
-              <button className="module-link-button module-link-button--primary" type="button" onClick={addSampleRow}>样本录入</button>
+              <h2>{t('样本采集模块')}</h2>
+              <button className="module-link-button module-link-button--primary" type="button" onClick={addSampleRow}>{t('样本录入')}</button>
             </header>
-            <SampleTable records={patientSampleRows} onChange={(nextRows) => setSampleRows((rows) => [...rows.filter((record) => record.patientName !== patient.name), ...nextRows])} initialEditingId={newSampleEditId} onInitialEditingHandled={() => setNewSampleEditId(null)} compact useLibraryCode />
+            <SampleTable
+              records={patientSampleRows}
+              onChange={(nextRows) => setSampleRows((rows) => [...rows.filter((record) => record.patientName !== patient.name), ...nextRows])}
+              onSave={(record) => void saveClinicalSample(record)}
+              initialEditingId={newSampleEditId}
+              onInitialEditingHandled={() => setNewSampleEditId(null)}
+              compact
+              useLibraryCode
+            />
           </section>
         </div>
       </div>
@@ -795,14 +965,17 @@ const clinicalTablePageSize = 5;
 function VisitTable({
   records,
   onChange,
+  onSave,
   initialEditingId,
   onInitialEditingHandled
 }: {
   records: VisitRecord[];
   onChange?: (records: VisitRecord[]) => void;
+  onSave?: (record: VisitRecord) => Promise<VisitRecord | void> | VisitRecord | void;
   initialEditingId?: string | null;
   onInitialEditingHandled?: () => void;
 }) {
+  const { t } = useI18n();
   const [currentPage, setCurrentPage] = useState(1);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBackups, setEditBackups] = useState<Record<string, VisitRecord>>({});
@@ -842,12 +1015,18 @@ function VisitTable({
     setEditingId(null);
   }
 
+  async function saveEdit(record: VisitRecord) {
+    const saved = await onSave?.(record);
+    if (saved) onChange?.(records.map((item) => (item.id === record.id ? saved : item)));
+    setEditingId(null);
+  }
+
   return (
     <>
       <div className="module-table-wrap">
         <table className="module-table">
           <thead>
-            <tr><th>访视</th><th>日期</th><th>类型</th><th>SLEDAI</th><th>用药变化</th><th>样本采集</th><th>完整度</th><th>编辑</th></tr>
+            <tr><th>{t('访视')}</th><th>{t('日期')}</th><th>{t('类型')}</th><th>SLEDAI</th><th>{t('用药变化')}</th><th>{t('样本采集')}</th><th>{t('完整度')}</th><th>{t('编辑')}</th></tr>
           </thead>
           <tbody>
             {pageRecords.map((record) => {
@@ -855,22 +1034,22 @@ function VisitTable({
 
               return (
                 <tr key={record.id}>
-                  <td>{isEditing ? <input className="module-table-input" value={record.visit} onChange={(event) => updateRecord(record.id, { visit: event.target.value })} /> : record.visit}</td>
+                  <td>{isEditing ? <input className="module-table-input" value={record.visit} onChange={(event) => updateRecord(record.id, { visit: event.target.value })} /> : t(record.visit)}</td>
                   <td>{isEditing ? <input className="module-table-input" type="date" value={record.visitDate} onChange={(event) => updateRecord(record.id, { visitDate: event.target.value })} /> : record.visitDate}</td>
-                  <td>{isEditing ? <input className="module-table-input" value={record.visitType} onChange={(event) => updateRecord(record.id, { visitType: event.target.value })} /> : record.visitType}</td>
-                  <td>{isEditing ? <input className="module-table-input" value={record.sleDai} onChange={(event) => updateRecord(record.id, { sleDai: event.target.value })} /> : record.sleDai}</td>
-                  <td>{isEditing ? <input className="module-table-input" value={record.medication} onChange={(event) => updateRecord(record.id, { medication: event.target.value })} /> : record.medication}</td>
-                  <td>{isEditing ? <input className="module-table-input" value={record.sampleCollection} onChange={(event) => updateRecord(record.id, { sampleCollection: event.target.value })} /> : record.sampleCollection}</td>
+                  <td>{isEditing ? <input className="module-table-input" value={record.visitType} onChange={(event) => updateRecord(record.id, { visitType: event.target.value })} /> : t(record.visitType)}</td>
+                  <td>{isEditing ? <input className="module-table-input" value={record.sleDai} onChange={(event) => updateRecord(record.id, { sleDai: event.target.value })} /> : t(record.sleDai)}</td>
+                  <td>{isEditing ? <input className="module-table-input" value={record.medication} onChange={(event) => updateRecord(record.id, { medication: event.target.value })} /> : t(record.medication)}</td>
+                  <td>{isEditing ? <input className="module-table-input" value={record.sampleCollection} onChange={(event) => updateRecord(record.id, { sampleCollection: event.target.value })} /> : t(record.sampleCollection)}</td>
                   <td>{isEditing ? <input className="module-table-input" type="number" value={record.completeness} onChange={(event) => updateRecord(record.id, { completeness: Number(event.target.value) })} /> : record.completeness ? `${record.completeness}%` : '--'}</td>
                   <td>
                     <div className="module-table-actions">
                       {isEditing ? (
                         <>
-                          <button className="module-link-button module-link-button--primary" type="button" onClick={() => setEditingId(null)}>保存</button>
-                          <button className="module-link-button" type="button" onClick={() => cancelEdit(record.id)}>取消</button>
+                          <button className="module-link-button module-link-button--primary" type="button" onClick={() => void saveEdit(record)}>{t('保存')}</button>
+                          <button className="module-link-button" type="button" onClick={() => cancelEdit(record.id)}>{t('取消')}</button>
                         </>
                       ) : (
-                        <button className="module-link-button" type="button" onClick={() => startEdit(record)}>编辑</button>
+                        <button className="module-link-button" type="button" onClick={() => startEdit(record)}>{t('编辑')}</button>
                       )}
                     </div>
                   </td>
@@ -888,6 +1067,7 @@ function VisitTable({
 function SampleTable({
   records,
   onChange,
+  onSave,
   initialEditingId,
   onInitialEditingHandled,
   compact = false,
@@ -895,11 +1075,13 @@ function SampleTable({
 }: {
   records: SampleRecord[];
   onChange?: (records: SampleRecord[]) => void;
+  onSave?: (record: SampleRecord) => void | Promise<void>;
   initialEditingId?: string | null;
   onInitialEditingHandled?: () => void;
   compact?: boolean;
   useLibraryCode?: boolean;
 }) {
+  const { t } = useI18n();
   const [currentPage, setCurrentPage] = useState(1);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBackups, setEditBackups] = useState<Record<string, SampleRecord>>({});
@@ -944,7 +1126,7 @@ function SampleTable({
       <div className="module-table-wrap">
         <table className="module-table">
           <thead>
-            <tr><th>样本编号</th>{!compact && <th>患者编号</th>}<th>样本类型</th><th>采集日期</th><th>检测项目</th><th>状态</th><th>编辑</th></tr>
+            <tr><th>{t('样本编号')}</th>{!compact && <th>{t('患者编号')}</th>}<th>{t('样本类型')}</th><th>{t('采集日期')}</th><th>{t('检测项目')}</th><th>{t('状态')}</th><th>{t('编辑')}</th></tr>
           </thead>
           <tbody>
             {pageRecords.map((record) => {
@@ -954,15 +1136,15 @@ function SampleTable({
                 <tr key={record.id}>
                   <td>{isEditing ? <input className="module-table-input" value={record.id} onChange={(event) => updateRecord(record.id, { id: event.target.value })} /> : useLibraryCode ? formatSampleLibraryId(record) : record.id}</td>
                   {!compact && <td>{record.patientName}</td>}
-                  <td>{isEditing ? <input className="module-table-input" value={record.sampleType} onChange={(event) => updateRecord(record.id, { sampleType: event.target.value })} /> : record.sampleType}</td>
+                  <td>{isEditing ? <input className="module-table-input" value={record.sampleType} onChange={(event) => updateRecord(record.id, { sampleType: event.target.value })} /> : t(record.sampleType)}</td>
                   <td>{isEditing ? <input className="module-table-input" type="date" value={record.collectedAt} onChange={(event) => updateRecord(record.id, { collectedAt: event.target.value })} /> : record.collectedAt}</td>
                   <td>{isEditing ? <input className="module-table-input" value={record.linkedOmics.join(' / ')} onChange={(event) => updateRecord(record.id, { linkedOmics: event.target.value.split('/').map((item) => item.trim()).filter(Boolean) })} /> : record.linkedOmics.join(' / ')}</td>
                   <td>
                     {isEditing ? (
                       <select className="module-table-input" value={normalizeSampleStatus(record.status)} onChange={(event) => updateRecord(record.id, { status: event.target.value as SampleRecord['status'] })}>
-                        <option value="已采集">已采集</option>
-                        <option value="检测中">检测中</option>
-                        <option value="检测完成">检测完成</option>
+                        <option value="已采集">{t('已采集')}</option>
+                        <option value="检测中">{t('检测中')}</option>
+                        <option value="检测完成">{t('检测完成')}</option>
                       </select>
                     ) : (
                       <StatusPill value={normalizeSampleStatus(record.status)} />
@@ -972,11 +1154,11 @@ function SampleTable({
                     <div className="module-table-actions">
                       {isEditing ? (
                         <>
-                          <button className="module-link-button module-link-button--primary" type="button" onClick={() => setEditingId(null)}>保存</button>
-                          <button className="module-link-button" type="button" onClick={() => cancelEdit(record.id)}>取消</button>
+                          <button className="module-link-button module-link-button--primary" type="button" onClick={() => { setEditingId(null); void onSave?.(record); }}>{t('保存')}</button>
+                          <button className="module-link-button" type="button" onClick={() => cancelEdit(record.id)}>{t('取消')}</button>
                         </>
                       ) : (
-                        <button className="module-link-button" type="button" onClick={() => startEdit(record)}>编辑</button>
+                        <button className="module-link-button" type="button" onClick={() => startEdit(record)}>{t('编辑')}</button>
                       )}
                     </div>
                   </td>
@@ -1002,24 +1184,34 @@ function ClinicalTableFooter({
   totalPages: number;
   onPageChange: (page: number) => void;
 }) {
+  const { t } = useI18n();
   const start = total === 0 ? 0 : (page - 1) * clinicalTablePageSize + 1;
   const end = Math.min(page * clinicalTablePageSize, total);
 
   return (
     <footer className="module-table-footer">
-      <span>显示 {start} 至 {end} 条，共 {total} 条记录</span>
+      <span>{t(`显示 ${start} 至 ${end} 条，共 ${total} 条记录`)}</span>
       <div className="module-pagination">
         <button type="button" disabled={page === 1} onClick={() => onPageChange(page - 1)}>‹</button>
         {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
           <button className={pageNumber === page ? 'is-active' : undefined} type="button" key={pageNumber} onClick={() => onPageChange(pageNumber)}>{pageNumber}</button>
         ))}
-        <button type="button" disabled={page === totalPages} onClick={() => onPageChange(page + 1)}>下一页</button>
+        <button type="button" disabled={page === totalPages} onClick={() => onPageChange(page + 1)}>{t('下一页')}</button>
       </div>
     </footer>
   );
 }
 
-function OmicsTable({ records }: { records: SampleDetectionRow[] }) {
+function OmicsTable({
+  records,
+  onView,
+  onEdit
+}: {
+  records: SampleDetectionRow[];
+  onView: (record: SampleDetectionRow) => void;
+  onEdit: (record: SampleDetectionRow) => void;
+}) {
+  const { t } = useI18n();
   const patientRowSpans = records.map((row, index) => {
     if (index > 0 && records[index - 1].patientName === row.patientName) return 0;
     let count = 1;
@@ -1045,15 +1237,15 @@ function OmicsTable({ records }: { records: SampleDetectionRow[] }) {
       <table className="module-table module-table--omics">
         <thead>
           <tr>
-            <th>患者编号</th>
-            <th>样本编号</th>
-            <th>样本类型</th>
-            <th>检测项目</th>
-            <th>当前状态</th>
-            <th>送检测时间</th>
+            <th>{t('患者编号')}</th>
+            <th>{t('样本编号')}</th>
+            <th>{t('样本类型')}</th>
+            <th>{t('检测项目')}</th>
+            <th>{t('当前状态')}</th>
+            <th>{t('送检测时间')}</th>
             <th>QC</th>
-            <th>结果文件</th>
-            <th>操作</th>
+            <th>{t('结果文件')}</th>
+            <th>{t('操作')}</th>
           </tr>
         </thead>
         <tbody>
@@ -1061,16 +1253,16 @@ function OmicsTable({ records }: { records: SampleDetectionRow[] }) {
             <tr key={record.id}>
               {patientRowSpans[index] > 0 && <td rowSpan={patientRowSpans[index]}>{record.patientName}</td>}
               {sampleRowSpans[index] > 0 && <td rowSpan={sampleRowSpans[index]}>{record.sampleId}</td>}
-              <td>{record.sampleType}</td>
-              <td>{record.assay}</td>
+              <td>{t(record.sampleType)}</td>
+              <td>{t(record.assay)}</td>
               <td><StatusPill value={record.status} /></td>
               <td>{record.sentAt}</td>
               <td><StatusPill value={record.qc} /></td>
               <td>{record.resultFile}</td>
               <td>
                 <div className="module-table-actions">
-                  <button className="module-link-button module-link-button--primary" type="button">查看</button>
-                  <button className="module-link-button" type="button">编辑</button>
+                  <button className="module-link-button module-link-button--primary" type="button" onClick={() => onView(record)}>{t('查看')}</button>
+                  <button className="module-link-button" type="button" onClick={() => onEdit(record)}>{t('编辑')}</button>
                 </div>
               </td>
             </tr>
@@ -1081,19 +1273,28 @@ function OmicsTable({ records }: { records: SampleDetectionRow[] }) {
   );
 }
 
-function SampleLedgerTable({ rows }: { rows: SampleLedgerRow[] }) {
+function SampleLedgerTable({
+  rows,
+  onView,
+  onEdit
+}: {
+  rows: SampleLedgerRow[];
+  onView: (row: SampleLedgerRow) => void;
+  onEdit: (row: SampleLedgerRow) => void;
+}) {
+  const { t } = useI18n();
   return (
     <div className="module-table-wrap">
       <table className="module-table module-table--sample-ledger">
         <thead>
           <tr>
-            <th>患者编号</th>
-            <th>住院号</th>
-            <th>样本编号</th>
-            <th>样本类型</th>
-            <th>采集日期</th>
-            <th>注释</th>
-            <th>操作</th>
+            <th>{t('患者编号')}</th>
+            <th>{t('住院号')}</th>
+            <th>{t('样本编号')}</th>
+            <th>{t('样本类型')}</th>
+            <th>{t('采集日期')}</th>
+            <th>{t('注释')}</th>
+            <th>{t('操作')}</th>
           </tr>
         </thead>
         <tbody>
@@ -1102,13 +1303,13 @@ function SampleLedgerTable({ rows }: { rows: SampleLedgerRow[] }) {
               <td>{row.patientName}</td>
               <td>{row.hospitalNo}</td>
               <td>{row.sampleId}</td>
-              <td>{row.sampleType}</td>
+              <td>{t(row.sampleType)}</td>
               <td>{row.collectedAt}</td>
-              <td>{row.note}</td>
+              <td>{t(row.note)}</td>
               <td>
                 <div className="module-table-actions">
-                  <button className="module-link-button" type="button">编辑</button>
-                  <button className="module-link-button module-link-button--primary" type="button">查看</button>
+                  <button className="module-link-button" type="button" onClick={() => onEdit(row)}>{t('编辑')}</button>
+                  <button className="module-link-button module-link-button--primary" type="button" onClick={() => onView(row)}>{t('查看')}</button>
                 </div>
               </td>
             </tr>
@@ -1130,6 +1331,7 @@ function ModuleTableFooter({
   pageSize: number;
   onPageChange: (page: number) => void;
 }) {
+  const { t } = useI18n();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
   const start = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
@@ -1137,13 +1339,13 @@ function ModuleTableFooter({
 
   return (
     <footer className="module-table-footer">
-      <span>显示 {start} 至 {end} 条，共 {total} 条记录</span>
+      <span>{t(`显示 ${start} 至 ${end} 条，共 ${total} 条记录`)}</span>
       <div className="module-pagination">
         <button type="button" disabled={safePage === 1} onClick={() => onPageChange(safePage - 1)}>‹</button>
         {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
           <button className={pageNumber === safePage ? 'is-active' : undefined} type="button" key={pageNumber} onClick={() => onPageChange(pageNumber)}>{pageNumber}</button>
         ))}
-        <button type="button" disabled={safePage === totalPages} onClick={() => onPageChange(safePage + 1)}>下一页</button>
+        <button type="button" disabled={safePage === totalPages} onClick={() => onPageChange(safePage + 1)}>{t('下一页')}</button>
       </div>
     </footer>
   );
@@ -1154,15 +1356,16 @@ function SampleTestingStatTiles({
 }: {
   items: Array<{ label: string; value: string | number; helper?: string; icon: IconName }>;
 }) {
+  const { t } = useI18n();
   return (
     <div className="sample-testing-stat-grid">
       {items.map((item) => (
         <div className="sample-testing-stat" key={item.label}>
           <span className="sample-testing-stat__icon"><Icon name={item.icon} /></span>
           <div>
-            <span>{item.label}</span>
+            <span>{t(item.label)}</span>
             <strong>{item.value}</strong>
-            {item.helper && <small>{item.helper}</small>}
+            {item.helper && <small>{t(item.helper)}</small>}
           </div>
         </div>
       ))}
@@ -1171,8 +1374,22 @@ function SampleTestingStatTiles({
 }
 
 export function ConsentManagementPage() {
+  const { t } = useI18n();
   const initialConsentRecords = filterRecordsByCurrentStudyScope(consentRecords);
-  const [selected, setSelected] = useState<ConsentRecord>(initialConsentRecords[0] ?? consentRecords[0]);
+  const consentUploadInputRef = useRef<globalThis.HTMLInputElement>(null);
+  const emptyConsentRecord: ConsentRecord = {
+    id: 'NO-SCOPED-CONSENT',
+    studyId: getCurrentScopedStudyId(),
+    patientId: '',
+    patientName: '-',
+    hospitalNo: '-',
+    diseaseType: '-',
+    status: '待签署',
+    signedAt: '-',
+    version: consentVersion,
+    method: '电子'
+  };
+  const [selected, setSelected] = useState<ConsentRecord>(initialConsentRecords[0] ?? emptyConsentRecord);
   const [baseRecords, setBaseRecords] = useState<ConsentRecord[]>(initialConsentRecords);
   const [recordOverrides, setRecordOverrides] = useState<Record<string, Partial<ConsentRecord>>>({});
   const [understoodRecords, setUnderstoodRecords] = useState<Record<string, boolean>>({});
@@ -1180,10 +1397,12 @@ export function ConsentManagementPage() {
   const [statusFilter, setStatusFilter] = useState<'全部' | ConsentRecord['status']>('全部');
   const [currentPage, setCurrentPage] = useState(1);
   const [activeConsentSection, setActiveConsentSection] = useState(0);
+  const [consentActionStatus, setConsentActionStatus] = useState('等待知情同意操作');
+  const [pendingConsentUploadRecord, setPendingConsentUploadRecord] = useState<ConsentRecord | null>(null);
   const records = useMemo(() => {
     return baseRecords.map((record) => ({ ...record, ...recordOverrides[record.id] }));
   }, [baseRecords, recordOverrides]);
-  const selectedRecord = records.find((record) => record.id === selected.id) ?? records[0] ?? consentRecords[0];
+  const selectedRecord = records.find((record) => record.id === selected.id) ?? records[0] ?? emptyConsentRecord;
   const statusCounts = useMemo(() => {
     return records.reduce<Record<'全部' | ConsentRecord['status'], number>>(
       (acc, record) => {
@@ -1234,23 +1453,84 @@ export function ConsentManagementPage() {
     document.body.appendChild(printFrame);
   };
 
-  const markUploaded = (record: ConsentRecord) => {
-    const nextRecord = { ...record, status: '已签署' as const, signedAt: new Date().toISOString().slice(0, 10), method: '电子' as const };
+  const applyConsentUpdate = async (record: ConsentRecord, payload: Partial<Pick<ConsentRecord, 'status' | 'signedAt' | 'version' | 'method'>>, message: string) => {
+    const nextRecord = { ...record, ...payload };
     setRecordOverrides((current) => ({
       ...current,
       [record.id]: {
         status: nextRecord.status,
         signedAt: nextRecord.signedAt,
+        version: nextRecord.version,
         method: nextRecord.method
       }
     }));
     setUnderstoodRecords((current) => ({ ...current, [record.id]: true }));
     setSelected(nextRecord);
-    void updateConsentRecord(record.id, {
-      status: nextRecord.status,
-      signedAt: nextRecord.signedAt,
-      method: nextRecord.method
-    }).catch(() => undefined);
+    setConsentActionStatus(`${message}，同步后端中...`);
+    try {
+      await updateConsentRecord(record.id, payload);
+      setConsentActionStatus(`${message}，已同步后端`);
+    } catch {
+      setConsentActionStatus(`${message}，后端不可用，已保存在本页`);
+    }
+  };
+
+  const startConsentUpload = (record: ConsentRecord) => {
+    setPendingConsentUploadRecord(record);
+    consentUploadInputRef.current?.click();
+  };
+
+  const handleConsentUploadFile = async (file: globalThis.File | undefined) => {
+    const record = pendingConsentUploadRecord ?? selectedRecord;
+    if (!file) {
+      setPendingConsentUploadRecord(null);
+      return;
+    }
+
+    setConsentActionStatus(`知情文件 ${file.name} 正在上传...`);
+    try {
+      await uploadFileToBackend(file, {
+        category: 'consent',
+        patientId: record.patientId,
+        consentId: record.id,
+        isDeidentified: false
+      });
+      await applyConsentUpdate(
+        record,
+        { status: '已签署', signedAt: new Date().toISOString().slice(0, 10), method: '电子' },
+        `知情文件 ${file.name} 已上传并签署`
+      );
+    } catch {
+      setConsentActionStatus(`知情文件 ${file.name} 上传失败；请确认后端连接和文件权限`);
+    } finally {
+      setPendingConsentUploadRecord(null);
+      if (consentUploadInputRef.current) consentUploadInputRef.current.value = '';
+    }
+  };
+
+  const signConsent = (record: ConsentRecord) => {
+    void applyConsentUpdate(
+      record,
+      { status: '已签署', signedAt: new Date().toISOString().slice(0, 10), method: '电子' },
+      '已完成签署'
+    );
+  };
+
+  const withdrawConsent = (record: ConsentRecord) => {
+    void applyConsentUpdate(record, { status: '已撤回', method: record.method }, '已撤回知情同意');
+  };
+
+  const resignConsent = (record: ConsentRecord) => {
+    void applyConsentUpdate(
+      record,
+      { status: '待签署', signedAt: '-', method: '-', version: consentVersion },
+      '已发起重签'
+    );
+  };
+
+  const viewConsent = (record: ConsentRecord) => {
+    setSelected(record);
+    setConsentActionStatus(`正在查看 ${record.patientName} 的知情同意记录`);
   };
 
   const markSelectedUnderstood = () => {
@@ -1287,25 +1567,25 @@ export function ConsentManagementPage() {
       <section className="module-card consent-workbench">
         <header className="consent-workbench__header">
           <div>
-            <h2><Icon name="file" />知情同意</h2>
+            <h2><Icon name="file" />{t('知情同意')}</h2>
             <div className="consent-workbench__badges">
-              <span>当前版本 <strong>{consentVersion}</strong></span>
-              <span className="consent-workbench__badge--patient"><Icon name="patients" />当前患者 <strong>{selectedRecord.patientName}</strong></span>
-              <span className="consent-workbench__badge--hospital"><Icon name="building" />住院号 <strong>{selectedRecord.hospitalNo}</strong></span>
-              <span><Icon name="calendar" />最近更新 <strong>2026-04-23</strong></span>
-              <span className="is-success"><Icon name="shield" />伦理批准</span>
+              <span>{t('当前版本')} <strong>{consentVersion}</strong></span>
+              <span className="consent-workbench__badge--patient"><Icon name="patients" />{t('当前患者')} <strong>{selectedRecord.patientName}</strong></span>
+              <span className="consent-workbench__badge--hospital"><Icon name="building" />{t('住院号')} <strong>{selectedRecord.hospitalNo}</strong></span>
+              <span><Icon name="calendar" />{t('最近更新')} <strong>2026-04-23</strong></span>
+              <span className="is-success"><Icon name="shield" />{t('伦理批准')}</span>
             </div>
           </div>
-          <button className="consent-study-link" type="button">
+          <button className="consent-study-link" type="button" disabled title={t('研究详情入口当前为展示状态')}>
             <Icon name="building" />
-            免疫相关性神经系统疾病多组学解析及机制探索
+            {t('免疫相关性神经系统疾病多组学解析及机制探索')}
             <Icon name="chevronRight" />
           </button>
         </header>
 
         <div className="consent-workbench__main">
-          <nav className="consent-preview__nav" aria-label="知情同意书章节">
-            <h3><Icon name="file" />知情同意内容</h3>
+          <nav className="consent-preview__nav" aria-label={t('知情同意书章节')}>
+            <h3><Icon name="file" />{t('知情同意内容')}</h3>
             {consentPreviewContent.map((section, index) => (
               <button
                 className={index === activeConsentSection ? 'is-active' : undefined}
@@ -1315,7 +1595,7 @@ export function ConsentManagementPage() {
                 onClick={() => setActiveConsentSection(index)}
               >
                 <Icon name={section.icon} />
-                {section.title}
+                {t(section.title)}
               </button>
             ))}
           </nav>
@@ -1325,29 +1605,29 @@ export function ConsentManagementPage() {
               <header>
                 <Icon name={currentConsentSection.icon} />
                 <div>
-                  <span>{currentConsentSection.eyebrow}</span>
-                  <h3>{currentConsentSection.title}</h3>
+                  <span>{t(currentConsentSection.eyebrow)}</span>
+                  <h3>{t(currentConsentSection.title)}</h3>
                 </div>
               </header>
               <ConsentSectionPreview
                 section={currentConsentSection}
                 onPrint={printConsentPdf}
                 onUnderstand={markSelectedUnderstood}
-                onUpload={() => markUploaded(selectedRecord)}
+                onUpload={() => startConsentUpload(selectedRecord)}
               />
             </section>
 
             <aside className="consent-visual-panel">
               <div className="consent-pdf-preview">
-                <iframe src={`${consentPreviewPdfUrl}#toolbar=0&navpanes=0&scrollbar=0`} title="知情同意书 V1.0 PDF 预览" />
+                <iframe src={`${consentPreviewPdfUrl}#toolbar=0&navpanes=0&scrollbar=0`} title={t('知情同意书 V1.0 PDF 预览')} />
               </div>
-              <button className="consent-print-button" type="button" onClick={printConsentPdf}><Icon name="reports" />预览打印</button>
+              <button className="consent-print-button" type="button" onClick={printConsentPdf}><Icon name="reports" />{t('预览打印')}</button>
             </aside>
           </div>
         </div>
 
         <section className="consent-flow">
-          <h3>知情同意流程</h3>
+          <h3>{t('知情同意流程')}</h3>
           {[
             ['1', '阅读知情同意书', '了解研究目的与内容'],
             ['2', '确认理解', '确认已充分理解'],
@@ -1356,19 +1636,30 @@ export function ConsentManagementPage() {
           ].map(([step, label, helper], index) => (
             <div className={`${index <= flowStepIndex ? 'is-complete' : ''} ${index === flowStepIndex ? 'is-active' : ''}`} key={step}>
               <strong>{step}</strong>
-              <span>{label}</span>
-              <small>{helper}</small>
+              <span>{t(label)}</span>
+              <small>{t(helper)}</small>
             </div>
           ))}
         </section>
+        <div className="module-upload-status">
+          <Icon name="shield" />
+          <span>{t(consentActionStatus)}</span>
+        </div>
+        <input
+          ref={consentUploadInputRef}
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+          hidden
+          onChange={(event) => void handleConsentUploadFile(event.target.files?.[0])}
+        />
       </section>
 
       <section className="module-card module-card--wide">
           <header className="module-card__header">
-            <h2>患者知情同意列表</h2>
+            <h2>{t('患者知情同意列表')}</h2>
             <div className="workspace-search workspace-search--compact">
               <Icon name="search" />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索患者编号或住院号" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('搜索患者编号或住院号')} />
             </div>
           </header>
           <div className="workspace-filter-row">
@@ -1379,37 +1670,37 @@ export function ConsentManagementPage() {
                 key={item}
                 onClick={() => setStatusFilter(item)}
               >
-                <span>{item}</span>
+                <span>{t(item)}</span>
                 <strong>{statusCounts[item]}</strong>
               </button>
             ))}
           </div>
           <div className="module-table-wrap">
             <table className="module-table">
-              <thead><tr><th>患者编号</th><th>住院号</th><th>疾病类型</th><th>当前状态</th><th>签署日期</th><th>版本</th><th>操作</th></tr></thead>
+              <thead><tr><th>{t('患者编号')}</th><th>{t('住院号')}</th><th>{t('疾病类型')}</th><th>{t('当前状态')}</th><th>{t('签署日期')}</th><th>{t('版本')}</th><th>{t('操作')}</th></tr></thead>
               <tbody>
                 {paginatedRecords.map((record) => (
                   <tr className={selectedRecord.id === record.id ? 'is-selected' : undefined} key={record.id} onClick={() => setSelected(record)}>
-                    <td>{record.patientName}</td><td>{record.hospitalNo}</td><td>{record.diseaseType}</td><td><StatusPill value={record.status} /></td>
+                    <td>{record.patientName}</td><td>{record.hospitalNo}</td><td>{t(record.diseaseType)}</td><td><StatusPill value={record.status} /></td>
                     <td>{record.signedAt}</td><td>{record.version}</td>
                     <td>
                       <div className="module-table-actions">
                         {record.status === '待签署' ? (
                           <>
-                            <button className="module-link-button module-link-button--primary" type="button" onClick={(event) => event.stopPropagation()}>签署</button>
-                            <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); markUploaded(record); }}>上传</button>
+                            <button className="module-link-button module-link-button--primary" type="button" onClick={(event) => { event.stopPropagation(); signConsent(record); }}>{t('签署')}</button>
+                            <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); startConsentUpload(record); }}>{t('上传')}</button>
                           </>
                         ) : null}
                         {record.status === '已签署' ? (
                           <>
-                            <button className="module-link-button" type="button" onClick={(event) => event.stopPropagation()}>查看</button>
-                            <button className="module-link-button module-link-button--danger" type="button" onClick={(event) => event.stopPropagation()}>撤回</button>
+                            <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); viewConsent(record); }}>{t('查看')}</button>
+                            <button className="module-link-button module-link-button--danger" type="button" onClick={(event) => { event.stopPropagation(); withdrawConsent(record); }}>{t('撤回')}</button>
                           </>
                         ) : null}
                         {record.status === '已撤回' ? (
                           <>
-                            <button className="module-link-button" type="button" onClick={(event) => event.stopPropagation()}>查看</button>
-                            <button className="module-link-button module-link-button--primary" type="button" onClick={(event) => event.stopPropagation()}>重签</button>
+                            <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); viewConsent(record); }}>{t('查看')}</button>
+                            <button className="module-link-button module-link-button--primary" type="button" onClick={(event) => { event.stopPropagation(); resignConsent(record); }}>{t('重签')}</button>
                           </>
                         ) : null}
                       </div>
@@ -1420,11 +1711,11 @@ export function ConsentManagementPage() {
             </table>
           </div>
           <footer className="module-table-footer">
-            <span>显示 {displayStart} 至 {displayEnd} 条，共 {filteredRecords.length} 条记录</span>
+            <span>{t(`显示 ${displayStart} 至 ${displayEnd} 条，共 ${filteredRecords.length} 条记录`)}</span>
             <div className="module-pagination">
               <button
                 type="button"
-                aria-label="上一页"
+                aria-label={t('上一页')}
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
               >
@@ -1448,7 +1739,7 @@ export function ConsentManagementPage() {
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
               >
-                下一页
+                {t('下一页')}
               </button>
             </div>
           </footer>
@@ -1458,7 +1749,10 @@ export function ConsentManagementPage() {
 }
 
 export function SampleManagementPage() {
+  const { t } = useI18n();
   const [sampleRows, setSampleRows] = useState(filterRecordsByCurrentStudyScope(samples));
+  const [sampleActionStatus, setSampleActionStatus] = useState('等待样本操作');
+  const [editingSampleId, setEditingSampleId] = useState<string | null>(null);
   const sampleTypeCounts = useMemo(() => {
     return sampleRows.reduce<Record<string, number>>((acc, sample) => {
       acc[sample.sampleType] = (acc[sample.sampleType] ?? 0) + 1;
@@ -1480,6 +1774,51 @@ export function SampleManagementPage() {
     };
   }, []);
 
+  async function handleCreateSample() {
+    const base = sampleRows[0];
+    if (!base) {
+      setSampleActionStatus('暂无患者样本上下文，无法新增样本');
+      return;
+    }
+
+    const now = new Date();
+    const localId = `SMP-${String(sampleRows.length + 1).padStart(3, '0')}`;
+    const record: SampleRecord = {
+      ...base,
+      id: localId,
+      sampleType: '血液',
+      visit: base.visit || 'Baseline',
+      collectedAt: now.toISOString().slice(0, 10),
+      storage: '待分配',
+      status: '已采集',
+      linkedOmics: []
+    };
+
+    setSampleRows((rows) => [record, ...rows]);
+    setEditingSampleId(localId);
+    setSampleActionStatus('新增样本已加入列表，正在同步后端...');
+
+    try {
+      const created = await createSampleRecord(record);
+      setSampleRows((rows) => rows.map((item) => (item.id === localId ? { ...item, ...created } : item)));
+      setEditingSampleId(created.id);
+      setSampleActionStatus(`新增样本已同步后端：${created.id}`);
+    } catch {
+      setSampleActionStatus('后端不可用，新增样本已保存在本页');
+    }
+  }
+
+  async function handleSaveSample(record: SampleRecord) {
+    setSampleActionStatus(`样本 ${record.id} 正在同步后端...`);
+    try {
+      const saved = await updateSampleRecord(record);
+      setSampleRows((rows) => rows.map((item) => (item.id === record.id ? { ...item, ...saved } : item)));
+      setSampleActionStatus(`样本 ${record.id} 已同步后端`);
+    } catch {
+      setSampleActionStatus(`后端不可用，样本 ${record.id} 已保存在本页`);
+    }
+  }
+
   return (
     <div className="content workspace-page">
       <section className="module-kpis">
@@ -1492,14 +1831,24 @@ export function SampleManagementPage() {
       <div className="module-layout">
         <section className="module-card module-card--wide">
           <header className="module-card__header">
-            <h2>样本台账</h2>
-            <button className="module-primary-button" type="button"><Icon name="filePlus" />新增样本</button>
+            <h2>{t('样本台账')}</h2>
+            <button className="module-primary-button" type="button" onClick={() => void handleCreateSample()}><Icon name="filePlus" />{t('新增样本')}</button>
           </header>
-          <SampleTable records={sampleRows} />
+          <div className="module-upload-status">
+            <Icon name="shield" />
+            <span>{t(sampleActionStatus)}</span>
+          </div>
+          <SampleTable
+            records={sampleRows}
+            onChange={setSampleRows}
+            onSave={(record) => void handleSaveSample(record)}
+            initialEditingId={editingSampleId}
+            onInitialEditingHandled={() => setEditingSampleId(null)}
+          />
         </section>
         <aside className="module-stack">
           <section className="module-card">
-            <header className="module-card__header"><h2>样本处理流程</h2></header>
+            <header className="module-card__header"><h2>{t('样本处理流程')}</h2></header>
             <SimpleTimeline items={[
               { label: '采集登记', helper: '12 个样本完成' },
               { label: '离心 / 分装', helper: '10 个样本完成' },
@@ -1508,11 +1857,11 @@ export function SampleManagementPage() {
             ]} />
           </section>
           <section className="module-card">
-            <header className="module-card__header"><h2>存储分布</h2></header>
+            <header className="module-card__header"><h2>{t('存储分布')}</h2></header>
             <DetailList rows={[['-80℃冰箱A', '4 份'], ['-80℃冰箱B', '4 份'], ['液氮罐C', '4 份'], ['病理库R', '1 份']]} />
           </section>
           <section className="module-card">
-            <header className="module-card__header"><h2>采集完成率趋势</h2><span>本月</span></header>
+            <header className="module-card__header"><h2>{t('采集完成率趋势')}</h2><span>{t('本月')}</span></header>
             <MiniTrend label="样本采集完成率趋势" />
           </section>
         </aside>
@@ -1522,10 +1871,12 @@ export function SampleManagementPage() {
 }
 
 export function OmicsTestingPage() {
+  const { t } = useI18n();
   const initialOmicsRecords = filterRecordsByCurrentStudyScope(omicsRecords);
   const [records, setRecords] = useState(initialOmicsRecords);
-  const [selected, setSelected] = useState<OmicsRecord>(initialOmicsRecords[0] ?? omicsRecords[0]);
+  const [selected, setSelected] = useState<OmicsRecord | null>(initialOmicsRecords[0] ?? null);
   const completed = records.filter((record) => record.status === '结果归档').length;
+  const selectedRecord = selected ?? records[0];
 
   useEffect(() => {
     let ignore = false;
@@ -1556,19 +1907,21 @@ export function OmicsTestingPage() {
       <div className="module-layout">
         <section className="module-card module-card--wide">
           <header className="module-card__header">
-            <h2>多组学检测列表</h2>
+            <h2>{t('多组学检测列表')}</h2>
             <div className="workspace-filter-row">
-              {['全部', '进行中', '已完成', '失败/重测', 'WGS', 'TCR/BCR', 'Olink/Simoa', '空间转录组'].map((item) => <button className="chip" type="button" key={item}>{item}</button>)}
+              {['全部', '进行中', '已完成', '失败/重测', 'WGS', 'TCR/BCR', 'Olink/Simoa', '空间转录组'].map((item) => (
+                <button className="chip" type="button" key={item} disabled title={t('该筛选在新版样本及检测页中处理')}>{t(item)}</button>
+              ))}
             </div>
           </header>
           <div className="module-table-wrap">
             <table className="module-table">
-              <thead><tr><th>检测编号</th><th>样本编号</th><th>患者编号</th><th>样本类型</th><th>检测项目</th><th>平台</th><th>当前状态</th><th>QC</th><th>操作</th></tr></thead>
+              <thead><tr><th>{t('检测编号')}</th><th>{t('样本编号')}</th><th>{t('患者编号')}</th><th>{t('样本类型')}</th><th>{t('检测项目')}</th><th>{t('平台')}</th><th>{t('当前状态')}</th><th>QC</th><th>{t('操作')}</th></tr></thead>
               <tbody>
                 {records.map((record) => (
                   <tr key={record.id} onClick={() => setSelected(record)}>
                     <td>{record.id}</td><td>{record.sampleId}</td><td>{record.patientName}</td><td>{record.sampleType}</td><td>{record.assay}</td><td>{record.platform}</td>
-                    <td><StatusPill value={record.status} /></td><td><StatusPill value={record.qc} /></td><td><button className="module-link-button" type="button">文件</button></td>
+                    <td><StatusPill value={record.status} /></td><td><StatusPill value={record.qc} /></td><td><button className="module-link-button" type="button" disabled title={t('文件下载需等待结果文件上传')}>{t('文件')}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -1578,45 +1931,51 @@ export function OmicsTestingPage() {
 
         <aside className="module-stack">
           <section className="module-card">
-            <header className="module-card__header"><h2>当前样本检测详情</h2></header>
-            <DetailList rows={[
-              ['检测编号', selected.id],
-              ['患者编号', selected.patientName],
-              ['样本编号', selected.sampleId],
-              ['样本类型', selected.sampleType],
-              ['检测项目', selected.assay],
-              ['平台', selected.platform],
-              ['批次/Run ID', selected.runId],
-              ['送检日期', selected.sentAt],
-              ['完成日期', selected.completedAt]
-            ]} />
+            <header className="module-card__header"><h2>{t('当前样本检测详情')}</h2></header>
+            {selectedRecord ? (
+              <DetailList rows={[
+                ['检测编号', selectedRecord.id],
+                ['患者编号', selectedRecord.patientName],
+                ['样本编号', selectedRecord.sampleId],
+                ['样本类型', selectedRecord.sampleType],
+                ['检测项目', selectedRecord.assay],
+                ['平台', selectedRecord.platform],
+                ['批次/Run ID', selectedRecord.runId],
+                ['送检日期', selectedRecord.sentAt],
+                ['完成日期', selectedRecord.completedAt]
+              ]} />
+            ) : (
+              <p className="module-empty-state">{t('当前 Study 暂无检测记录')}</p>
+            )}
           </section>
           <section className="module-card">
-            <header className="module-card__header"><h2>检测流程与时间线</h2></header>
-            <SimpleTimeline items={[
-              { label: '样本接收', helper: `${selected.sentAt} 09:10` },
-              { label: '文库构建', helper: '2026-04-21 11:05' },
-              { label: '上机测序', helper: '2026-04-22 08:40' },
-              { label: '结果归档', helper: selected.completedAt === '-' ? '待完成' : `${selected.completedAt} 10:15`, done: selected.completedAt !== '-' }
-            ]} />
+            <header className="module-card__header"><h2>{t('检测流程与时间线')}</h2></header>
+            {selectedRecord ? (
+              <SimpleTimeline items={[
+                { label: '样本接收', helper: `${selectedRecord.sentAt} 09:10` },
+                { label: '文库构建', helper: '2026-04-21 11:05' },
+                { label: '上机测序', helper: '2026-04-22 08:40' },
+                { label: '结果归档', helper: selectedRecord.completedAt === '-' ? '待完成' : `${selectedRecord.completedAt} 10:15`, done: selectedRecord.completedAt !== '-' }
+              ]} />
+            ) : null}
           </section>
         </aside>
       </div>
 
       <section className="module-card">
         <header className="module-card__header">
-          <h2>检测结果概览</h2>
-          <span>研究用途，不直接用于临床决策</span>
+          <h2>{t('检测结果概览')}</h2>
+          <span>{t('研究用途，不直接用于临床决策')}</span>
         </header>
         <div className="result-overview">
           <div>
-            <strong>结果摘要</strong>
-            <p>检测到免疫相关候选变异位点，建议结合临床表型与其他组学联合解读。</p>
-            <p>可关联 TCR/BCR、Olink/Simoa、空间转录组结果做多维分析。</p>
+            <strong>{t('结果摘要')}</strong>
+            <p>{t('检测到免疫相关候选变异位点，建议结合临床表型与其他组学联合解读。')}</p>
+            <p>{t('可关联 TCR/BCR、Olink/Simoa、空间转录组结果做多维分析。')}</p>
           </div>
           <div className="dna-visual"><Icon name="dna" size={96} /></div>
           <div className="result-tags">
-            {['WGS', 'TCR/BCR', '蛋白组学', '空间转录组'].map((item) => <span key={item}>{item}</span>)}
+            {['WGS', 'TCR/BCR', '蛋白组学', '空间转录组'].map((item) => <span key={item}>{t(item)}</span>)}
           </div>
         </div>
       </section>
@@ -1625,6 +1984,7 @@ export function OmicsTestingPage() {
 }
 
 export function SampleTestingPage() {
+  const { t } = useI18n();
   const [sampleRows, setSampleRows] = useState(filterRecordsByCurrentStudyScope(samples));
   const [records, setRecords] = useState(filterRecordsByCurrentStudyScope(omicsRecords));
   const [samplePatientQuery, setSamplePatientQuery] = useState('');
@@ -1639,6 +1999,7 @@ export function SampleTestingPage() {
   const [omicsSampleQuery, setOmicsSampleQuery] = useState('');
   const [omicsPage, setOmicsPage] = useState(1);
   const [uploadStatus, setUploadStatus] = useState('未上传文件');
+  const [sampleTestingEditor, setSampleTestingEditor] = useState<SampleTestingEditor | null>(null);
   const detectionRows = useMemo(() => buildSampleDetectionRows(sampleRows, records), [sampleRows, records]);
   const sampleLedgerRows = useMemo(() => buildSampleLedgerRows(sampleRows), [sampleRows]);
   const sampleTypeOptions = useMemo(() => ['全部', ...Array.from(new Set(sampleLedgerRows.map((row) => row.sampleType)))], [sampleLedgerRows]);
@@ -1718,7 +2079,7 @@ export function SampleTestingPage() {
     ];
   }, [detectionRows, running]);
   const omicsStatusOptions: OmicsFilterStatus[] = ['全部', '待检测', '检测中', '检测完成', '已归档'];
-  const omicsAssayOptions = ['WGS', 'TCR/BCR', 'Olink/Simoa', 'scRNA-seq'];
+  const omicsAssayOptions: Array<OmicsRecord['assay']> = ['WGS', 'TCR/BCR', 'Olink/Simoa', '蛋白组', '代谢组'];
 
   useEffect(() => {
     let ignore = false;
@@ -1760,6 +2121,161 @@ export function SampleTestingPage() {
     }
   }
 
+  async function handleAddSample() {
+    const template = sampleRows[0];
+    if (!template) {
+      setUploadStatus('暂无患者样本上下文，无法新增样本');
+      return;
+    }
+    const nextSample: SampleRecord = {
+      ...template,
+      id: `SPL-NEW-${Date.now()}`,
+      sampleType: '血液',
+      visit: 'V1 新增采集',
+      collectedAt: new Date().toISOString().slice(0, 10),
+      storage: '待入库',
+      status: '已采集',
+      linkedOmics: ['待选择']
+    };
+    setSampleRows((rows) => [nextSample, ...rows]);
+    setUploadStatus('新增样本已加入列表，正在同步后端...');
+    try {
+      const created = await createSampleRecord(nextSample);
+      setSampleRows((rows) => rows.map((row) => (row.id === nextSample.id ? created : row)));
+      setUploadStatus(`新增样本已同步后端：${created.id}`);
+    } catch {
+      setUploadStatus('后端不可用，新增样本已保存在本页');
+    }
+  }
+
+  async function handleEditSample(row: SampleLedgerRow) {
+    const target = sampleRows.find((sample) => sample.id === row.id);
+    if (!target) return;
+    setSampleTestingEditor({ kind: 'sample', draft: { ...target, linkedOmics: [...target.linkedOmics] } });
+    setUploadStatus(`正在编辑样本 ${row.sampleId}`);
+  }
+
+  function handleViewSample(row: SampleLedgerRow) {
+    setSampleIdQuery(row.sampleId);
+    setUploadStatus(`已定位样本 ${row.sampleId}`);
+  }
+
+  async function handleAddOmics() {
+    const sample = sampleRows[0];
+    if (!sample) {
+      setUploadStatus('暂无样本上下文，无法新增检测');
+      return;
+    }
+    const nextRecord: OmicsRecord = {
+      id: `OMX-NEW-${Date.now()}`,
+      studyId: sample.studyId,
+      testingProjectId: sample.studyId === 'LZXK-01' ? 'TP-LUNG-RESIST-OMICS' : 'TP-SLE-OMICS',
+      patientId: sample.patientId,
+      patientName: sample.patientName,
+      sampleId: sample.id,
+      sampleType: sample.sampleType,
+      assay: 'WGS',
+      platform: 'NovaSeq 6000',
+      runId: `RUN-${Date.now().toString().slice(-6)}`,
+      status: '样本接收',
+      qc: '待确认',
+      sentAt: new Date().toISOString().slice(0, 10),
+      completedAt: '-'
+    };
+    setRecords((rows) => [nextRecord, ...rows]);
+    setUploadStatus('新增检测已加入列表，正在同步后端...');
+    try {
+      const created = await createOmicsRecord(nextRecord);
+      setRecords((rows) => rows.map((record) => (record.id === nextRecord.id ? created : record)));
+      setUploadStatus(`新增检测已同步后端：${created.id}`);
+    } catch {
+      setUploadStatus('后端不可用，新增检测已保存在本页');
+    }
+  }
+
+  async function handleEditOmics(row: SampleDetectionRow) {
+    const target = records.find((record) => record.id === row.id);
+    if (target) {
+      setSampleTestingEditor({ kind: 'omics', draft: { ...target } });
+      setUploadStatus(`正在编辑检测 ${row.id}`);
+      return;
+    }
+
+    const sample = sampleRows.find((item) => formatSampleLedgerId(item, sampleRows) === row.sampleId || item.id === row.sampleId);
+    if (!sample) return;
+    const nextRecord: OmicsRecord = {
+      id: `OMX-NEW-${Date.now()}`,
+      studyId: sample.studyId,
+      testingProjectId: sample.studyId === 'LZXK-01' ? 'TP-LUNG-RESIST-OMICS' : 'TP-SLE-OMICS',
+      patientId: sample.patientId,
+      patientName: sample.patientName,
+      sampleId: sample.id,
+      sampleType: sample.sampleType,
+      assay: 'WGS',
+      platform: 'NovaSeq 6000',
+      runId: `RUN-${Date.now().toString().slice(-6)}`,
+      status: '样本接收',
+      qc: '待确认',
+      sentAt: new Date().toISOString().slice(0, 10),
+      completedAt: '-'
+    };
+    setSampleTestingEditor({ kind: 'omics', draft: nextRecord });
+    setUploadStatus(`正在为样本 ${row.sampleId} 新建检测`);
+  }
+
+  function handleViewOmics(row: SampleDetectionRow) {
+    setOmicsSampleQuery(row.sampleId);
+    setUploadStatus(`已定位检测 ${row.id}`);
+  }
+
+  function patchSampleTestingDraft(patch: Partial<SampleRecord> | Partial<OmicsRecord>) {
+    setSampleTestingEditor((editor) => {
+      if (!editor) return editor;
+      return { ...editor, draft: { ...editor.draft, ...patch } } as SampleTestingEditor;
+    });
+  }
+
+  async function saveSampleTestingEditor() {
+    if (!sampleTestingEditor) return;
+
+    if (sampleTestingEditor.kind === 'sample') {
+      const draft = sampleTestingEditor.draft;
+      if (!draft.patientId || !draft.patientName || !draft.sampleType || !draft.collectedAt) {
+        setUploadStatus('样本表单缺少必填字段');
+        return;
+      }
+      setSampleRows((rows) => rows.map((row) => (row.id === draft.id ? draft : row)));
+      setUploadStatus(`样本 ${draft.id} 正在同步后端...`);
+      try {
+        const saved = draft.id.startsWith('SPL-NEW-') ? await createSampleRecord(draft) : await updateSampleRecord(draft);
+        setSampleRows((rows) => rows.map((row) => (row.id === draft.id ? saved : row)));
+        setSampleTestingEditor(null);
+        setUploadStatus(`样本 ${saved.id} 已同步后端`);
+      } catch {
+        setSampleTestingEditor(null);
+        setUploadStatus(`后端不可用，样本 ${draft.id} 更新已保存在本页`);
+      }
+      return;
+    }
+
+    const draft = sampleTestingEditor.draft;
+    if (!draft.patientId || !draft.sampleId || !draft.assay || !draft.sentAt) {
+      setUploadStatus('检测表单缺少必填字段');
+      return;
+    }
+    setRecords((rows) => (rows.some((record) => record.id === draft.id) ? rows.map((record) => (record.id === draft.id ? draft : record)) : [draft, ...rows]));
+    setUploadStatus(`检测 ${draft.id} 正在同步后端...`);
+    try {
+      const saved = draft.id.startsWith('OMX-NEW-') ? await createOmicsRecord(draft) : await updateOmicsRecord(draft);
+      setRecords((rows) => rows.map((record) => (record.id === draft.id ? saved : record)));
+      setSampleTestingEditor(null);
+      setUploadStatus(`检测 ${saved.id} 已同步后端`);
+    } catch {
+      setSampleTestingEditor(null);
+      setUploadStatus(`后端不可用，检测 ${draft.id} 更新已保存在本页`);
+    }
+  }
+
   return (
     <div className="content workspace-page">
       <section className="module-kpis">
@@ -1772,50 +2288,102 @@ export function SampleTestingPage() {
       <section className="module-card module-card--wide">
         <header className="module-card__header">
           <div>
-            <h2>样本台账</h2>
-            <span>按患者、样本和采集日期维护样本登记</span>
+            <h2>{t('样本台账')}</h2>
+            <span>{t('按患者、样本和采集日期维护样本登记')}</span>
           </div>
-          <button className="module-primary-button" type="button"><Icon name="filePlus" />新增样本</button>
+          <button className="module-primary-button" type="button" onClick={() => void handleAddSample()}><Icon name="filePlus" />{t('新增样本')}</button>
         </header>
+        {sampleTestingEditor?.kind === 'sample' ? (
+          <section className="sample-testing-editor-card" role="dialog" aria-label={t('样本编辑表单')}>
+            <header>
+              <div>
+                <strong>{t('样本编辑表单')}</strong>
+                <span>{sampleTestingEditor.draft.id}</span>
+              </div>
+              <div className="module-table-actions">
+                <button className="module-link-button module-link-button--primary" type="button" onClick={() => void saveSampleTestingEditor()}>{t('保存')}</button>
+                <button className="module-link-button" type="button" onClick={() => setSampleTestingEditor(null)}>{t('取消')}</button>
+              </div>
+            </header>
+            <div className="sample-testing-editor-grid">
+              <label>
+                <span>{t('患者编号')}</span>
+                <input value={sampleTestingEditor.draft.patientName} onChange={(event) => patchSampleTestingDraft({ patientName: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('住院号')}</span>
+                <input value={sampleTestingEditor.draft.hospitalNo} onChange={(event) => patchSampleTestingDraft({ hospitalNo: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('样本类型')}</span>
+                <select value={sampleTestingEditor.draft.sampleType} onChange={(event) => patchSampleTestingDraft({ sampleType: event.target.value })}>
+                  {['血液', 'CSF', '肾', '尿液', '组织', '胸水'].map((item) => <option value={item} key={item}>{t(item)}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>{t('访视')}</span>
+                <input value={sampleTestingEditor.draft.visit} onChange={(event) => patchSampleTestingDraft({ visit: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('采集日期')}</span>
+                <input type="date" value={sampleTestingEditor.draft.collectedAt} onChange={(event) => patchSampleTestingDraft({ collectedAt: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('存储位置')}</span>
+                <input value={sampleTestingEditor.draft.storage} onChange={(event) => patchSampleTestingDraft({ storage: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('状态')}</span>
+                <select value={sampleTestingEditor.draft.status} onChange={(event) => patchSampleTestingDraft({ status: event.target.value as SampleRecord['status'] })}>
+                  {['已采集', '已送检', '检测中', '检测完成', '结果回传', '待处理'].map((item) => <option value={item} key={item}>{t(item)}</option>)}
+                </select>
+              </label>
+              <label className="sample-testing-editor-grid__wide">
+                <span>{t('关联检测')}</span>
+                <input value={sampleTestingEditor.draft.linkedOmics.join(' / ')} onChange={(event) => patchSampleTestingDraft({ linkedOmics: event.target.value.split('/').map((item) => item.trim()).filter(Boolean) })} />
+              </label>
+            </div>
+          </section>
+        ) : null}
         <SampleTestingStatTiles items={sampleStatItems} />
         <div className="sample-testing-filter-bar">
           <label>
-            <span>患者编号</span>
-            <input value={samplePatientQuery} onChange={(event) => setSamplePatientQuery(event.target.value)} placeholder="搜索患者编号" />
+            <span>{t('患者编号')}</span>
+            <input value={samplePatientQuery} onChange={(event) => setSamplePatientQuery(event.target.value)} placeholder={t('搜索患者编号')} />
           </label>
           <label>
-            <span>样本编号</span>
-            <input value={sampleIdQuery} onChange={(event) => setSampleIdQuery(event.target.value)} placeholder="搜索样本编号" />
+            <span>{t('样本编号')}</span>
+            <input value={sampleIdQuery} onChange={(event) => setSampleIdQuery(event.target.value)} placeholder={t('搜索样本编号')} />
           </label>
           <label>
-            <span>样本类型</span>
+            <span>{t('样本类型')}</span>
             <select value={sampleTypeFilter} onChange={(event) => setSampleTypeFilter(event.target.value)}>
-              {sampleTypeOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+              {sampleTypeOptions.map((item) => <option key={item} value={item}>{t(item)}</option>)}
             </select>
           </label>
           <label>
-            <span>采集开始</span>
+            <span>{t('采集开始')}</span>
             <input type="date" value={sampleDateFrom} onChange={(event) => setSampleDateFrom(event.target.value)} />
           </label>
           <label>
-            <span>采集结束</span>
+            <span>{t('采集结束')}</span>
             <input type="date" value={sampleDateTo} onChange={(event) => setSampleDateTo(event.target.value)} />
           </label>
         </div>
-        <SampleLedgerTable rows={pagedSampleLedgerRows} />
+        <SampleLedgerTable rows={pagedSampleLedgerRows} onView={handleViewSample} onEdit={(row) => void handleEditSample(row)} />
         <ModuleTableFooter page={safeSampleLedgerPage} total={filteredSampleLedgerRows.length} pageSize={sampleLedgerPageSize} onPageChange={setSampleLedgerPage} />
       </section>
 
       <section className="module-card module-card--wide">
         <header className="module-card__header">
           <div>
-            <h2>多组学检测列表</h2>
-            <span>按检测项目追踪平台、批次、QC 和结果归档</span>
+            <h2>{t('多组学检测列表')}</h2>
+            <span>{t('按检测项目追踪平台、批次、QC 和结果归档')}</span>
           </div>
           <div className="module-header-actions">
             <label className="module-file-button">
               <Icon name="filePlus" />
-              上传结果
+              {t('上传结果')}
               <input
                 type="file"
                 onChange={(event) => {
@@ -1825,22 +2393,84 @@ export function SampleTestingPage() {
                 }}
               />
             </label>
-            <button className="module-primary-button" type="button"><Icon name="filePlus" />新增检测</button>
+            <button className="module-primary-button" type="button" onClick={() => void handleAddOmics()}><Icon name="filePlus" />{t('新增检测')}</button>
           </div>
         </header>
         <div className="module-upload-status">
           <Icon name="shield" />
-          <span>{uploadStatus}</span>
+          <span>{t(uploadStatus)}</span>
         </div>
+        {sampleTestingEditor?.kind === 'omics' ? (
+          <section className="sample-testing-editor-card" role="dialog" aria-label={t('检测编辑表单')}>
+            <header>
+              <div>
+                <strong>{t('检测编辑表单')}</strong>
+                <span>{sampleTestingEditor.draft.id}</span>
+              </div>
+              <div className="module-table-actions">
+                <button className="module-link-button module-link-button--primary" type="button" onClick={() => void saveSampleTestingEditor()}>{t('保存')}</button>
+                <button className="module-link-button" type="button" onClick={() => setSampleTestingEditor(null)}>{t('取消')}</button>
+              </div>
+            </header>
+            <div className="sample-testing-editor-grid">
+              <label>
+                <span>{t('患者编号')}</span>
+                <input value={sampleTestingEditor.draft.patientName} onChange={(event) => patchSampleTestingDraft({ patientName: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('样本编号')}</span>
+                <input value={sampleTestingEditor.draft.sampleId} onChange={(event) => patchSampleTestingDraft({ sampleId: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('样本类型')}</span>
+                <input value={sampleTestingEditor.draft.sampleType} onChange={(event) => patchSampleTestingDraft({ sampleType: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('检测项目')}</span>
+                <select value={sampleTestingEditor.draft.assay} onChange={(event) => patchSampleTestingDraft({ assay: event.target.value as OmicsRecord['assay'] })}>
+                  {omicsAssayOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>{t('平台')}</span>
+                <input value={sampleTestingEditor.draft.platform} onChange={(event) => patchSampleTestingDraft({ platform: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('批次')}</span>
+                <input value={sampleTestingEditor.draft.runId} onChange={(event) => patchSampleTestingDraft({ runId: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('状态')}</span>
+                <select value={sampleTestingEditor.draft.status} onChange={(event) => patchSampleTestingDraft({ status: event.target.value as OmicsRecord['status'] })}>
+                  {['样本接收', '文库构建', '测序完成', '数据分析', '结果归档'].map((item) => <option value={item} key={item}>{t(item)}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>QC</span>
+                <select value={sampleTestingEditor.draft.qc} onChange={(event) => patchSampleTestingDraft({ qc: event.target.value as OmicsRecord['qc'] })}>
+                  {['待确认', '通过', '未通过'].map((item) => <option value={item} key={item}>{t(item)}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>{t('送检测时间')}</span>
+                <input type="date" value={sampleTestingEditor.draft.sentAt} onChange={(event) => patchSampleTestingDraft({ sentAt: event.target.value })} />
+              </label>
+              <label>
+                <span>{t('完成日期')}</span>
+                <input value={sampleTestingEditor.draft.completedAt} onChange={(event) => patchSampleTestingDraft({ completedAt: event.target.value })} />
+              </label>
+            </div>
+          </section>
+        ) : null}
         <SampleTestingStatTiles items={omicsStatItems} />
         <div className="sample-testing-filter-bar sample-testing-filter-bar--omics">
           <label>
-            <span>患者编号</span>
-            <input value={omicsPatientQuery} onChange={(event) => setOmicsPatientQuery(event.target.value)} placeholder="搜索患者编号" />
+            <span>{t('患者编号')}</span>
+            <input value={omicsPatientQuery} onChange={(event) => setOmicsPatientQuery(event.target.value)} placeholder={t('搜索患者编号')} />
           </label>
           <label>
-            <span>样本编号</span>
-            <input value={omicsSampleQuery} onChange={(event) => setOmicsSampleQuery(event.target.value)} placeholder="搜索样本编号" />
+            <span>{t('样本编号')}</span>
+            <input value={omicsSampleQuery} onChange={(event) => setOmicsSampleQuery(event.target.value)} placeholder={t('搜索样本编号')} />
           </label>
           <div className="workspace-filter-row">
             {omicsStatusOptions.map((item) => (
@@ -1853,7 +2483,7 @@ export function SampleTestingPage() {
                   setOmicsAssayFilter('全部');
                 }}
               >
-                {item}
+                {t(item)}
               </button>
             ))}
             {omicsAssayOptions.map((item) => (
@@ -1866,12 +2496,12 @@ export function SampleTestingPage() {
                   setOmicsStatusFilter('全部');
                 }}
               >
-                {item}
+                {t(item)}
               </button>
             ))}
           </div>
         </div>
-        <OmicsTable records={pagedDetectionRows} />
+        <OmicsTable records={pagedDetectionRows} onView={handleViewOmics} onEdit={(row) => void handleEditOmics(row)} />
         <ModuleTableFooter page={safeOmicsPage} total={filteredDetectionRows.length} pageSize={omicsTestingPageSize} onPageChange={setOmicsPage} />
       </section>
     </div>
@@ -1889,6 +2519,7 @@ export function PatientJourneyPage({
 }
 
 type SystemAccount = {
+  userId?: string;
   name: string;
   email: string;
   role: UserRole;
@@ -1898,13 +2529,66 @@ type SystemAccount = {
   lastLogin: string;
 };
 
+function userIdForEmail(email: string) {
+  return demoUsers.find((user) => user.username === email)?.id;
+}
+
+function accountFromStudyMember(member: ApiStudyMember): SystemAccount {
+  return {
+    userId: member.user_id,
+    name: member.display_name,
+    email: member.username,
+    role: member.study_role,
+    roleLabel: roleLabels[member.study_role],
+    studyScope: member.study_id,
+    status: member.status === 'active' ? 'Active' : member.status === 'disabled' ? 'Disabled' : 'Pending',
+    lastLogin: '-'
+  };
+}
+
+function accountFromApiUser(user: ApiUser, studyId: string): SystemAccount {
+  const membership = user.study_memberships?.find((item) => item.study_id === studyId);
+  const role = membership?.study_role ?? user.role;
+  return {
+    userId: user.id,
+    name: user.display_name,
+    email: user.username,
+    role,
+    roleLabel: roleLabels[role],
+    studyScope: membership?.study_id ?? studyId,
+    status: membership?.status === 'disabled' || user.status === 'disabled' ? 'Disabled' : membership?.status === 'active' ? 'Active' : 'Pending',
+    lastLogin: '-'
+  };
+}
+
+function studyMemberStatusFromAccountStatus(status: SystemAccount['status']) {
+  if (status === 'Active') return 'active';
+  if (status === 'Disabled') return 'disabled';
+  return 'pending';
+}
+
+function upsertAccountRow(rows: SystemAccount[], account: SystemAccount) {
+  const matches = (row: SystemAccount) =>
+    row.studyScope === account.studyScope && ((account.userId && row.userId === account.userId) || row.email === account.email);
+  const exists = rows.some(matches);
+  if (!exists) return [account, ...rows];
+  return rows.map((row) => (matches(row) ? { ...row, ...account } : row));
+}
+
 type SystemField = {
+  studyId: string;
+  crfVersionId?: string;
+  crfVersion?: string;
   id: string;
   name: string;
-  type: string;
+  type: 'Text' | 'Number' | 'Dropdown' | 'Boolean';
   module: string;
   updatedAt: string;
   status: '启用' | '草稿' | '停用';
+  options: string[];
+  required: boolean;
+  validationRule: string;
+  conditionalLogic: string;
 };
 
 type PermissionRow = {
@@ -1917,7 +2601,7 @@ const systemAccounts: SystemAccount[] = [
   { name: '中央 CRC', email: 'lz-crc@demo.linzight', role: 'LZ_CRC', roleLabel: 'LZ CRC / 中央 CRC', studyScope: 'LGL-1111 / RWD-NMO-2026 / LZXK-01', status: 'Active', lastLogin: '2026-05-07' },
   { name: 'CRF 管理员', email: 'crf-admin@demo.linzight', role: 'LZ_CRF_ADMIN', roleLabel: 'LZ CRF 管理员', studyScope: 'LGL-1111 / RWD-NMO-2026 / LZXK-01', status: 'Active', lastLogin: '2026-05-06' },
   { name: '平台数据管理员', email: 'lz-dm@demo.linzight', role: 'LZ_DATA_MANAGER', roleLabel: 'LZ 数据管理员', studyScope: 'RWD-NMO-2026', status: 'Active', lastLogin: '2026-05-06' },
-  { name: '约翰·伦格', email: 'pi@demo.linzight', role: 'STUDY_PI', roleLabel: '研究 PI / 医生', studyScope: 'LGL-1111', status: 'Active', lastLogin: '2026-05-07' },
+  { name: '任约翰', email: 'pi@demo.linzight', role: 'STUDY_PI', roleLabel: '研究 PI / 医生', studyScope: 'LGL-1111', status: 'Active', lastLogin: '2026-05-07' },
   { name: '林清妍', email: 'crc@demo.linzight', role: 'STUDY_CRC', roleLabel: '研究 CRC', studyScope: 'LGL-1111', status: 'Active', lastLogin: '2026-05-07' },
   { name: '顾明远', email: 'config@demo.linzight', role: 'STUDY_CONFIG_ADMIN', roleLabel: '研究配置管理员', studyScope: 'LGL-1111 / RWD-NMO-2026', status: 'Active', lastLogin: '2026-05-06' },
   { name: '陈序', email: 'dm@demo.linzight', role: 'STUDY_DATA_MANAGER', roleLabel: '研究数据管理员', studyScope: 'LGL-1111', status: 'Active', lastLogin: '2026-05-06' },
@@ -1928,7 +2612,20 @@ const systemAccounts: SystemAccount[] = [
   { name: '肺癌数据管理员', email: 'lung-dm@demo.linzight', role: 'STUDY_DATA_MANAGER', roleLabel: '研究数据管理员', studyScope: 'LZXK-01', status: 'Active', lastLogin: '2026-05-07' }
 ];
 
-const systemFields: SystemField[] = systemCrfFields;
+const lungStudyFields: SystemField[] = [
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-001', name: '驱动基因突变', type: 'Dropdown', module: '肺癌耐药研究字段', updatedAt: '2026-04-27', status: '启用', options: ['EGFR', 'ALK', 'ROS1', '其他'], required: true, validationRule: 'required', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-002', name: '耐药机制', type: 'Dropdown', module: '肺癌耐药研究字段', updatedAt: '2026-04-27', status: '启用', options: ['T790M', 'MET扩增', '组织学转化', '未知'], required: true, validationRule: 'required', conditionalLogic: 'driver_gene_mutation is not empty' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-003', name: '治疗线数', type: 'Number', module: '肺癌耐药研究字段', updatedAt: '2026-04-27', status: '启用', options: [], required: false, validationRule: 'integer >= 1', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-004', name: 'RECIST 评估', type: 'Dropdown', module: '肺癌耐药研究字段', updatedAt: '2026-04-27', status: '启用', options: ['CR', 'PR', 'SD', 'PD'], required: false, validationRule: '', conditionalLogic: '' }
+];
+
+const systemFields: SystemField[] = [
+  ...systemCrfFields.flatMap((field) => [
+    { ...field, studyId: 'LGL-1111', options: [], required: false, validationRule: '', conditionalLogic: '' },
+    { ...field, id: `NMO-${field.id}`, studyId: 'RWD-NMO-2026', options: [], required: false, validationRule: '', conditionalLogic: '' }
+  ]),
+  ...lungStudyFields
+];
 const systemVisitPlans: StudyVisitPlanRecord[] = studyVisitPlans;
 
 const permissionRows: PermissionRow[] = [
@@ -1974,34 +2671,133 @@ const systemStatusTone: Record<SystemAccount['status'], 'success' | 'warning' | 
   Pending: 'warning',
   Disabled: 'danger'
 };
+const systemFieldTypeOptions: SystemField['type'][] = ['Text', 'Number', 'Dropdown', 'Boolean'];
+const systemFieldStatusOptions: SystemField['status'][] = ['启用', '草稿', '停用'];
 
-export function SystemManagementPage() {
+function schemaTypeFromSystemFieldType(type: SystemField['type']) {
+  if (type === 'Number') return 'number';
+  if (type === 'Dropdown') return 'select';
+  if (type === 'Boolean') return 'boolean';
+  return 'text';
+}
+
+function schemaFromSystemFields(studyId: string, version: string, fields: SystemField[]) {
+  const sections = Array.from(
+    fields
+      .filter((field) => field.studyId === studyId)
+      .reduce((groups, field, index) => {
+        const section = groups.get(field.module) ?? { id: field.module.toLowerCase().replace(/[^a-z0-9]+/g, '-'), title: field.module, fields: [] as Array<Record<string, unknown>> };
+        section.fields.push({
+          id: field.id,
+          name: field.name,
+          sourceName: field.name,
+          sourceColumn: index + 1,
+          type: schemaTypeFromSystemFieldType(field.type),
+          status: field.status,
+          options: field.options,
+          required: field.required,
+          validationRule: field.validationRule,
+          conditionalLogic: field.conditionalLogic
+        });
+        groups.set(field.module, section);
+        return groups;
+      }, new Map<string, { id: string; title: string; fields: Array<Record<string, unknown>> }>())
+      .values()
+  );
+  return {
+    version,
+    name: `${studyId} CRF ${version}`,
+    source: 'system-management',
+    releasedAt: new Date().toISOString().slice(0, 10),
+    fieldCount: fields.filter((field) => field.studyId === studyId).length,
+    studyId,
+    sections
+  };
+}
+
+function nextCrfDraftVersion(versions: StudyCrfVersionRecord[]) {
+  const numericVersions = versions
+    .map((record) => record.version.match(/^V?(\d+)(?:\.(\d+))?/i))
+    .filter((match): match is RegExpMatchArray => Boolean(match))
+    .map((match) => [Number(match[1]), Number(match[2] ?? '0')] as const)
+    .sort((a, b) => b[0] - a[0] || b[1] - a[1]);
+  const [major, minor] = numericVersions[0] ?? [1, 0];
+  return `V${major}.${minor + 1}`;
+}
+
+const systemStudyOptions = ['LGL-1111', 'RWD-NMO-2026', 'LZXK-01'];
+
+export function SystemManagementPage({ currentUser }: { currentUser?: AuthenticatedUser | null } = {}) {
+  const { t } = useI18n();
+  const lockedStudyId = getCurrentScopedStudyId();
+  const availableSystemStudies = useMemo(() => {
+    if (lockedStudyId) return [lockedStudyId];
+    const userStudyIds = currentUser?.studyScope?.studyIds;
+    if (userStudyIds?.length) return userStudyIds;
+    return systemStudyOptions;
+  }, [currentUser, lockedStudyId]);
+  const [selectedSystemStudyId, setSelectedSystemStudyId] = useState(lockedStudyId ?? availableSystemStudies[0] ?? 'LGL-1111');
+  const scopedStudyId = availableSystemStudies.includes(selectedSystemStudyId) ? selectedSystemStudyId : availableSystemStudies[0] ?? 'LGL-1111';
   const [systemQuery, setSystemQuery] = useState('');
   const [accountPage, setAccountPage] = useState(1);
   const [fieldPage, setFieldPage] = useState(1);
+  const [accountRows, setAccountRows] = useState<SystemAccount[]>(systemAccounts);
+  const [fieldRows, setFieldRows] = useState<SystemField[]>(systemFields);
+  const [fieldEditor, setFieldEditor] = useState<SystemField | null>(null);
+  const [crfVersionRows, setCrfVersionRows] = useState<StudyCrfVersionRecord[]>([]);
+  const [crfMigrationPreview, setCrfMigrationPreview] = useState<CrfMigrationPreview | null>(null);
+  const [crfMigrationRows, setCrfMigrationRows] = useState<CrfMigrationApprovalRecord[]>([]);
+  const [visitPlanRows, setVisitPlanRows] = useState<StudyVisitPlanRecord[]>(systemVisitPlans);
+  const [systemActionStatus, setSystemActionStatus] = useState('等待系统管理操作');
   const normalizedQuery = systemQuery.trim().toLowerCase();
   const visibleAccounts = useMemo(() => {
-    if (!normalizedQuery) return systemAccounts;
-    return systemAccounts.filter((account) =>
+    const scopedAccounts = scopedStudyId
+      ? accountRows.filter((account) => account.studyScope === '全部 Study' || account.studyScope.split('/').map((item) => item.trim()).includes(scopedStudyId))
+      : accountRows;
+    if (!normalizedQuery) return scopedAccounts;
+    return scopedAccounts.filter((account) =>
       [account.name, account.email, account.role, account.roleLabel, account.studyScope, account.status].some((item) => item.toLowerCase().includes(normalizedQuery))
     );
-  }, [normalizedQuery]);
+  }, [accountRows, normalizedQuery, scopedStudyId]);
 
   const visibleFields = useMemo(() => {
-    if (!normalizedQuery) return systemFields;
-    return systemFields.filter((field) =>
-      [field.id, field.name, field.type, field.module, field.status].some((item) => item.toLowerCase().includes(normalizedQuery))
+    const scopedFields = scopedStudyId ? fieldRows.filter((field) => field.studyId === scopedStudyId) : fieldRows;
+    if (!normalizedQuery) return scopedFields;
+    return scopedFields.filter((field) =>
+      [field.studyId, field.id, field.name, field.type, field.module, field.status].some((item) => item.toLowerCase().includes(normalizedQuery))
     );
-  }, [normalizedQuery]);
+  }, [fieldRows, normalizedQuery, scopedStudyId]);
 
   const visibleVisitPlans = useMemo(() => {
-    if (!normalizedQuery) return systemVisitPlans;
-    return systemVisitPlans.filter((plan) =>
+    const scopedPlans = scopedStudyId ? visitPlanRows.filter((plan) => plan.studyId === scopedStudyId) : visitPlanRows;
+    if (!normalizedQuery) return scopedPlans;
+    return scopedPlans.filter((plan) =>
       [plan.id, plan.studyId, plan.code, plan.name, plan.visitType, plan.status, plan.requiredForms.join('/'), plan.requiredSamples.join('/')].some((item) =>
         item.toLowerCase().includes(normalizedQuery)
       )
     );
-  }, [normalizedQuery]);
+  }, [normalizedQuery, scopedStudyId, visitPlanRows]);
+  const fieldModuleOptions = useMemo(() => {
+    const scopedFields = scopedStudyId ? fieldRows.filter((field) => field.studyId === scopedStudyId) : fieldRows;
+    return Array.from(new Set(scopedFields.map((field) => field.module).filter(Boolean))).sort();
+  }, [fieldRows, scopedStudyId]);
+  const visibleCrfVersions = useMemo(() => {
+    const scopedVersions = scopedStudyId ? crfVersionRows.filter((version) => version.studyId === scopedStudyId) : crfVersionRows;
+    return scopedVersions.slice(0, 4);
+  }, [crfVersionRows, scopedStudyId]);
+  const draftCrfVersion = visibleCrfVersions.find((version) => version.status === 'draft');
+  const visibleCrfMigrations = useMemo(() => {
+    const scopedMigrations = scopedStudyId ? crfMigrationRows.filter((migration) => migration.studyId === scopedStudyId) : crfMigrationRows;
+    return scopedMigrations.slice(0, 3);
+  }, [crfMigrationRows, scopedStudyId]);
+  const activeCrfMigration = visibleCrfMigrations.find((migration) => migration.status === 'pending' || migration.status === 'approved');
+  const activeCrfMigrationRequiresSeparateReviewer = Boolean(activeCrfMigration?.requestedBy && activeCrfMigration.requestedBy === currentUser?.id);
+
+  useEffect(() => {
+    if (!availableSystemStudies.includes(selectedSystemStudyId)) {
+      setSelectedSystemStudyId(availableSystemStudies[0] ?? 'LGL-1111');
+    }
+  }, [availableSystemStudies, selectedSystemStudyId]);
 
   const accountTotalPages = Math.max(1, Math.ceil(visibleAccounts.length / systemAccountPageSize));
   const safeAccountPage = Math.min(accountPage, accountTotalPages);
@@ -2016,21 +2812,358 @@ export function SystemManagementPage() {
     safeFieldPage * systemFieldPageSize
   );
 
+  useEffect(() => {
+    if (!scopedStudyId) return;
+    let ignore = false;
+
+    void Promise.allSettled([
+      fetchStudyVisitPlans(scopedStudyId),
+      fetchStudyMembers(scopedStudyId),
+      fetchStudyCrfFields(scopedStudyId),
+      fetchStudyCrfVersions(scopedStudyId),
+      fetchStudyCrfMigrations(scopedStudyId)
+    ])
+      .then(([visitPlanResult, memberResult, crfFieldResult, crfVersionResult, crfMigrationResult]) => {
+        if (ignore) return;
+        if (visitPlanResult.status === 'fulfilled' && visitPlanResult.value.length) {
+          setVisitPlanRows((rows) => [
+            ...rows.filter((plan) => plan.studyId !== scopedStudyId),
+            ...visitPlanResult.value
+          ]);
+        }
+        if (memberResult.status === 'fulfilled' && memberResult.value.length) {
+          const memberAccounts = memberResult.value.map(accountFromStudyMember);
+          setAccountRows((rows) => memberAccounts.reduce((nextRows, account) => upsertAccountRow(nextRows, account), rows));
+        }
+        if (crfFieldResult.status === 'fulfilled' && crfFieldResult.value.length) {
+          setFieldRows((rows) => [
+            ...rows.filter((field) => field.studyId !== scopedStudyId),
+            ...crfFieldResult.value
+          ]);
+        }
+        if (crfVersionResult.status === 'fulfilled' && crfVersionResult.value.length) {
+          setCrfVersionRows((rows) => [
+            ...rows.filter((version) => version.studyId !== scopedStudyId),
+            ...crfVersionResult.value
+          ]);
+        }
+        if (crfMigrationResult.status === 'fulfilled' && crfMigrationResult.value.length) {
+          setCrfMigrationRows((rows) => [
+            ...rows.filter((migration) => migration.studyId !== scopedStudyId),
+            ...crfMigrationResult.value
+          ]);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      ignore = true;
+    };
+  }, [scopedStudyId]);
+
+  async function createSystemAccount() {
+    const index = accountRows.length + 1;
+    const studyScope = scopedStudyId ?? 'LGL-1111';
+    const suffix = Date.now().toString().slice(-6);
+    const nextAccount: SystemAccount = {
+      name: `新账户 ${index}`,
+      email: `study-crc-${studyScope.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${suffix}@demo.linzight`,
+      role: 'STUDY_CRC',
+      roleLabel: '研究 CRC',
+      studyScope,
+      status: 'Pending',
+      lastLogin: '-'
+    };
+    setAccountRows((rows) => [nextAccount, ...rows]);
+    setAccountPage(1);
+    setSystemActionStatus('用户账户正在创建并同步 Study 成员...');
+    try {
+      const user = await createUserAccount({
+        username: nextAccount.email,
+        display_name: nextAccount.name,
+        role: 'STUDY_CRC',
+        password: 'demo123',
+        status: 'active',
+        study_id: studyScope,
+        member_status: 'pending'
+      });
+      const savedAccount = accountFromApiUser(user, studyScope);
+      setAccountRows((rows) => upsertAccountRow(rows, savedAccount));
+      setSystemActionStatus(`用户账户已创建并加入 Study：${savedAccount.email}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无用户创建权限，账户已保存在本页');
+    }
+  }
+
+  function editSystemAccount(account: SystemAccount) {
+    setSystemQuery(account.email);
+    setSystemActionStatus(`已定位账户 ${account.email}，可继续按角色或状态筛选`);
+  }
+
+  async function toggleSystemAccount(account: SystemAccount) {
+    const nextStatus: SystemAccount['status'] = account.status === 'Disabled' ? 'Active' : 'Disabled';
+    const userId = account.userId ?? userIdForEmail(account.email);
+    const studyId = scopedStudyId && account.role.startsWith('STUDY_') ? scopedStudyId : undefined;
+    if (!userId || !studyId) {
+      setSystemActionStatus('平台级用户状态需要后端用户状态 API，当前已禁用');
+      return;
+    }
+
+    setAccountRows((rows) => rows.map((row) => (row.email === account.email ? { ...row, status: nextStatus } : row)));
+    setSystemActionStatus(`账户 ${account.email} 状态正在同步后端...`);
+    try {
+      const member = await upsertStudyMember(studyId, {
+        userId,
+        studyRole: account.role as ApiStudyMember['study_role'],
+        status: studyMemberStatusFromAccountStatus(nextStatus)
+      });
+      const savedAccount = accountFromStudyMember(member);
+      setAccountRows((rows) => upsertAccountRow(rows, savedAccount));
+      setSystemActionStatus(`Study 成员状态已同步后端：${savedAccount.email}`);
+    } catch {
+      setSystemActionStatus(`后端不可用或当前角色无 Study 成员写入权限，账户 ${account.email} 状态已保存在本页`);
+    }
+  }
+
+  async function createSystemField() {
+    const studyId = scopedStudyId ?? 'LGL-1111';
+    const nextField: SystemField = {
+      studyId,
+      id: `LOCAL-FIELD-${Date.now().toString().slice(-6)}`,
+      name: '新增字段',
+      type: 'Text',
+      module: '基本信息',
+      updatedAt: new Date().toISOString().slice(0, 10),
+      status: '草稿',
+      options: [],
+      required: false,
+      validationRule: '',
+      conditionalLogic: ''
+    };
+    setFieldRows((rows) => [nextField, ...rows]);
+    setFieldPage(1);
+    setSystemActionStatus('CRF 字段正在同步后端...');
+    try {
+      const created = await createStudyCrfField(nextField);
+      setFieldRows((rows) => rows.map((field) => (field.id === nextField.id && field.studyId === nextField.studyId ? created : field)));
+      setSystemActionStatus(`CRF 字段已同步后端：${created.id}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 CRF 配置写入权限，字段已保存在本页');
+    }
+  }
+
+  function startSystemFieldEdit(field: SystemField) {
+    setFieldEditor(field);
+    setSystemActionStatus(`正在编辑 CRF 字段 ${field.id}`);
+  }
+
+  function patchSystemFieldEditor(patch: Partial<SystemField>) {
+    setFieldEditor((current) => (current ? { ...current, ...patch, updatedAt: new Date().toISOString().slice(0, 10) } : current));
+  }
+
+  function patchSystemFieldOptions(rawOptions: string) {
+    patchSystemFieldEditor({
+      options: rawOptions
+        .split(/[,\n，、]/)
+        .map((option) => option.trim())
+        .filter(Boolean)
+    });
+  }
+
+  async function saveSystemFieldEditor() {
+    if (!fieldEditor) return;
+    const nextField: SystemField = {
+      ...fieldEditor,
+      name: fieldEditor.name.trim(),
+      module: fieldEditor.module.trim(),
+      options: fieldEditor.options.map((option) => option.trim()).filter(Boolean),
+      validationRule: fieldEditor.validationRule.trim(),
+      conditionalLogic: fieldEditor.conditionalLogic.trim(),
+      updatedAt: new Date().toISOString().slice(0, 10)
+    };
+    if (!nextField.name || !nextField.module) {
+      setSystemActionStatus('请填写字段名称和所属模块');
+      return;
+    }
+    setFieldRows((rows) => rows.map((row) => (row.id === nextField.id && row.studyId === nextField.studyId ? nextField : row)));
+    setSystemActionStatus(`CRF 字段 ${nextField.id} 正在保存到后端...`);
+    try {
+      const saved = await updateStudyCrfField(nextField);
+      setFieldRows((rows) => rows.map((row) => (row.id === saved.id && row.studyId === saved.studyId ? saved : row)));
+      setFieldEditor(null);
+      setSystemActionStatus(`CRF 字段 ${saved.id} 已保存：${saved.name} / ${saved.type} / ${saved.module} / ${saved.status}`);
+    } catch {
+      setSystemActionStatus(`后端不可用或当前角色无 CRF 配置写入权限，字段 ${nextField.id} 编辑已保存在本页`);
+    }
+  }
+
+  async function createCrfDraftVersion() {
+    const studyId = scopedStudyId ?? 'LGL-1111';
+    const latestVersions = await fetchStudyCrfVersions(studyId).catch(() => crfVersionRows.filter((version) => version.studyId === studyId));
+    if (latestVersions.length) {
+      setCrfVersionRows((rows) => [
+        ...rows.filter((version) => version.studyId !== studyId),
+        ...latestVersions
+      ]);
+    }
+    const nextVersion = nextCrfDraftVersion(latestVersions.length ? latestVersions : crfVersionRows.filter((version) => version.studyId === studyId));
+    const schema = schemaFromSystemFields(studyId, nextVersion, fieldRows);
+    setSystemActionStatus(`CRF 版本 ${nextVersion} 正在创建草稿...`);
+    try {
+      const created = await createStudyCrfVersion(studyId, {
+        version: nextVersion,
+        status: 'draft',
+        schema,
+        changeSummary: 'Draft created from System Management CRF fields.'
+      });
+      setCrfVersionRows((rows) => [created, ...rows.filter((version) => version.id !== created.id)]);
+      setCrfMigrationPreview(null);
+      setSystemActionStatus(`CRF 版本草稿已创建：${created.version}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 CRF 版本创建权限');
+    }
+  }
+
+  async function previewCrfMigration() {
+    const studyId = scopedStudyId ?? 'LGL-1111';
+    const targetVersion = draftCrfVersion?.version ?? nextCrfDraftVersion(crfVersionRows.filter((version) => version.studyId === studyId));
+    const schema = schemaFromSystemFields(studyId, targetVersion, fieldRows);
+    setSystemActionStatus('CRF 迁移预览正在生成...');
+    try {
+      const preview = await previewStudyCrfMigration(studyId, {
+        sourceVersionId: visibleCrfVersions.find((version) => version.status === 'published')?.id,
+        schema
+      });
+      setCrfMigrationPreview(preview);
+      setSystemActionStatus(`CRF 迁移预览已生成：新增 ${preview.summary.added}，变更 ${preview.summary.changed}，移除 ${preview.summary.removed}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 CRF 迁移预览权限');
+    }
+  }
+
+  async function requestCrfMigrationApproval() {
+    if (!draftCrfVersion) {
+      setSystemActionStatus('请先创建 CRF 草稿版本，再提交迁移审批');
+      return;
+    }
+    const sourceVersionId = visibleCrfVersions.find((version) => version.status === 'published')?.id;
+    setSystemActionStatus(`CRF 迁移 ${draftCrfVersion.version} 正在提交审批...`);
+    try {
+      const approval = await requestStudyCrfMigrationApproval(draftCrfVersion.studyId, {
+        sourceVersionId,
+        targetVersionId: draftCrfVersion.id,
+        note: 'Submitted from System Management CRF migration workflow.'
+      });
+      setCrfMigrationRows((rows) => [approval, ...rows.filter((migration) => migration.id !== approval.id)]);
+      setCrfMigrationPreview(approval.preview);
+      setSystemActionStatus(`CRF 迁移审批已提交：${approval.id}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 CRF 迁移审批提交权限');
+    }
+  }
+
+  async function approveCrfMigrationRequest(migration: CrfMigrationApprovalRecord) {
+    setSystemActionStatus(`CRF 迁移审批 ${migration.id} 正在批准...`);
+    try {
+      const approved = await approveStudyCrfMigration(migration.studyId, migration.id, 'Approved from System Management.');
+      setCrfMigrationRows((rows) => [approved, ...rows.filter((row) => row.id !== approved.id)]);
+      setSystemActionStatus(`CRF 迁移已批准：${approved.id}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 CRF 迁移批准权限');
+    }
+  }
+
+  async function applyCrfMigrationRequest(migration: CrfMigrationApprovalRecord) {
+    setSystemActionStatus(`CRF 迁移 ${migration.id} 正在应用并发布目标版本...`);
+    try {
+      const applied = await applyStudyCrfMigration(migration.studyId, migration.id, 'Applied from System Management.');
+      const versions = await fetchStudyCrfVersions(migration.studyId);
+      setCrfMigrationRows((rows) => [applied, ...rows.filter((row) => row.id !== applied.id)]);
+      setCrfVersionRows((rows) => [
+        ...rows.filter((version) => version.studyId !== migration.studyId),
+        ...versions
+      ]);
+      setCrfMigrationPreview(null);
+      setSystemActionStatus(`CRF 迁移已应用，目标版本已发布：${applied.targetVersionId}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 CRF 迁移应用权限');
+    }
+  }
+
+  async function publishCrfDraftVersion() {
+    if (!draftCrfVersion) {
+      setSystemActionStatus('当前没有可发布的 CRF 草稿版本');
+      return;
+    }
+    const schema = schemaFromSystemFields(draftCrfVersion.studyId, draftCrfVersion.version, fieldRows);
+    setSystemActionStatus(`CRF 版本 ${draftCrfVersion.version} 正在发布...`);
+    try {
+      const published = await updateStudyCrfVersion(draftCrfVersion.studyId, draftCrfVersion.id, {
+        status: 'published',
+        schema,
+        changeSummary: 'Published from System Management CRF fields.'
+      });
+      setCrfVersionRows((rows) =>
+        rows.map((version) => {
+          if (version.id === published.id) return published;
+          if (version.studyId === published.studyId && version.status === 'published') return { ...version, status: 'retired' };
+          return version;
+        })
+      );
+      setCrfMigrationPreview(null);
+      setSystemActionStatus(`CRF 版本已发布：${published.version}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 CRF 版本发布权限');
+    }
+  }
+
+  async function createVisitPlan() {
+    const studyId = scopedStudyId ?? 'LGL-1111';
+    const existingPlans = visitPlanRows.filter((plan) => plan.studyId === studyId);
+    const index = existingPlans.length + 1;
+    const nextPlan: StudyVisitPlanRecord = {
+      id: `LOCAL-VP-${Date.now().toString().slice(-6)}`,
+      studyId,
+      code: `V${index}`,
+      name: `V${index} 新增访视`,
+      visitType: '随访访视',
+      dayOffset: index * 30,
+      windowBeforeDays: 7,
+      windowAfterDays: 7,
+      requiredForms: ['follow_up'],
+      requiredSamples: ['血液'],
+      status: 'draft',
+      sortOrder: index
+    };
+    setVisitPlanRows((rows) => [nextPlan, ...rows]);
+    setSystemActionStatus('已新增本地访视计划草稿，正在同步后端...');
+    try {
+      const created = await createStudyVisitPlan(nextPlan);
+      setVisitPlanRows((rows) => rows.map((plan) => (plan.id === nextPlan.id ? created : plan)));
+      setSystemActionStatus(`访视计划已同步后端：${created.studyId} / ${created.code}`);
+    } catch {
+      setSystemActionStatus('后端不可用，访视计划草稿已保存在本页');
+    }
+  }
+
   return (
     <div className="content workspace-page system-management-page">
       <section className="system-management-hero module-card">
         <div className="system-management-title">
           <span>System Management</span>
-          <h2>系统管理</h2>
-          <p>Manage Study-scoped accounts, global roles, permission policies, and CRF versions. 管理 Study 成员、平台角色、权限策略和 CRF 版本。</p>
+          <h2>{t('系统管理')}</h2>
+          <p>{t('管理 Study 成员、平台角色、权限策略和 CRF 版本。')}</p>
         </div>
         <label className="system-study-select">
           <span>Study</span>
-          <select defaultValue="LGL-1111">
-            <option>LGL-1111</option>
-            <option>RWD-NMO-2026</option>
-            <option>LZXK-01</option>
-            <option>全部 Study</option>
+          <select
+            value={scopedStudyId}
+            disabled={Boolean(lockedStudyId) || availableSystemStudies.length <= 1}
+            onChange={(event) => setSelectedSystemStudyId(event.target.value)}
+          >
+            {availableSystemStudies.map((studyId) => (
+              <option value={studyId} key={studyId}>{studyId}</option>
+            ))}
           </select>
         </label>
       </section>
@@ -2039,8 +3172,8 @@ export function SystemManagementPage() {
         <header className="module-card__header system-overview-header">
           <div>
             <span>Account Overview</span>
-            <h2>Account Summary | 账户概览</h2>
-            <p>当前研究站点账户结构</p>
+            <h2>{t('Account Summary | 账户概览')}</h2>
+            <p>{t('当前研究站点账户结构')}</p>
           </div>
           <div className="system-overview-actions">
             <label className="system-search-box">
@@ -2056,22 +3189,22 @@ export function SystemManagementPage() {
               />
               <Icon name="microphone" />
             </label>
-            <button className="module-primary-button" type="button"><Icon name="userPlus" />Create Account<br /><span>新增账户</span></button>
+            <button className="module-primary-button" type="button" onClick={() => void createSystemAccount()}><Icon name="userPlus" />Create Account<br /><span>{t('新增账户')}</span></button>
           </div>
         </header>
         <div className="system-summary-grid">
           <div>
             <span>Total Accounts</span>
-            <strong>{systemAccounts.length}</strong>
+            <strong>{accountRows.length}</strong>
             <small>Demo</small>
           </div>
           <div>
             <span>Global Roles</span>
-            <strong>{systemAccounts.filter((account) => account.role.startsWith('LZ_')).length}</strong>
+            <strong>{accountRows.filter((account) => account.role.startsWith('LZ_')).length}</strong>
           </div>
           <div>
             <span>Study Roles</span>
-            <strong>{systemAccounts.filter((account) => account.role.startsWith('STUDY_')).length}</strong>
+            <strong>{accountRows.filter((account) => account.role.startsWith('STUDY_')).length}</strong>
           </div>
           <div>
             <span>Studies</span>
@@ -2081,7 +3214,11 @@ export function SystemManagementPage() {
         <div className="system-global-actions">
           <Icon name="alerts" />
           <span>Global Actions</span>
-          <strong>Study 成员、CRF 版本、导出和权限策略变更均进入审计日志。</strong>
+          <strong>{t('Study 成员、CRF 版本、导出和权限策略变更均进入审计日志。')}</strong>
+        </div>
+        <div className="module-upload-status">
+          <Icon name="shield" />
+          <span>{t(systemActionStatus)}</span>
         </div>
       </section>
 
@@ -2090,8 +3227,8 @@ export function SystemManagementPage() {
           <section className="module-card">
             <header className="module-card__header">
               <div>
-                <h2>User Accounts & Roles List | 用户账户与角色列表</h2>
-                <span>按角色和状态管理研究团队账号</span>
+                <h2>{t('User Accounts & Roles List | 用户账户与角色列表')}</h2>
+                <span>{t('按角色和状态管理研究团队账号')}</span>
               </div>
             </header>
             <div className="module-table-wrap">
@@ -2108,22 +3245,33 @@ export function SystemManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedAccounts.map((account) => (
+                  {pagedAccounts.map((account) => {
+                    const canToggleAccount = Boolean((account.userId ?? userIdForEmail(account.email)) && scopedStudyId && account.role.startsWith('STUDY_'));
+                    return (
                     <tr key={`${account.email}-${account.name}`}>
-                      <td>{account.name}</td>
+                      <td>{t(account.name)}</td>
                       <td>{account.email}</td>
-                      <td><span className={`system-role-pill system-role-pill--${roleTone[account.role]}`}>{account.role} | {account.roleLabel}</span></td>
-                      <td>{account.studyScope}</td>
-                      <td><span className={`status-pill status-pill--${systemStatusTone[account.status]}`}>{account.status}</span></td>
+                      <td><span className={`system-role-pill system-role-pill--${roleTone[account.role]}`}>{account.role} | {t(account.roleLabel)}</span></td>
+                      <td>{t(account.studyScope)}</td>
+                      <td><span className={`status-pill status-pill--${systemStatusTone[account.status]}`}>{t(account.status)}</span></td>
                       <td>{account.lastLogin}</td>
                       <td>
                         <div className="module-table-actions">
-                          <button className="module-link-button" type="button">Edit</button>
-                          <button className="module-link-button module-link-button--danger" type="button">{account.status === 'Disabled' ? 'Enable' : 'Disable'}</button>
+                          <button className="module-link-button" type="button" onClick={() => editSystemAccount(account)}>{t('Edit')}</button>
+                          <button
+                            className="module-link-button module-link-button--danger"
+                            type="button"
+                            disabled={!canToggleAccount}
+                            title={canToggleAccount ? undefined : t('平台级用户状态需要后端用户状态 API，当前已禁用')}
+                            onClick={() => void toggleSystemAccount(account)}
+                          >
+                            {account.status === 'Disabled' ? t('Enable') : t('Disable')}
+                          </button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -2133,11 +3281,178 @@ export function SystemManagementPage() {
           <section className="module-card">
             <header className="module-card__header">
               <div>
-                <h2>Field & CRF Configuration | CRF 与字段配置</h2>
-                <span>维护每个 Study 独立 CRF 字段、类型、版本和所属模块</span>
+                <h2>{t('Field & CRF Configuration | CRF 与字段配置')}</h2>
+                <span>{t('维护每个 Study 独立 CRF 字段、类型、版本和所属模块')}</span>
               </div>
-              <button className="module-link-button module-link-button--primary" type="button"><Icon name="filePlus" />新增字段</button>
+              <button className="module-link-button module-link-button--primary" type="button" onClick={() => void createSystemField()}><Icon name="filePlus" />{t('新增字段')}</button>
             </header>
+            <div className="system-crf-version-panel">
+              <div>
+                <span>{t('CRF Version Workflow')}</span>
+                <strong>{draftCrfVersion ? `${t('Draft ready')}: ${draftCrfVersion.version}` : t('No draft version')}</strong>
+              </div>
+              <div className="system-crf-version-list">
+                {visibleCrfVersions.map((version, versionIndex) => (
+                  <span key={`${version.studyId}-${version.id}-${versionIndex}`} className={`status-pill status-pill--${version.status === 'published' ? 'success' : version.status === 'draft' ? 'warning' : 'info'}`}>
+                    {version.version} · {t(version.status)}
+                  </span>
+                ))}
+              </div>
+              <div className="system-crf-version-actions">
+                <button className="module-link-button" type="button" onClick={() => void previewCrfMigration()}>{t('Preview Migration')}</button>
+                <button className="module-link-button" type="button" onClick={() => void createCrfDraftVersion()}>{t('New Draft')}</button>
+                <button className="module-link-button" type="button" disabled={!draftCrfVersion} onClick={() => void requestCrfMigrationApproval()}>{t('Request Approval')}</button>
+                <button
+                  className="module-primary-button"
+                  type="button"
+                  disabled={!activeCrfMigration || activeCrfMigration.status !== 'approved' || activeCrfMigrationRequiresSeparateReviewer}
+                  title={activeCrfMigrationRequiresSeparateReviewer ? t('Separate reviewer required') : undefined}
+                  onClick={() => (activeCrfMigration?.status === 'approved' ? void applyCrfMigrationRequest(activeCrfMigration) : void publishCrfDraftVersion())}
+                >
+                  {t('Apply Approved')}
+                </button>
+              </div>
+            </div>
+            <div className="system-crf-approval-panel">
+              <div>
+                <strong>{t('CRF Migration Approval')}</strong>
+                <span>{activeCrfMigration ? `${activeCrfMigration.id} · ${t(activeCrfMigration.status)}` : t('No active migration request')}</span>
+                <span>{t('Execution logs are stored for request, approval, and apply steps.')}</span>
+              </div>
+              <div className="system-crf-approval-list">
+                {visibleCrfMigrations.length ? visibleCrfMigrations.map((migration) => {
+                  const requiresSeparateReviewer = Boolean(migration.requestedBy && migration.requestedBy === currentUser?.id);
+                  return (
+                    <div key={migration.id} className="system-crf-approval-row">
+                        <span>{migration.id}</span>
+                        <strong>{migration.preview.source_version} → {migration.preview.target_version ?? migration.targetVersionId}</strong>
+                        <span className={`status-pill status-pill--${migration.status === 'applied' ? 'success' : migration.status === 'approved' ? 'info' : 'warning'}`}>{t(migration.status)}</span>
+                        <span>{t('Added')}: {migration.preview.summary.added} / {t('Changed')}: {migration.preview.summary.changed} / {t('Removed')}: {migration.preview.summary.removed}</span>
+                        {requiresSeparateReviewer ? <span className="status-pill status-pill--warning">{t('Separate reviewer required')}</span> : null}
+                        <div className="system-crf-execution-report">
+                          <span>{t('Execution Logs')}: {migration.executionLogs.length}</span>
+                          {migration.executionLogs.length ? (
+                            <ul>
+                              {migration.executionLogs.map((log) => (
+                                <li key={log.id}>
+                                  <span className={`status-pill status-pill--${log.status === 'applied' || log.status === 'approved' ? 'success' : log.status === 'blocked' ? 'danger' : 'info'}`}>
+                                    {t(log.step)} · {t(log.status)}
+                                  </span>
+                                  <strong>{log.actor_id ?? '-'}</strong>
+                                  <time>{log.created_at.slice(0, 16).replace('T', ' ')}</time>
+                                  <small>{t(log.message)}</small>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                        <div className="module-table-actions">
+                          <button
+                            className="module-link-button"
+                            type="button"
+                            disabled={migration.status !== 'pending' || requiresSeparateReviewer}
+                            title={requiresSeparateReviewer ? t('Separate reviewer required') : undefined}
+                            onClick={() => void approveCrfMigrationRequest(migration)}
+                          >
+                            {t('Approve')}
+                          </button>
+                          <button
+                            className="module-link-button module-link-button--primary"
+                            type="button"
+                            disabled={migration.status !== 'approved' || requiresSeparateReviewer}
+                            title={requiresSeparateReviewer ? t('Separate reviewer required') : undefined}
+                            onClick={() => void applyCrfMigrationRequest(migration)}
+                          >
+                            {t('Apply')}
+                          </button>
+                        </div>
+                    </div>
+                  );
+                }) : (
+                  <span>{t('No migration approvals yet')}</span>
+                )}
+              </div>
+            </div>
+            {crfMigrationPreview ? (
+              <div className="system-crf-migration-preview">
+                <div className="system-crf-migration-summary">
+                  <strong>{t('Migration Preview')}</strong>
+                  <span>{t('Added')}: {crfMigrationPreview.summary.added}</span>
+                  <span>{t('Changed')}: {crfMigrationPreview.summary.changed}</span>
+                  <span>{t('Removed')}: {crfMigrationPreview.summary.removed}</span>
+                  <span>{t('Unchanged')}: {crfMigrationPreview.summary.unchanged}</span>
+                </div>
+                <div className="system-crf-migration-details">
+                  <strong>{t('变更明细')}</strong>
+                  {[crfMigrationPreview.added, crfMigrationPreview.changed, crfMigrationPreview.removed].every((items) => items.length === 0) ? (
+                    <span>{t('无字段级差异')}</span>
+                  ) : null}
+                  {crfMigrationPreview.added.slice(0, 3).map((field) => (
+                    <span key={`added-${field.id}`}>{t('新增字段项')}: {field.id} · {t(field.name)}</span>
+                  ))}
+                  {crfMigrationPreview.changed.slice(0, 3).map((field) => (
+                    <span key={`changed-${field.id}`}>{t('变更字段项')}: {field.id} · {field.changes.map((change) => t(change)).join(', ')}</span>
+                  ))}
+                  {crfMigrationPreview.removed.slice(0, 3).map((field) => (
+                    <span key={`removed-${field.id}`}>{t('移除字段项')}: {field.id} · {t(field.name)}</span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {fieldEditor ? (
+              <div className="system-field-editor">
+                <div className="system-field-editor__title">
+                  <span>{t('Edit CRF Field')}</span>
+                  <strong>{fieldEditor.id}</strong>
+                </div>
+                <label>
+                  <span>{t('Field Name')}</span>
+                  <input value={fieldEditor.name} onChange={(event) => patchSystemFieldEditor({ name: event.target.value })} />
+                </label>
+                <label>
+                  <span>{t('Type')}</span>
+                  <select value={fieldEditor.type} onChange={(event) => patchSystemFieldEditor({ type: event.target.value as SystemField['type'] })}>
+                    {systemFieldTypeOptions.map((type) => <option key={type}>{type}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>{t('CRF Module')}</span>
+                  <input list="system-field-module-options" value={fieldEditor.module} onChange={(event) => patchSystemFieldEditor({ module: event.target.value })} />
+                  <datalist id="system-field-module-options">
+                    {fieldModuleOptions.map((module) => <option key={module} value={module} />)}
+                  </datalist>
+                </label>
+                <label>
+                  <span>{t('Status')}</span>
+                  <select value={fieldEditor.status} onChange={(event) => patchSystemFieldEditor({ status: event.target.value as SystemField['status'] })}>
+                    {systemFieldStatusOptions.map((status) => <option key={status} value={status}>{t(status)}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>{t('Required')}</span>
+                  <select value={fieldEditor.required ? 'true' : 'false'} onChange={(event) => patchSystemFieldEditor({ required: event.target.value === 'true' })}>
+                    <option value="true">{t('Required')}</option>
+                    <option value="false">{t('Optional')}</option>
+                  </select>
+                </label>
+                <label>
+                  <span>{t('Options')}</span>
+                  <input value={fieldEditor.options.join(', ')} onChange={(event) => patchSystemFieldOptions(event.target.value)} placeholder={t('Comma-separated options')} />
+                </label>
+                <label>
+                  <span>{t('Validation')}</span>
+                  <input value={fieldEditor.validationRule} onChange={(event) => patchSystemFieldEditor({ validationRule: event.target.value })} placeholder="e.g. integer >= 0" />
+                </label>
+                <label>
+                  <span>{t('Conditional Logic')}</span>
+                  <input value={fieldEditor.conditionalLogic} onChange={(event) => patchSystemFieldEditor({ conditionalLogic: event.target.value })} placeholder="e.g. field == value" />
+                </label>
+                <div className="system-field-editor__actions">
+                  <button className="module-link-button" type="button" onClick={() => setFieldEditor(null)}>{t('Cancel')}</button>
+                  <button className="module-primary-button" type="button" onClick={() => void saveSystemFieldEditor()}>{t('Save')}</button>
+                </div>
+              </div>
+            ) : null}
             <div className="module-table-wrap">
               <table className="module-table system-field-table">
                 <thead>
@@ -2152,18 +3467,18 @@ export function SystemManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedFields.map((field) => (
-                    <tr key={field.id}>
+                  {pagedFields.map((field, fieldIndex) => (
+                    <tr key={`${field.studyId}-${field.id}-${fieldIndex}`}>
                       <td>{field.id}</td>
-                      <td>{field.name}</td>
-                      <td>{field.type}</td>
-                      <td>{field.module}</td>
-                      <td><span className={field.status === '启用' ? 'status-pill status-pill--success' : field.status === '草稿' ? 'status-pill status-pill--warning' : 'status-pill status-pill--danger'}>{field.status}</span></td>
+                      <td>{t(field.name)}</td>
+                      <td>{t(field.type)}</td>
+                      <td>{t(field.module)}</td>
+                      <td><span className={field.status === '启用' ? 'status-pill status-pill--success' : field.status === '草稿' ? 'status-pill status-pill--warning' : 'status-pill status-pill--danger'}>{t(field.status)}</span></td>
                       <td>{field.updatedAt}</td>
                       <td>
                         <div className="module-table-actions">
-                          <button className="module-link-button" type="button">Edit</button>
-                          <button className="module-link-button" type="button"><Icon name="chevronDown" /></button>
+                          <button className="module-link-button" type="button" onClick={() => startSystemFieldEdit(field)}>Edit</button>
+                          <button className="module-link-button" type="button" onClick={() => setSystemActionStatus(`字段 ${field.id} 详情：${field.module} / ${field.type}`)}><Icon name="chevronDown" /></button>
                         </div>
                       </td>
                     </tr>
@@ -2177,10 +3492,10 @@ export function SystemManagementPage() {
           <section className="module-card">
             <header className="module-card__header">
               <div>
-                <h2>Visit Plan Configuration | 访视计划配置</h2>
-                <span>按 Study 配置访视时间窗、必填 CRF 表单和样本要求</span>
+                <h2>{t('Visit Plan Configuration | 访视计划配置')}</h2>
+                <span>{t('按 Study 配置访视时间窗、必填 CRF 表单和样本要求')}</span>
               </div>
-              <button className="module-link-button module-link-button--primary" type="button"><Icon name="filePlus" />新增访视</button>
+              <button className="module-link-button module-link-button--primary" type="button" onClick={() => void createVisitPlan()}><Icon name="filePlus" />{t('新增访视')}</button>
             </header>
             <div className="module-table-wrap">
               <table className="module-table system-visit-plan-table">
@@ -2201,12 +3516,12 @@ export function SystemManagementPage() {
                     <tr key={plan.id}>
                       <td>{plan.studyId}</td>
                       <td>{plan.code}</td>
-                      <td>{plan.name}</td>
+                      <td>{t(plan.name)}</td>
                       <td>D{plan.dayOffset}</td>
-                      <td>-{plan.windowBeforeDays} / +{plan.windowAfterDays} 天</td>
+                      <td>-{plan.windowBeforeDays} / +{plan.windowAfterDays} {t('天')}</td>
                       <td>{plan.requiredForms.join(', ')}</td>
-                      <td>{plan.requiredSamples.join('、') || '-'}</td>
-                      <td><span className={plan.status === 'active' ? 'status-pill status-pill--success' : plan.status === 'draft' ? 'status-pill status-pill--warning' : 'status-pill status-pill--danger'}>{plan.status}</span></td>
+                      <td>{plan.requiredSamples.map((sample) => t(sample)).join(' / ') || '-'}</td>
+                      <td><span className={plan.status === 'active' ? 'status-pill status-pill--success' : plan.status === 'draft' ? 'status-pill status-pill--warning' : 'status-pill status-pill--danger'}>{t(plan.status)}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -2219,8 +3534,8 @@ export function SystemManagementPage() {
           <section className="module-card system-permission-card">
             <header className="module-card__header">
               <div>
-                <h2>Permission Strategy Matrix | 权限策略矩阵</h2>
-                <span>平台级角色跨 Study；研究级角色只在所属 Study 内生效</span>
+                <h2>{t('Permission Strategy Matrix | 权限策略矩阵')}</h2>
+                <span>{t('平台级角色跨 Study；研究级角色只在所属 Study 内生效')}</span>
               </div>
             </header>
             <div className="module-table-wrap system-permission-wrap">
@@ -2236,11 +3551,11 @@ export function SystemManagementPage() {
                 <tbody>
                   {permissionRows.map((row) => (
                     <tr key={row.action}>
-                      <td>{row.action}</td>
+                      <td>{t(row.action)}</td>
                       {permissionColumns.map((column) => (
                         <td key={column.key}>
                           <label className="system-permission-check">
-                            <input type="checkbox" checked={Boolean(row.values[column.key])} readOnly aria-label={`${row.action}-${column.key}`} />
+                            <input type="checkbox" checked={Boolean(row.values[column.key])} readOnly aria-label={`${t(row.action)}-${column.key}`} />
                             <span />
                           </label>
                         </td>
@@ -2257,21 +3572,57 @@ export function SystemManagementPage() {
   );
 }
 
-export function ReportsPage() {
+const exportWriteRoles = new Set<UserRole>(['LZ_ADMIN', 'LZ_CRC', 'LZ_DATA_MANAGER', 'STUDY_DATA_MANAGER']);
+const qualityWriteRoles = new Set<UserRole>(['LZ_ADMIN', 'LZ_CRC', 'LZ_DATA_MANAGER', 'STUDY_DATA_MANAGER']);
+
+function canCreateExports(user?: { role: UserRole } | null) {
+  return Boolean(user && exportWriteRoles.has(user.role));
+}
+
+function canRunQualityValidation(user?: { role: UserRole } | null) {
+  return Boolean(user && qualityWriteRoles.has(user.role));
+}
+
+export function ReportsPage({ currentUser }: { currentUser?: { role: UserRole } | null } = {}) {
+  const { t } = useI18n();
   const [exportStatus, setExportStatus] = useState('等待导出任务');
   const [qualityStatus, setQualityStatus] = useState('等待数据校验');
+  const [exportJobs, setExportJobs] = useState<Record<string, ApiExportJob>>({});
+  const exportEnabled = canCreateExports(currentUser);
+  const qualityEnabled = canRunQualityValidation(currentUser);
 
   async function handleCreateExport(record: ReportRecord) {
+    if (!exportEnabled) {
+      setExportStatus('当前角色没有导出写入权限，请切换到数据管理员或 CRC');
+      return;
+    }
     setExportStatus(`${record.name} 生成中...`);
     try {
       const job = await createExportJob(record.type.toLowerCase());
+      setExportJobs((jobs) => ({ ...jobs, [record.id]: job }));
       setExportStatus(`${record.name} 已生成：${job.id}`);
     } catch {
       setExportStatus('导出失败：请确认已登录且当前角色具备导出权限');
     }
   }
 
+  async function handleDownloadExport(record: ReportRecord) {
+    const job = exportJobs[record.id];
+    if (!job) return;
+    setExportStatus(`${record.name} 下载中...`);
+    try {
+      await downloadExportJob(job);
+      setExportStatus(`${record.name} 已开始下载：${job.id}`);
+    } catch {
+      setExportStatus('下载失败：请确认导出文件仍可访问');
+    }
+  }
+
   async function handleRunQualityChecks() {
+    if (!qualityEnabled) {
+      setQualityStatus('当前角色没有数据校验写入权限，请切换到数据管理员或 CRC');
+      return;
+    }
     setQualityStatus('数据校验运行中...');
     try {
       const result = await runQualityChecks();
@@ -2284,38 +3635,53 @@ export function ReportsPage() {
   return (
     <div className="content workspace-page">
       <section className="module-kpis">
-        <ModuleKpi icon="reports" label="可导出报表" value="4" helper="PDF / XLSX / CSV / ZIP" />
-        <ModuleKpi icon="database" label="数据库记录" value="32" helper="患者、样本、组学检测" tone="green" />
-        <ModuleKpi icon="shield" label="审计轨迹" value="18" helper="含知情同意与数据修改" tone="purple" />
-        <ModuleKpi icon="clock" label="待复核" value="1" helper="SDTM 数据集草稿" tone="orange" />
+        <ModuleKpi icon="reports" label={t('可导出报表')} value="4" helper="PDF / XLSX / CSV / ZIP" />
+        <ModuleKpi icon="database" label={t('数据库记录')} value="32" helper={t('患者、样本、组学检测')} tone="green" />
+        <ModuleKpi icon="shield" label={t('审计轨迹')} value="18" helper={t('含知情同意与数据修改')} tone="purple" />
+        <ModuleKpi icon="clock" label={t('待复核')} value="1" helper={t('SDTM 数据集草稿')} tone="orange" />
       </section>
 
       <div className="report-grid">
-        {reportRecords.map((record) => <ReportCard record={record} key={record.id} onExport={handleCreateExport} />)}
+        {reportRecords.map((record) => (
+          <ReportCard
+            record={record}
+            exportJob={exportJobs[record.id]}
+            exportEnabled={exportEnabled}
+            key={record.id}
+            onDownload={handleDownloadExport}
+            onExport={handleCreateExport}
+          />
+        ))}
       </div>
 
       <section className="module-card">
         <header className="module-card__header">
           <div>
-            <h2>数据导出流水线</h2>
-            <span>用于 Demo 后端 API 联调</span>
+            <h2>{t('数据导出流水线')}</h2>
+            <span>{t('用于 Demo 后端 API 联调')}</span>
           </div>
-          <button className="module-link-button module-link-button--primary" type="button" onClick={handleRunQualityChecks}><Icon name="check" />运行校验</button>
+          <button
+            className="module-link-button module-link-button--primary"
+            type="button"
+            disabled={!qualityEnabled}
+            title={qualityEnabled ? undefined : t('当前角色没有数据校验写入权限')}
+            onClick={handleRunQualityChecks}
+          ><Icon name="check" />{t('运行校验')}</button>
         </header>
         <div className="module-upload-status">
           <Icon name="reports" />
-          <span>{exportStatus}</span>
+          <span>{t(exportStatus)}</span>
         </div>
         <div className="module-upload-status">
           <Icon name="shield" />
-          <span>{qualityStatus}</span>
+          <span>{t(qualityStatus)}</span>
         </div>
         <div className="pipeline-grid">
           {['患者主数据', '临床 CRF', '样本台账', '多组学结果', '知情同意审计', '数据包归档'].map((item, index) => (
             <div className="pipeline-step" key={item}>
               <span>{index + 1}</span>
-              <strong>{item}</strong>
-              <small>{index < 4 ? '可导出' : '待复核'}</small>
+              <strong>{t(item)}</strong>
+              <small>{t(index < 4 ? '可导出' : '待复核')}</small>
             </div>
           ))}
         </div>
@@ -2324,29 +3690,55 @@ export function ReportsPage() {
   );
 }
 
-function ReportCard({ record, onExport }: { record: ReportRecord; onExport: (record: ReportRecord) => void }) {
+function ReportCard({
+  record,
+  exportJob,
+  exportEnabled,
+  onDownload,
+  onExport
+}: {
+  record: ReportRecord;
+  exportJob?: ApiExportJob;
+  exportEnabled: boolean;
+  onDownload: (record: ReportRecord) => void;
+  onExport: (record: ReportRecord) => void;
+}) {
+  const { t } = useI18n();
   return (
     <article className="module-card report-card">
       <Icon name="reports" />
       <div>
-        <strong>{record.name}</strong>
-        <p>{record.scope}</p>
+        <strong>{t(record.name)}</strong>
+        <p>{t(record.scope)}</p>
       </div>
-      <DetailList rows={[['格式', record.type], ['状态', record.status], ['更新时间', record.updatedAt]]} />
-      <button className="module-primary-button" type="button" onClick={() => onExport(record)}><Icon name="file" />导出</button>
+      <DetailList rows={[[t('格式'), record.type], [t('状态'), t(record.status)], [t('更新时间'), record.updatedAt]]} />
+      <div className="module-header-actions">
+        <button
+          className="module-primary-button"
+          type="button"
+          disabled={!exportEnabled}
+          title={exportEnabled ? undefined : t('当前角色没有导出写入权限')}
+          onClick={() => onExport(record)}
+        ><Icon name="file" />{t('导出')}</button>
+        <button className="module-link-button module-link-button--primary" type="button" disabled={!exportJob || exportJob.status !== 'ready'} onClick={() => onDownload(record)}>
+          <Icon name="file" />{t('下载')}
+        </button>
+      </div>
     </article>
   );
 }
 
 export function HomeDashboardExtras() {
+  const { t } = useI18n();
+
   return (
     <section className="module-card">
-      <header className="module-card__header"><h2>快捷操作</h2></header>
+      <header className="module-card__header"><h2>{t('快捷操作')}</h2></header>
       <div className="quick-action-strip">
         {quickActions.map((action) => (
-          <button type="button" key={action.label}>
+          <button type="button" key={action.label} disabled title={t('快捷操作已在顶部工作台接入')}>
             <Icon name={action.icon} />
-            <span>{action.label}</span>
+            <span>{t(action.label)}</span>
           </button>
         ))}
       </div>

@@ -34,6 +34,7 @@ tmp/
 temp/
 private/
 private-data/
+backups/
 
 # Environment files. Keep checked-in examples only.
 .env

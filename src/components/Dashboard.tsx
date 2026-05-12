@@ -9,12 +9,15 @@ import { SmartSummaryCard } from './SmartSummaryCard';
 import { WorkflowProgressCard } from './WorkflowProgressCard';
 import { fetchAnalyticsSummary } from '../services/api';
 import type { ApiAnalysisSummary } from '../services/contracts';
+import { authStorageKey, normalizeAuthenticatedUser, type AuthenticatedUser } from '../data/auth';
 import type { PatientRecord } from '../data/patientCohort';
 import type { CohortStat, JourneyStage, KpiMetric, WorkflowItem } from '../types';
 
 interface DashboardProps {
+  currentUser?: AuthenticatedUser | null;
   selectedModule?: string;
   selectedPatient?: PatientRecord | null;
+  onNavigate?: (module: string) => void;
 }
 
 function formatCount(value: number) {
@@ -96,6 +99,11 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
   const samplePercent = percent(samplePatientCount, patientCount);
   const completedOmicsPercent = percent(summary.completed_omics_count, summary.omics_count);
   const overall = Math.round((100 + consentPercent + samplePercent + completedOmicsPercent) / 4);
+  const diseaseStats = Object.entries(summary.disease_distribution)
+    .filter(([, value]) => value > 0)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 4)
+    .map(([label, value]) => ({ label, value }));
 
   return {
     metrics: [
@@ -124,10 +132,7 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
     ],
     cohort: [
       { label: '患者总数', value: formatCount(patientCount), icon: 'patients', drillable: true },
-      { label: 'NPSLE', value: formatCount(summary.disease_distribution.NPSLE ?? 0), icon: 'activity', drillable: true },
-      { label: 'Non-NPSLE', value: formatCount(summary.disease_distribution['Non-NPSLE'] ?? 0), icon: 'patients', drillable: true },
-      { label: 'MS / NMOSD', value: formatCount((summary.disease_distribution.MS ?? 0) + (summary.disease_distribution.NMOSD ?? 0)), icon: 'dna', drillable: true },
-      { label: 'HC', value: formatCount(summary.disease_distribution.HC ?? 0), icon: 'check' },
+      ...diseaseStats.map(({ label, value }) => ({ label, value: formatCount(value), icon: 'dna' as const, drillable: true })),
       { label: '平均完整度', value: `${summary.data_completeness_avg}%`, icon: 'visits', drillable: true }
     ],
     workflow: [
@@ -147,8 +152,51 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
   };
 }
 
-export function Dashboard({ selectedModule, selectedPatient }: DashboardProps = {}) {
+const quickActionModuleMap: Record<string, string> = {
+  新增患者: '患者队列管理',
+  数据录入: '临床数据采集',
+  样本录入: '样本及检测',
+  随访录入: '临床数据采集',
+  知情同意: '知情同意',
+  患者旅程: '患者旅程',
+  数据分析: '数据分析',
+  系统管理: '系统管理'
+};
+
+const quickWriteActions = new Set(['新增患者', '数据录入', '样本录入', '随访录入']);
+const quickWriteRoles = new Set(['LZ_ADMIN', 'LZ_CRC', 'STUDY_CRC']);
+const systemManagementRoles = new Set(['LZ_ADMIN', 'LZ_CRF_ADMIN', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_CONFIG_ADMIN', 'STUDY_DATA_MANAGER']);
+
+function getDisabledQuickActions(user?: AuthenticatedUser | null) {
+  const disabled = new Set<string>();
+  if (!user) return disabled;
+
+  if (!quickWriteRoles.has(user.role)) {
+    quickWriteActions.forEach((label) => disabled.add(label));
+  }
+
+  if (!systemManagementRoles.has(user.role)) {
+    disabled.add('系统管理');
+  }
+
+  return disabled;
+}
+
+function getStoredDashboardUser() {
+  if (typeof window === 'undefined') return null;
+  const rawUser = window.localStorage.getItem(authStorageKey);
+  if (!rawUser) return null;
+
+  try {
+    return normalizeAuthenticatedUser(JSON.parse(rawUser));
+  } catch {
+    return null;
+  }
+}
+
+export function Dashboard({ currentUser, selectedModule, selectedPatient, onNavigate = () => undefined }: DashboardProps = {}) {
   const [summary, setSummary] = useState<ApiAnalysisSummary | null>(null);
+  const dashboardUser = currentUser ?? getStoredDashboardUser();
 
   useEffect(() => {
     let ignore = false;
@@ -165,6 +213,8 @@ export function Dashboard({ selectedModule, selectedPatient }: DashboardProps = 
   }, []);
 
   const dashboardData = useMemo(() => buildDashboardData(summary ?? undefined), [summary]);
+  const disabledQuickActions = useMemo(() => getDisabledQuickActions(dashboardUser), [dashboardUser]);
+  const systemQuickActionDisabled = disabledQuickActions.has('系统管理');
 
   return (
     <div className="content">
@@ -182,17 +232,23 @@ export function Dashboard({ selectedModule, selectedPatient }: DashboardProps = 
 
       <section className="charts-grid" aria-label="看板可视化">
         <EnrollmentTrendCard enrolled={dashboardData.enrollmentValue} delta={dashboardData.enrollmentDelta} />
-        <PatientJourneyCard stages={dashboardData.journey} rates={dashboardData.journeyRateValues} />
-        <OmicsTatCard stats={dashboardData.omics} tatValue={summary ? 'API' : '2.6'} tatUnit={summary ? '' : '天'} tatLabel={summary ? '实时统计' : '中位 TAT'} />
+        <PatientJourneyCard stages={dashboardData.journey} rates={dashboardData.journeyRateValues} onOpenPatients={() => onNavigate('患者队列管理')} />
+        <OmicsTatCard stats={dashboardData.omics} tatValue={summary ? 'API' : '2.6'} tatUnit={summary ? '' : '天'} tatLabel={summary ? '实时统计' : '中位 TAT'} onOpenLab={() => onNavigate('样本及检测')} />
       </section>
 
       <section className="bottom-grid" aria-label="运营概览">
-        <CohortOverviewCard stats={dashboardData.cohort} />
+        <CohortOverviewCard stats={dashboardData.cohort} onOpenCohort={() => onNavigate('患者队列管理')} />
         <WorkflowProgressCard items={dashboardData.workflow} overall={dashboardData.workflowOverall} />
-        <SmartSummaryCard />
+        <SmartSummaryCard onViewInsights={() => onNavigate('数据分析')} />
       </section>
 
-      <QuickActions />
+      <QuickActions
+        disabledActions={disabledQuickActions}
+        disabledReasons={{ 系统管理: '当前角色不能进入系统管理' }}
+        moreDisabled={systemQuickActionDisabled}
+        onMore={() => onNavigate('系统管理')}
+        onSelectAction={(label) => onNavigate(quickActionModuleMap[label] ?? '首页工作台')}
+      />
     </div>
   );
 }

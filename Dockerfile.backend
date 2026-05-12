@@ -1,0 +1,20 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    LINZIGHT_DATABASE_URL=sqlite:////data/linzight_demo.db \
+    LINZIGHT_UPLOADS_DIR=/uploads
+
+WORKDIR /app
+
+COPY backend/requirements.txt ./backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
+
+COPY backend ./backend
+COPY resource/sle-crf-v0.1.schema.json ./resource/sle-crf-v0.1.schema.json
+
+RUN mkdir -p /data /uploads
+
+EXPOSE 8000
+
+CMD ["sh", "-c", "if [ ! -s /data/linzight_demo.db ]; then python -m backend.seed; fi && uvicorn backend.main:app --host 0.0.0.0 --port 8000"]

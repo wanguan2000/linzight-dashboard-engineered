@@ -71,10 +71,10 @@ const lzxkMembership = (userId: string, studyRole: StudyRole): StudyMembership =
 export const demoUsers: DemoUser[] = [
   {
     id: 'USR-001',
-    name: '约翰·伦格',
+    name: '任约翰',
     role: 'STUDY_PI',
     roleLabel: roleLabels.STUDY_PI,
-    initials: 'JL',
+    initials: 'RJ',
     username: 'pi@demo.linzight',
     password: 'demo123',
     studyScope: { scopeType: 'own_studies', studyIds: ['LGL-1111'] },
@@ -272,6 +272,16 @@ export function userCanAccessStudy(user: Pick<AuthenticatedUser, 'studyScope'>, 
   if (!user.studyScope?.scopeType) return false;
   if (user.studyScope.scopeType === 'all_studies') return true;
   return Boolean(user.studyScope.studyIds?.includes(studyId));
+}
+
+export function narrowAuthenticatedUserToStudy(user: AuthenticatedUser, studyId: string): AuthenticatedUser {
+  if (!userCanAccessStudy(user, studyId)) return user;
+
+  return {
+    ...user,
+    studyScope: { scopeType: 'own_studies', studyIds: [studyId] },
+    studyMemberships: user.studyMemberships.filter((membership) => membership.study_id === studyId)
+  };
 }
 
 export function visibleStudyLabel(user?: Pick<AuthenticatedUser, 'studyScope'> | null) {

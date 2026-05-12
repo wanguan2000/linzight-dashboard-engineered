@@ -18,7 +18,7 @@ function highlightText(text: string, emphasis: string[] = []): ReactNode[] {
   });
 }
 
-export function SmartSummaryCard() {
+export function SmartSummaryCard({ onViewInsights = () => undefined }: { onViewInsights?: () => void }) {
   const { locale, t } = useI18n();
 
   return (
@@ -26,19 +26,19 @@ export function SmartSummaryCard() {
       title="智能摘要"
       action={
         <span className="summary-badge">
-          <Icon name="sparkles" /> LinZight AI 生成
+          <Icon name="sparkles" /> {t('LinZight AI 生成')}
         </span>
       }
     >
       <div className="summary-list">
         {summaryItems.map((item) => (
           <div className="summary-list__row" key={item.text}>
-            <span className={`summary-list__marker summary-list__marker--${item.theme}`}>{item.marker}</span>
+            <span className={`summary-list__marker summary-list__marker--${item.theme}`}>{locale === 'zh-CN' ? item.marker : t(item.marker)}</span>
             <p>{locale === 'zh-CN' ? highlightText(item.text, item.emphasis) : t(item.text)}</p>
           </div>
         ))}
       </div>
-      <button className="link-button link-button--block" type="button">查看全部洞察 →</button>
+      <button className="link-button link-button--block" type="button" onClick={onViewInsights}>{t('查看全部洞察')} →</button>
     </Card>
   );
 }

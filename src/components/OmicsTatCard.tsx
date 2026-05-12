@@ -1,23 +1,28 @@
 import { omicsStats } from '../data/dashboard';
+import { useI18n } from '../i18n/I18nProvider';
 import { Card } from './Card';
 
 export function OmicsTatCard({
   stats = omicsStats,
   tatValue = '2.6',
   tatUnit = '天',
-  tatLabel = '中位 TAT'
+  tatLabel = '中位 TAT',
+  onOpenLab = () => undefined
 }: {
   stats?: typeof omicsStats;
   tatValue?: string;
   tatUnit?: string;
   tatLabel?: string;
+  onOpenLab?: () => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <Card
       title="多组学检测的统计"
       action={
-        <select className="select-sm" aria-label="多组学时间范围">
-          <option>本月</option>
+        <select className="select-sm" aria-label={t('多组学时间范围')}>
+          <option>{t('本月')}</option>
         </select>
       }
     >
@@ -34,23 +39,23 @@ export function OmicsTatCard({
         </svg>
         <div className="donut-stat__center">
           <strong>{tatValue}</strong>
-          {tatUnit ? <span>{tatUnit}</span> : null}
-          <small>{tatLabel}</small>
+          {tatUnit ? <span>{t(tatUnit)}</span> : null}
+          <small>{t(tatLabel)}</small>
         </div>
       </div>
 
       <div className="omics-list">
         {stats.map((stat) => (
           <div className="omics-list__item" key={stat.label}>
-            <span>{stat.label}</span>
+            <span>{t(stat.label)}</span>
             <div>
               <strong>{stat.value}</strong>
-              {stat.delta && <small>{stat.delta}</small>}
+              {stat.delta && <small>{t(stat.delta)}</small>}
             </div>
           </div>
         ))}
       </div>
-      <button className="link-button link-button--block" type="button">查看实验室看板 →</button>
+      <button className="link-button link-button--block" type="button" onClick={onOpenLab}>{t('查看实验室看板')} →</button>
     </Card>
   );
 }

@@ -42,18 +42,26 @@ npm run build
 
 ## Docker 部署建议
 
-当前仓库尚未提供 Dockerfile。后续建议：
+仓库提供最小 Docker Compose Demo 环境：
 
-- `Dockerfile.frontend`：Node build + Nginx serve `dist/`。
-- `Dockerfile.backend`：Python slim + FastAPI + uvicorn。
-- `docker-compose.yml`：frontend、backend、postgres 或 sqlite volume。
+```bash
+docker compose up --build
+```
 
-最小方向：
+- `Dockerfile.frontend`：Node 22 Alpine 构建 Vite 应用，并用 `vite preview` 暴露 `5173`。
+- `Dockerfile.backend`：Python 3.11 slim，安装 FastAPI 依赖，复制 `backend/` 与 CRF schema，并运行 uvicorn。
+- `docker-compose.yml`：启动 frontend + backend，后端使用 SQLite volume `/data/linzight_demo.db` 和上传 volume `/uploads`。
+- 后端首次启动时如果 `/data/linzight_demo.db` 不存在，会执行 `python -m backend.seed` 生成三 Study Demo 数据。
+
+默认访问地址：
 
 ```text
-frontend: npm run build -> serve dist
-backend: pip install -r backend/requirements.txt -> uvicorn backend.main:app
+frontend: http://127.0.0.1:5173/
+backend:  http://127.0.0.1:8000/
+health:   http://127.0.0.1:8000/health
 ```
+
+本 Compose 文件用于本地 Demo / private beta 验证，不是生产编排。生产环境应替换为正式认证、独立数据库、对象存储、受控 CORS、TLS、日志采集和备份策略。
 
 ## 环境变量
 
@@ -66,8 +74,22 @@ backend: pip install -r backend/requirements.txt -> uvicorn backend.main:app
 - `LINZIGHT_DATABASE_URL`
 - `LINZIGHT_POSTGRES_URL`
 - `LINZIGHT_UPLOADS_DIR`
+- `LINZIGHT_BACKUP_DIR`
 
 真实生产密钥应放入部署平台 secret，不要写入仓库。
+
+更完整的环境变量、Nginx 反向代理示例和 Demo SQLite 备份恢复说明见 `docs/deployment-ops.md`。
+
+## Demo 备份恢复
+
+本地 private beta 验证可备份 SQLite Demo 数据库和上传目录：
+
+```bash
+npm run backup:sqlite
+npm run restore:sqlite -- backups/linzight-<timestamp>
+```
+
+恢复脚本会先在 `backups/pre-restore-<timestamp>` 保留覆盖前副本。生产环境必须使用正式数据库备份、对象存储版本管理、访问控制和恢复演练，不能依赖该 Demo 脚本。
 
 ## 生产部署注意事项
 

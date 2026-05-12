@@ -21,10 +21,12 @@
 
 - `POST /auth/login`
 - `GET /auth/me`
+- `POST /users`
 
 当前认证使用 demo token，不是生产级认证。
 
 登录响应会返回新角色码、`study_scope` 和 `study_memberships`。后续请求需要携带 Bearer token，后端按 `study_id` 自动过滤授权数据。
+`POST /users` 用于系统管理页创建账号；`STUDY_CONFIG_ADMIN` 可在本 Study 内创建研究级账号并同步写入 `study_members`，平台级账号创建仅限 `LZ_ADMIN`。
 
 ### Studies 和权限
 
@@ -36,9 +38,23 @@
 - `PUT /studies/{study_id}/visit-plans/{plan_id}`
 - `GET /studies/{study_id}/crf-versions`
 - `POST /studies/{study_id}/crf-versions`
+- `POST /studies/{study_id}/crf-versions/migration-preview`
+- `PUT /studies/{study_id}/crf-versions/{version_id}`
+- `GET /studies/{study_id}/crf-migrations`
+- `POST /studies/{study_id}/crf-migrations`
+- `POST /studies/{study_id}/crf-migrations/{migration_id}/approve`
+- `POST /studies/{study_id}/crf-migrations/{migration_id}/apply`
+- `GET /studies/{study_id}/crf-fields`
+- `POST /studies/{study_id}/crf-fields`
+- `PUT /studies/{study_id}/crf-fields/{field_id}`
 
 RWD EDC 主链路统一使用 `study_id`，不使用 `project_id`。样本检测项目编号使用 `testing_project_id`。
 当前 seed 包含 `LGL-1111`、`RWD-NMO-2026` 和 `LZXK-01`；`LZXK-01` 是真实世界肺癌耐药研究，默认 20 名患者，并有独立 Study 角色和 CRF V1.0。
+`POST /studies/{study_id}/members` 与成员列表返回同一展示结构，包含 `username` 和 `display_name`，用于系统管理页 upsert 后直接刷新成员行。
+`/studies/{study_id}/crf-fields` 从当前 Study CRF version 的 `schema_json.sections[].fields[]` 读取和写入字段配置，新增或更新字段会写入 `audit_logs`。字段配置支持 `options`、`required`、`validation_rule` 和 `conditional_logic`，供系统管理页维护下拉选项、必填状态、基础校验规则和条件逻辑。
+`PUT /studies/{study_id}/crf-versions/{version_id}` 支持草稿发布；发布时后端会写入 `published_at`，并将同 Study 的旧 published 版本置为 `retired`。
+`POST /studies/{study_id}/crf-versions/migration-preview` 比较当前 published 版本与目标 schema，返回 added/removed/changed/unchanged 摘要，不写入数据库。
+`/studies/{study_id}/crf-migrations` 保存 CRF 迁移审批流：针对 draft 目标版本创建 pending request，approve 后变为 approved，apply 后发布目标版本并退休旧 published 版本；提交人不能批准或应用自己的 request。响应包含 `execution_logs`，记录 request/approve/apply/blocked 步骤；每一步同时写入 `audit_logs`。
 
 ### Patients
 
@@ -71,6 +87,7 @@ RWD EDC 主链路统一使用 `study_id`，不使用 `project_id`。样本检测
 - `PUT /follow-up-records/{record_id}`
 
 随访记录隶属于患者信息，使用 `study_id + patient_id` 隔离，可选通过 `visit_id` 关联某次随访访视。字段覆盖随访时间、方式、随访人、生存状态、疾病状态、症状体征、影像/检验结论、疗效评估、转移情况、不良事件、生活质量、失访原因和记录时间。
+临床数据采集页新增/编辑随访行时写入该接口；计划访视仍由 `study_visit_plans` 管理。
 
 ### Omics
 
@@ -145,3 +162,4 @@ SQLite 存储层优先使用 JSONB（二进制 JSON）BLOB：
 - 加入 HTTPS、CSRF/CORS 策略、审计和速率限制。
 - 所有患者相关数据必须脱敏或加权限控制。
 - API schema 变更必须同步 `contracts.ts`、文档和测试。
+- OpenAPI schema 快照通过 `npm run export:openapi` 生成到 `docs/openapi.json`。

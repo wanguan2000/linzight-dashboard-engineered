@@ -32,7 +32,7 @@ STUDY_ROWS = [
     (LUNG_RESISTANCE_STUDY_ID, LUNG_RESISTANCE_STUDY_ID, "真实世界肺癌耐药研究", "NSCLC / EGFR-TKI resistance / ALK resistance", "RWD", "active", "LinZight"),
 ]
 USER_ROWS = [
-    ("USR-001", "pi@demo.linzight", "约翰·伦格", "investigator", "STUDY_PI"),
+    ("USR-001", "pi@demo.linzight", "任约翰", "investigator", "STUDY_PI"),
     ("USR-002", "crc@demo.linzight", "林清妍", "crc", "STUDY_CRC"),
     ("USR-003", "dm@demo.linzight", "陈序", "data_manager", "STUDY_DATA_MANAGER"),
     ("USR-004", "config@demo.linzight", "顾明远", "project_admin", "STUDY_CONFIG_ADMIN"),

@@ -28,21 +28,25 @@
 - 随访记录：`follow_up_records` 独立于 CRF 版本配置，隶属于患者信息，绑定 `study_id + patient_id`，可选关联 `visit_id`，Patient Journey 已接入展示。
 - FastAPI Demo 后端：患者、样本、组学、知情同意、CRF、文件、质量、导出、审计和患者全景接口。
 - 静态 HTML 导出：八个业务模块各一个入口页面。
-- Beta 发布准备验证记录：`docs/05-beta-release-readiness.md`，包含本轮 CRUD smoke、浏览器 smoke、安全扫描、敏感信息检查、配置检查和剩余正式化工作。
+- 本地 Docker Compose Demo：`Dockerfile.frontend`、`Dockerfile.backend` 和 `docker-compose.yml` 可一键启动前端、后端、SQLite volume 与上传 volume。
+- Demo 运维脚本：`npm run backup:sqlite` 与 `npm run restore:sqlite -- backups/<dir>` 支持本地 SQLite/上传目录备份恢复，说明见 `docs/deployment-ops.md`。
+- OpenAPI schema 导出：`npm run export:openapi` 生成 `docs/openapi.json`，CI 和 release gate 会检查该契约快照。
+- Beta 发布准备验证记录：`docs/05-beta-release-readiness.md`，包含本轮 CRUD smoke、API/UI smoke、release gate、浏览器 smoke、安全扫描、敏感信息检查、配置检查和剩余正式化工作。
 
 ## 尚未实现功能
 
 - 完整生产级认证、字段级脱敏、权限审批流和用户管理。
 - 真实 EDC/EMR/LIS/组学平台 API 接入。
-- 前端自动化测试和后端 API 测试。
-- CI/CD、GitHub Actions 和自动发布流程。
-- Docker 镜像和生产部署模板。
+- 前端组件/真实浏览器自动化测试；当前已提供 `npm run smoke:api`、`npm run export:openapi`、`npm run smoke:ui`、`npm run release:check` 和 `npm test` 综合 smoke，后续可扩展为完整权限矩阵和浏览器交互测试。
+- CI/CD 自动发布流程；GitHub Actions 已覆盖基础验证、release gate 和静态 HTML artifact 上传。
+- 生产级部署模板；当前已提供本地 Demo 用 `Dockerfile.frontend`、`Dockerfile.backend` 和 `docker-compose.yml`。
 - 数据脱敏、字段级权限和合规审批工作流。
 - 真实文件对象存储、病毒扫描和长期归档策略。
 
 ## 已知问题
 
-- `test` 脚本尚未配置。
+- `npm test` 已配置为 API smoke、OpenAPI 导出、静态导出、UI smoke 和 release gate 的组合检查。
+- Docker daemon 未运行时只能执行 `docker compose config`；实际镜像构建需要先启动本机 Docker。
 - 后端使用 Demo token 和 SQLite，不能直接作为生产认证/数据层。
 - `resource/clinical-patient-journey-nextjs/` 是历史 Next.js 原型参考，不是当前主应用。
 - `exports/html/` 是生成产物；修改源码后必须重新运行 `npm run export:html` 才能同步。
@@ -51,11 +55,11 @@
 
 ## 下一步开发优先级
 
-1. 增加 GitHub Actions：install、lint、build、后端 compile。
-2. 增加最小前端测试和 API smoke test。
+1. 增加最小前端浏览器测试。
+2. 扩展 GitHub Actions 分支保护状态检查。
 3. 抽离 mock data，形成可替换的 demo dataset 层。
 4. 细化 API 契约和错误处理。
-5. 增加 Dockerfile / docker-compose 供本地一键启动。
+5. 将当前 Docker Compose Demo 扩展为生产部署模板、备份恢复和对象存储方案。
 6. 将当前 Demo Study 权限模型扩展为生产级认证、字段级权限、脱敏审批和审计策略。
 7. 接入真实后端前完成字段字典和数据质量规则。
 
@@ -82,6 +86,7 @@ npm run build
 
 ```bash
 npm run export:html
+npm run smoke:ui
 ```
 
 如需检查后端：

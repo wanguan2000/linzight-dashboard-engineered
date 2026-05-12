@@ -31,6 +31,8 @@ ExportStatus = Literal["queued", "running", "ready", "failed"]
 QualitySeverity = Literal["info", "warning", "critical"]
 QualityStatus = Literal["open", "resolved", "waived"]
 VisitPlanStatus = Literal["active", "draft", "retired"]
+StudyCrfFieldStatus = Literal["启用", "草稿", "停用"]
+StudyCrfFieldType = Literal["Text", "Number", "Dropdown", "Boolean"]
 FollowUpMethod = Literal["门诊", "电话", "线上", "家访", "其他"]
 SurvivalStatus = Literal["存活", "死亡", "未知"]
 
@@ -55,6 +57,17 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserPublic
+
+
+class UserCreate(BaseModel):
+    id: str | None = None
+    username: str = Field(min_length=3)
+    display_name: str = Field(min_length=1)
+    role: UserRole = "STUDY_CRC"
+    password: str = Field(default="demo123", min_length=6)
+    status: Literal["active", "disabled"] = "active"
+    study_id: str | None = None
+    member_status: Literal["active", "pending", "disabled"] = "pending"
 
 
 class PatientBase(BaseModel):
@@ -351,3 +364,51 @@ class StudyCrfVersionCreate(BaseModel):
     status: Literal["draft", "published", "retired"] = "draft"
     schema_payload: dict[str, Any] = Field(default_factory=dict, alias="schema")
     change_summary: str = ""
+
+
+class StudyCrfVersionUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    status: Literal["draft", "published", "retired"] | None = None
+    schema_payload: dict[str, Any] | None = Field(default=None, alias="schema")
+    change_summary: str | None = None
+
+
+class StudyCrfMigrationPreviewRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    source_version_id: str | None = None
+    schema_payload: dict[str, Any] = Field(default_factory=dict, alias="schema")
+
+
+class StudyCrfMigrationApprovalCreate(BaseModel):
+    source_version_id: str | None = None
+    target_version_id: str
+    note: str = ""
+
+
+class StudyCrfMigrationApprovalAction(BaseModel):
+    note: str = ""
+
+
+class StudyCrfFieldCreate(BaseModel):
+    id: str | None = None
+    name: str
+    type: StudyCrfFieldType = "Text"
+    module: str
+    status: StudyCrfFieldStatus = "草稿"
+    options: list[str] = Field(default_factory=list)
+    required: bool = False
+    validation_rule: str = ""
+    conditional_logic: str = ""
+
+
+class StudyCrfFieldUpdate(BaseModel):
+    name: str | None = None
+    type: StudyCrfFieldType | None = None
+    module: str | None = None
+    status: StudyCrfFieldStatus | None = None
+    options: list[str] | None = None
+    required: bool | None = None
+    validation_rule: str | None = None
+    conditional_logic: str | None = None

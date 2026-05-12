@@ -47,11 +47,20 @@ export const crfFieldDefaults = Object.fromEntries(
   sleCrfTemplate.exampleRows.flatMap((row) => Object.entries(row.values))
 ) as Record<string, string>;
 
+export type SystemCrfFieldType = 'Text' | 'Number' | 'Dropdown' | 'Boolean';
+
+function systemCrfFieldType(type: CrfFieldType): SystemCrfFieldType {
+  if (type === 'number') return 'Number';
+  if (type === 'select') return 'Dropdown';
+  if (type === 'boolean') return 'Boolean';
+  return 'Text';
+}
+
 export const systemCrfFields = sleCrfTemplate.sections.flatMap((section) =>
   section.fields.map((field) => ({
     id: field.id,
     name: field.name,
-    type: field.type === 'number' ? 'Number' : field.type === 'select' ? 'Dropdown' : field.type === 'boolean' ? 'Boolean' : 'Text',
+    type: systemCrfFieldType(field.type),
     module: section.title,
     updatedAt: crfTemplateReleasedAt,
     status: '启用' as const

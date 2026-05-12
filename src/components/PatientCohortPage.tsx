@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   calculateClinicalCompleteness,
-  diseases,
-  lungResistanceDiseases,
   type DiseaseType,
   type OmicsStatus,
   type PatientRecord
 } from '../data/patientCohort';
 import { Icon } from './Icon';
 import { KpiProgress } from './MetricGrid';
-import { fetchDemoDataset } from '../services/api';
+import type { AuthenticatedUser } from '../data/auth';
+import { createPatientRecord, fetchDemoDataset, getCurrentScopedStudyId, isPermissionError, updatePatientRecord } from '../services/api';
+import { useI18n } from '../i18n/I18nProvider';
 import type { IconName } from '../types';
 
-const diseaseOptions: Array<'全部' | DiseaseType> = ['全部', ...diseases, ...lungResistanceDiseases];
 const patientPageSize = 5;
 const diseasePalette: Record<DiseaseType, string> = {
   NPSLE: 'var(--blue)',
@@ -55,6 +54,36 @@ type CompletenessTrend = {
   label: string;
   axis: [string, string, string];
 };
+
+type PatientEditorMode = 'create' | 'edit';
+
+const patientWriteRoles = new Set(['LZ_ADMIN', 'LZ_CRC', 'STUDY_CRC']);
+
+function canWritePatients(user?: AuthenticatedUser | null) {
+  return Boolean(user && patientWriteRoles.has(user.role));
+}
+
+function currentStudyDefaultDisease(studyId?: string): DiseaseType {
+  if (studyId === 'LZXK-01') return 'NSCLC';
+  return 'NPSLE';
+}
+
+function makeDraftPatient(studyId?: string): PatientRecord {
+  const today = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+  return {
+    studyId: studyId ?? 'LGL-1111',
+    name: `NEW-${today}`,
+    hospitalNo: '',
+    sex: '女',
+    age: 45,
+    diseaseType: currentStudyDefaultDisease(studyId),
+    organs: [],
+    samples: [],
+    omicsStatus: '样本采集',
+    note: '',
+    clinicalData: {}
+  };
+}
 
 function sampleText(patient: PatientRecord) {
   return patient.samples.map((sample) => `${sample.type}${sample.count > 1 ? ` x${sample.count}` : ''}`).join(' / ');
@@ -109,8 +138,8 @@ function getCompletenessValues(patients: PatientRecord[]) {
 
 function buildDiseaseDistribution(patients: PatientRecord[]): DiseaseDistributionItem[] {
   const total = patients.length;
+  const diseaseOptions = Array.from(new Set(patients.map((patient) => patient.diseaseType)));
   return diseaseOptions
-    .filter((option): option is DiseaseType => option !== '全部')
     .map((label) => {
       const value = patients.filter((patient) => patient.diseaseType === label).length;
       return {
@@ -157,16 +186,14 @@ function buildKpiMetrics(patients: PatientRecord[]): CohortKpiMetric[] {
     acc[patient.diseaseType] = (acc[patient.diseaseType] ?? 0) + 1;
     return acc;
   }, {});
-  const npsleCount = countByDisease.NPSLE ?? 0;
-  const neuroInflammatoryCount = (countByDisease.NMOSD ?? 0) + (countByDisease.MS ?? 0);
-  const lungResistanceCount = lungResistanceDiseases.reduce((sum, disease) => sum + (countByDisease[disease] ?? 0), 0);
   const completeness = Number(average(getCompletenessValues(patients)).toFixed(1));
+  const topDiseases = Object.entries(countByDisease)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 3);
 
   return [
     { label: '总患者数', value: formatCount(patientCount), helper: '数据库实时', icon: 'patients' },
-    { label: 'NPSLE', value: formatCount(npsleCount), delta: formatPercent(npsleCount, patientCount), helper: '占总数', icon: 'check' },
-    { label: 'NMOSD / MS', value: formatCount(neuroInflammatoryCount), delta: formatPercent(neuroInflammatoryCount, patientCount), helper: '占总数', icon: 'dna' },
-    { label: '肺癌耐药', value: formatCount(lungResistanceCount), delta: formatPercent(lungResistanceCount, patientCount), helper: 'LZXK-01', icon: 'dna' },
+    ...topDiseases.map(([label, value]) => ({ label, value: formatCount(value), delta: formatPercent(value, patientCount), helper: '占总数', icon: 'dna' as IconName })),
     { label: '数据完整性', value: `${completeness}%`, delta: `${patientCount}例`, helper: '平均完整度', icon: 'check', progress: completeness }
   ];
 }
@@ -198,6 +225,7 @@ function buildCompletenessTrend(patients: PatientRecord[]): CompletenessTrend {
 }
 
 function PatientKpiGrid({ patients }: { patients: PatientRecord[] }) {
+  const { t } = useI18n();
   const metrics = buildKpiMetrics(patients);
 
   return (
@@ -205,12 +233,12 @@ function PatientKpiGrid({ patients }: { patients: PatientRecord[] }) {
       {metrics.map((metric) => (
         <article className="kpi-card patient-kpi" key={metric.label}>
           <div>
-            <p className="kpi-card__label">{metric.label}</p>
+            <p className="kpi-card__label">{t(metric.label)}</p>
             <strong className="kpi-card__value">{metric.value}</strong>
             <p className={`kpi-card__delta${metric.delta ? ' is-up' : ''}`}>
               {metric.delta ? <span className="delta-arrow">↑</span> : null}
               {metric.delta ? <span>{metric.delta}</span> : null}
-              <span>{metric.helper}</span>
+              <span>{t(metric.helper)}</span>
             </p>
           </div>
           {typeof metric.progress === 'number' ? (
@@ -225,6 +253,7 @@ function PatientKpiGrid({ patients }: { patients: PatientRecord[] }) {
 }
 
 function CohortOverviewPanel({ patients }: { patients: PatientRecord[] }) {
+  const { t } = useI18n();
   const distribution = buildDiseaseDistribution(patients);
 
   return (
@@ -235,13 +264,13 @@ function CohortOverviewPanel({ patients }: { patients: PatientRecord[] }) {
       <div className="cohort-overview">
         <div className="cohort-donut" style={{ background: buildDonutGradient(distribution) }}>
           <strong>{formatCount(patients.length)}</strong>
-          <span>总计</span>
+          <span>{t('总计')}</span>
         </div>
         <div className="cohort-legend">
           {distribution.map((item) => (
             <div className="cohort-legend__row" key={item.label}>
               <span className={`cohort-legend__dot cohort-legend__dot--${item.label.toLowerCase().replace('/', '-')}`} />
-              <span>{item.label}</span>
+              <span>{t(item.label)}</span>
               <strong>{item.value} ({item.percent})</strong>
             </div>
           ))}
@@ -252,13 +281,14 @@ function CohortOverviewPanel({ patients }: { patients: PatientRecord[] }) {
 }
 
 function CompletenessTrendPanel({ patients }: { patients: PatientRecord[] }) {
+  const { t } = useI18n();
   const trend = buildCompletenessTrend(patients);
 
   return (
     <section className="cohort-side-card" aria-label="数据完整性趋势">
       <header className="cohort-side-card__header">
         <h2>数据完整性趋势</h2>
-        <span>当前</span>
+        <span>{t('当前')}</span>
       </header>
       <div className="cohort-mini-chart">
         <svg viewBox="0 0 220 118" preserveAspectRatio="none" aria-hidden="true">
@@ -269,13 +299,14 @@ function CompletenessTrendPanel({ patients }: { patients: PatientRecord[] }) {
           <path d={trend.linePath} fill="none" stroke="#48b99b" strokeWidth="3" strokeLinecap="round" />
           <text x="178" y="23" className="chart-label">{trend.label}</text>
         </svg>
-        <div className="cohort-chart-axis">{trend.axis.map((label) => <span key={label}>{label}</span>)}</div>
+        <div className="cohort-chart-axis">{trend.axis.map((label) => <span key={label}>{t(label)}</span>)}</div>
       </div>
     </section>
   );
 }
 
 function SampleSummaryPanel({ patients }: { patients: PatientRecord[] }) {
+  const { t } = useI18n();
   const summary = buildSampleSummary(patients);
 
   return (
@@ -288,8 +319,8 @@ function SampleSummaryPanel({ patients }: { patients: PatientRecord[] }) {
           <div className={`sample-summary__item ${sampleSummaryClass(item.label)}`} key={item.label}>
             <Icon name={sampleSummaryIcon(item.label)} />
             <strong>{item.value}</strong>
-            <span>{item.label}</span>
-            <small>{item.helper}</small>
+            <span>{t(item.label)}</span>
+            <small>{t(item.helper)}</small>
           </div>
         ))}
       </div>
@@ -302,25 +333,28 @@ interface PatientTableProps {
   onEditPatient: (patient: PatientRecord) => void;
   onViewPatient: (patient: PatientRecord) => void;
   activePatientName?: string;
+  canEdit?: boolean;
 }
 
-function PatientTable({ patients, onEditPatient, onViewPatient, activePatientName }: PatientTableProps) {
+function PatientTable({ patients, onEditPatient, onViewPatient, activePatientName, canEdit = true }: PatientTableProps) {
+  const { t } = useI18n();
+
   return (
     <div className="patient-table-wrap">
       <table className="patient-table">
         <thead>
           <tr>
-            <th>患者编号</th>
-            <th>住院号</th>
-            <th>性别</th>
-            <th>年龄</th>
-            <th>疾病类型</th>
-            <th>受累脏器</th>
-            <th>样本采集</th>
-            <th>多组学检测</th>
-            <th>完整性</th>
-            <th>注释</th>
-            <th>操作</th>
+            <th>{t('患者编号')}</th>
+            <th>{t('住院号')}</th>
+            <th>{t('性别')}</th>
+            <th>{t('年龄')}</th>
+            <th>{t('疾病类型')}</th>
+            <th>{t('受累脏器')}</th>
+            <th>{t('样本采集')}</th>
+            <th>{t('多组学检测')}</th>
+            <th>{t('完整性')}</th>
+            <th>{t('注释')}</th>
+            <th>{t('操作')}</th>
           </tr>
         </thead>
         <tbody>
@@ -330,26 +364,33 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
               <tr className={patient.name === activePatientName ? 'is-active' : undefined} key={`${patient.studyId}-${patient.name}`}>
                 <td>{patient.name}</td>
                 <td>{patient.hospitalNo}</td>
-                <td>{patient.sex}</td>
+                <td>{t(patient.sex)}</td>
                 <td>{patient.age}</td>
-                <td><span className={`disease-pill disease-pill--${patient.diseaseType.toLowerCase().replace('-', '')}`}>{patient.diseaseType}</span></td>
-                <td>{patient.organs.join(' / ')}</td>
-                <td>{sampleText(patient)}</td>
-                <td><span className={`omics-pill ${statusClass(patient.omicsStatus)}`}>{patient.omicsStatus}</span></td>
+                <td><span className={`disease-pill disease-pill--${patient.diseaseType.toLowerCase().replace('-', '')}`}>{t(patient.diseaseType)}</span></td>
+                <td>{t(patient.organs.join(' / '))}</td>
+                <td>{t(sampleText(patient))}</td>
+                <td><span className={`omics-pill ${statusClass(patient.omicsStatus)}`}>{t(patient.omicsStatus)}</span></td>
                 <td><span className={`complete-pill ${completenessClass(completeness)}`}>{completeness}%</span></td>
-                <td className="patient-note">{patient.note}</td>
+                <td className="patient-note">{t(patient.note)}</td>
                 <td>
-                  <div className="patient-actions">
-                    <button type="button" onClick={() => onViewPatient(patient)}>查看</button>
-                    <button type="button" onClick={() => onEditPatient(patient)}>编辑</button>
-                  </div>
+	                  <div className="patient-actions">
+	                    <button type="button" onClick={() => onViewPatient(patient)}>{t('查看')}</button>
+	                    <button
+	                      type="button"
+	                      disabled={!canEdit}
+	                      title={canEdit ? undefined : t('当前角色没有患者写入权限')}
+	                      onClick={() => onEditPatient(patient)}
+	                    >
+	                      {t('编辑')}
+	                    </button>
+	                  </div>
                 </td>
               </tr>
             );
           })}
           {!patients.length && (
             <tr>
-              <td colSpan={11}>暂无匹配患者</td>
+              <td colSpan={11}>{t('暂无匹配患者')}</td>
             </tr>
           )}
         </tbody>
@@ -375,12 +416,17 @@ export function PatientListModule({
   onEditPatient = () => undefined,
   onViewPatient = () => undefined
 }: PatientListModuleProps) {
+  const { t } = useI18n();
   const [search, setSearch] = useState('');
   const [sex, setSex] = useState('全部');
   const [ageRange, setAgeRange] = useState('全部');
   const [disease, setDisease] = useState<'全部' | DiseaseType>('全部');
   const [sort, setSort] = useState('最近更新');
   const [currentPage, setCurrentPage] = useState(1);
+  const diseaseOptions = useMemo<Array<'全部' | DiseaseType>>(
+    () => ['全部', ...Array.from(new Set(patients.map((patient) => patient.diseaseType)))],
+    [patients]
+  );
 
   const filteredPatients = useMemo(() => {
     return patients
@@ -430,60 +476,60 @@ export function PatientListModule({
     <section className={`patient-list-card${className ? ` ${className}` : ''}`}>
       <header className="patient-list-card__header">
         <div>
-          <h2>患者列表</h2>
-          <p>按患者、样本和组学进度筛选队列</p>
+          <h2>{t('患者列表')}</h2>
+          <p>{t('按患者、样本和组学进度筛选队列')}</p>
         </div>
         <button className="module-primary-button" type="button" onClick={onCreatePatient}>
           <Icon name="filePlus" />
-          新建患者
+          {t('新建患者')}
         </button>
       </header>
 
       <div className="patient-controls">
         <label className="patient-search">
-          <span>患者搜索</span>
+          <span>{t('患者搜索')}</span>
           <div>
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="输入患者编号、住院号或疾病类型"
+              placeholder={t('输入患者编号、住院号或疾病类型')}
             />
             <Icon name="search" />
           </div>
         </label>
 
         <label>
-          <span>性别</span>
+          <span>{t('性别')}</span>
           <select value={sex} onChange={(event) => setSex(event.target.value)}>
-            <option>全部</option>
-            <option>男</option>
-            <option>女</option>
+            <option value="全部">{t('全部')}</option>
+            <option value="男">{t('男')}</option>
+            <option value="女">{t('女')}</option>
           </select>
         </label>
 
         <label>
-          <span>年龄范围</span>
+          <span>{t('年龄范围')}</span>
           <select value={ageRange} onChange={(event) => setAgeRange(event.target.value)}>
-            <option>全部</option>
-            <option>18-35</option>
-            <option>36-55</option>
-            <option>55+</option>
+            <option value="全部">{t('全部')}</option>
+            <option value="18-35">18-35</option>
+            <option value="36-55">36-55</option>
+            <option value="55+">55+</option>
           </select>
         </label>
 
         <label>
-          <span>疾病类型</span>
+          <span>{t('疾病类型')}</span>
           <select value={disease} onChange={(event) => setDisease(event.target.value as '全部' | DiseaseType)}>
-            {diseaseOptions.map((option) => <option key={option}>{option}</option>)}
+            {diseaseOptions.map((option) => <option value={option} key={option}>{t(option)}</option>)}
           </select>
         </label>
 
         <label>
-          <span>排序</span>
+          <span>{t('排序')}</span>
           <select value={sort} onChange={(event) => setSort(event.target.value)}>
-            <option>最近更新</option>
-            <option>完整性优先</option>
-            <option>年龄升序</option>
+            <option value="最近更新">{t('最近更新')}</option>
+            <option value="完整性优先">{t('完整性优先')}</option>
+            <option value="年龄升序">{t('年龄升序')}</option>
           </select>
         </label>
       </div>
@@ -496,11 +542,11 @@ export function PatientListModule({
       />
 
       <footer className="patient-list-card__footer">
-        <span>显示 {displayStart} 至 {displayEnd} 条，共 {filteredPatients.length} 条记录</span>
+        <span>{t(`显示 ${displayStart} 至 ${displayEnd} 条，共 ${filteredPatients.length} 条记录`)}</span>
         <div className="patient-pagination">
           <button
             type="button"
-            aria-label="上一页"
+            aria-label={t('上一页')}
             disabled={visiblePage === 1}
             onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
           >
@@ -524,7 +570,7 @@ export function PatientListModule({
             disabled={visiblePage === totalPages}
             onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
           >
-            下一页
+            {t('下一页')}
           </button>
         </div>
       </footer>
@@ -533,16 +579,17 @@ export function PatientListModule({
 }
 
 interface PatientCohortPageProps {
+  currentUser?: AuthenticatedUser | null;
   onCreatePatient?: () => void;
   onEditPatient?: (patient: PatientRecord) => void;
   onViewPatient?: (patient: PatientRecord) => void;
 }
 
 export function PatientCohortPage({
-  onCreatePatient = () => undefined,
-  onEditPatient = () => undefined,
+  currentUser,
   onViewPatient = () => undefined
 }: PatientCohortPageProps) {
+  const { t } = useI18n();
   const [patients, setPatients] = useState<PatientRecord[]>([]);
   const [search, setSearch] = useState('');
   const [sex, setSex] = useState('全部');
@@ -550,6 +597,23 @@ export function PatientCohortPage({
   const [disease, setDisease] = useState<'全部' | DiseaseType>('全部');
   const [sort, setSort] = useState('最近更新');
   const [currentPage, setCurrentPage] = useState(1);
+  const [editorMode, setEditorMode] = useState<PatientEditorMode | null>(null);
+  const [draftPatient, setDraftPatient] = useState<PatientRecord | null>(null);
+  const [saveStatus, setSaveStatus] = useState('等待患者操作');
+  const [sampleCollectedOnly, setSampleCollectedOnly] = useState(false);
+  const currentStudyId = getCurrentScopedStudyId();
+  const canEditPatientRecords = canWritePatients(currentUser);
+  const diseaseOptions = useMemo<Array<'全部' | DiseaseType>>(
+    () => ['全部', ...Array.from(new Set(patients.map((patient) => patient.diseaseType)))],
+    [patients]
+  );
+  const editorDiseaseOptions = useMemo<DiseaseType[]>(() => {
+    const options = Array.from(new Set([
+      ...patients.map((patient) => patient.diseaseType),
+      currentStudyDefaultDisease(currentStudyId)
+    ]));
+    return options.length ? options : [currentStudyDefaultDisease(currentStudyId)];
+  }, [currentStudyId, patients]);
 
   useEffect(() => {
     let ignore = false;
@@ -583,18 +647,19 @@ export function PatientCohortPage({
       })
       .filter((patient) => sex === '全部' || patient.sex === sex)
       .filter((patient) => disease === '全部' || patient.diseaseType === disease)
-      .filter((patient) => {
-        if (ageRange === '全部') return true;
-        if (ageRange === '18-35') return patient.age >= 18 && patient.age <= 35;
-        if (ageRange === '36-55') return patient.age >= 36 && patient.age <= 55;
-        return patient.age > 55;
-      })
-      .sort((a, b) => {
-        if (sort === '完整性优先') return calculateClinicalCompleteness(b.clinicalData) - calculateClinicalCompleteness(a.clinicalData);
-        if (sort === '年龄升序') return a.age - b.age;
-        return a.name.localeCompare(b.name);
-      });
-  }, [ageRange, disease, patients, search, sex, sort]);
+	      .filter((patient) => {
+	        if (ageRange === '全部') return true;
+	        if (ageRange === '18-35') return patient.age >= 18 && patient.age <= 35;
+	        if (ageRange === '36-55') return patient.age >= 36 && patient.age <= 55;
+	        return patient.age > 55;
+	      })
+	      .filter((patient) => !sampleCollectedOnly || patient.samples.length > 0)
+	      .sort((a, b) => {
+	        if (sort === '完整性优先') return calculateClinicalCompleteness(b.clinicalData) - calculateClinicalCompleteness(a.clinicalData);
+	        if (sort === '年龄升序') return a.age - b.age;
+	        return a.name.localeCompare(b.name);
+	      });
+	  }, [ageRange, disease, patients, sampleCollectedOnly, search, sex, sort]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPatients.length / patientPageSize));
   const pageStart = (currentPage - 1) * patientPageSize;
@@ -604,11 +669,86 @@ export function PatientCohortPage({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [ageRange, disease, search, sex, sort]);
+  }, [ageRange, disease, sampleCollectedOnly, search, sex, sort]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    if (!canEditPatientRecords) {
+      setSaveStatus('当前角色只读：患者新增/编辑已禁用');
+      setDraftPatient(null);
+      setEditorMode(null);
+    }
+  }, [canEditPatientRecords]);
+
+  function openCreatePatientEditor() {
+    if (!canEditPatientRecords) {
+      setSaveStatus('当前角色没有患者写入权限，请切换到 Study CRC 或 LZ CRC');
+      return;
+    }
+    setEditorMode('create');
+    setDraftPatient(makeDraftPatient(currentStudyId));
+    setSaveStatus('正在新建当前 Study 患者');
+  }
+
+  function openEditPatientEditor(patient: PatientRecord) {
+    if (!canEditPatientRecords) {
+      setSaveStatus('当前角色没有患者写入权限，请切换到 Study CRC 或 LZ CRC');
+      return;
+    }
+    setEditorMode('edit');
+    setDraftPatient({ ...patient, organs: [...patient.organs], clinicalData: { ...patient.clinicalData } });
+    setSaveStatus(`正在编辑患者 ${patient.name}`);
+  }
+
+  function cancelPatientEditor() {
+    setEditorMode(null);
+    setDraftPatient(null);
+    setSaveStatus('等待患者操作');
+  }
+
+  function patchDraftPatient(patch: Partial<PatientRecord>) {
+    setDraftPatient((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  async function savePatientEditor() {
+    if (!draftPatient || !editorMode) return;
+    if (!draftPatient.name.trim() || !draftPatient.hospitalNo.trim()) {
+      setSaveStatus('患者编号和住院号为必填项');
+      return;
+    }
+
+    const nextPatient = {
+      ...draftPatient,
+      studyId: draftPatient.studyId || currentStudyId || 'LGL-1111',
+      name: draftPatient.name.trim(),
+      hospitalNo: draftPatient.hospitalNo.trim(),
+      note: draftPatient.note.trim()
+    };
+
+    setSaveStatus(editorMode === 'create' ? '患者正在写入后端...' : `患者 ${nextPatient.name} 正在同步后端...`);
+    try {
+      const saved = editorMode === 'create' ? await createPatientRecord(nextPatient) : await updatePatientRecord(nextPatient);
+      setPatients((rows) => {
+        const exists = rows.some((patient) => patient.id === saved.id || patient.name === saved.name);
+        if (exists) return rows.map((patient) => (patient.id === saved.id || patient.name === saved.name ? { ...patient, ...saved } : patient));
+        return [saved, ...rows];
+      });
+      setSearch(saved.name);
+      setEditorMode(null);
+      setDraftPatient(null);
+      setSaveStatus(editorMode === 'create' ? `患者已创建：${saved.name}` : `患者已保存：${saved.name}`);
+    } catch (error) {
+      setPatients((rows) => {
+        const exists = rows.some((patient) => patient.id === nextPatient.id || patient.name === nextPatient.name);
+        if (exists) return rows.map((patient) => (patient.id === nextPatient.id || patient.name === nextPatient.name ? nextPatient : patient));
+        return [nextPatient, ...rows];
+      });
+      setSaveStatus(isPermissionError(error) ? '当前角色没有患者写入权限，变更仅保存在本页' : '后端不可用，患者变更已保存在本页');
+    }
+  }
 
   return (
     <div className="content patient-page">
@@ -621,20 +761,20 @@ export function PatientCohortPage({
             onClick={() => setDisease(option)}
           >
             <Icon name={option === '全部' ? 'patients' : option === 'HC' ? 'userPlus' : 'dna'} />
-            <span>{option}</span>
+            <span>{t(option)}</span>
           </button>
         ))}
         <button className="chip patient-chip" type="button" onClick={() => setSex('女')}>
           <Icon name="female" />
-          <span>女性</span>
+          <span>{t('女性')}</span>
         </button>
-        <button className="chip patient-chip" type="button">
+        <button className={`chip patient-chip${sampleCollectedOnly ? ' is-selected' : ''}`} type="button" onClick={() => setSampleCollectedOnly((value) => !value)}>
           <Icon name="sampleTube" />
-          <span>样本已采集</span>
+          <span>{t('样本已采集')}</span>
         </button>
         <button className="chip patient-chip" type="button" onClick={() => setSort('完整性优先')}>
           <Icon name="check" />
-          <span>完整性 &gt;80%</span>
+          <span>{t('完整性')} &gt;80%</span>
         </button>
       </section>
 
@@ -644,72 +784,133 @@ export function PatientCohortPage({
         <section className="patient-list-card">
           <header className="patient-list-card__header">
             <div>
-              <h2>患者列表</h2>
-              <p>按患者、样本和组学进度筛选队列</p>
+              <h2>{t('患者列表')}</h2>
+              <p>{t('按患者、样本和组学进度筛选队列')}</p>
             </div>
-            <button className="module-primary-button" type="button" onClick={onCreatePatient}>
+            <button
+              className="module-primary-button"
+              type="button"
+              disabled={!canEditPatientRecords}
+              title={canEditPatientRecords ? undefined : t('当前角色没有患者写入权限')}
+              onClick={openCreatePatientEditor}
+            >
               <Icon name="filePlus" />
-              新建患者
+              {t('新建患者')}
             </button>
           </header>
 
           <div className="patient-controls">
             <label className="patient-search">
-              <span>患者搜索</span>
+              <span>{t('患者搜索')}</span>
               <div>
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="输入患者编号、住院号或疾病类型"
+                  placeholder={t('输入患者编号、住院号或疾病类型')}
                 />
                 <Icon name="search" />
               </div>
             </label>
 
             <label>
-              <span>性别</span>
+              <span>{t('性别')}</span>
               <select value={sex} onChange={(event) => setSex(event.target.value)}>
-                <option>全部</option>
-                <option>男</option>
-                <option>女</option>
+                <option value="全部">{t('全部')}</option>
+                <option value="男">{t('男')}</option>
+                <option value="女">{t('女')}</option>
               </select>
             </label>
 
             <label>
-              <span>年龄范围</span>
+              <span>{t('年龄范围')}</span>
               <select value={ageRange} onChange={(event) => setAgeRange(event.target.value)}>
-                <option>全部</option>
-                <option>18-35</option>
-                <option>36-55</option>
-                <option>55+</option>
+                <option value="全部">{t('全部')}</option>
+                <option value="18-35">18-35</option>
+                <option value="36-55">36-55</option>
+                <option value="55+">55+</option>
               </select>
             </label>
 
             <label>
-              <span>疾病类型</span>
+              <span>{t('疾病类型')}</span>
               <select value={disease} onChange={(event) => setDisease(event.target.value as '全部' | DiseaseType)}>
-                {diseaseOptions.map((option) => <option key={option}>{option}</option>)}
+                {diseaseOptions.map((option) => <option value={option} key={option}>{t(option)}</option>)}
               </select>
             </label>
 
             <label>
-              <span>排序</span>
+              <span>{t('排序')}</span>
               <select value={sort} onChange={(event) => setSort(event.target.value)}>
-                <option>最近更新</option>
-                <option>完整性优先</option>
-                <option>年龄升序</option>
+                <option value="最近更新">{t('最近更新')}</option>
+                <option value="完整性优先">{t('完整性优先')}</option>
+                <option value="年龄升序">{t('年龄升序')}</option>
               </select>
             </label>
           </div>
 
-          <PatientTable patients={paginatedPatients} onEditPatient={onEditPatient} onViewPatient={onViewPatient} />
+          {draftPatient ? (
+            <section className="patient-editor-card" aria-label="患者编辑表单">
+              <header>
+                <div>
+                  <strong>{editorMode === 'create' ? t('新建患者') : t(`编辑患者 ${draftPatient.name}`)}</strong>
+                  <span>{draftPatient.studyId || currentStudyId || 'LGL-1111'}</span>
+                </div>
+                <div className="module-table-actions">
+                  <button className="module-link-button module-link-button--primary" type="button" disabled={!canEditPatientRecords} onClick={() => void savePatientEditor()}>{t('保存')}</button>
+                  <button className="module-link-button" type="button" onClick={cancelPatientEditor}>{t('取消')}</button>
+                </div>
+              </header>
+              <div className="patient-editor-grid">
+                <label>
+                  <span>{t('患者编号')}</span>
+                  <input value={draftPatient.name} onChange={(event) => patchDraftPatient({ name: event.target.value })} />
+                </label>
+                <label>
+                  <span>{t('住院号')}</span>
+                  <input value={draftPatient.hospitalNo} onChange={(event) => patchDraftPatient({ hospitalNo: event.target.value })} />
+                </label>
+                <label>
+                  <span>{t('性别')}</span>
+                  <select value={draftPatient.sex} onChange={(event) => patchDraftPatient({ sex: event.target.value as PatientRecord['sex'] })}>
+                    <option value="男">{t('男')}</option>
+                    <option value="女">{t('女')}</option>
+                  </select>
+                </label>
+                <label>
+                  <span>{t('年龄')}</span>
+                  <input type="number" min={0} max={120} value={draftPatient.age} onChange={(event) => patchDraftPatient({ age: Number(event.target.value) })} />
+                </label>
+                <label>
+                  <span>{t('疾病类型')}</span>
+                  <select value={draftPatient.diseaseType} onChange={(event) => patchDraftPatient({ diseaseType: event.target.value as DiseaseType })}>
+                    {editorDiseaseOptions.map((option) => <option value={option} key={option}>{t(option)}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>{t('受累脏器')}</span>
+                  <input value={draftPatient.organs.join(' / ')} onChange={(event) => patchDraftPatient({ organs: event.target.value.split(/[、/]/).map((item) => item.trim()).filter(Boolean) })} />
+                </label>
+                <label className="patient-editor-note">
+                  <span>{t('注释')}</span>
+                  <input value={draftPatient.note} onChange={(event) => patchDraftPatient({ note: event.target.value })} />
+                </label>
+              </div>
+            </section>
+          ) : null}
+
+          <div className="module-upload-status">
+            <Icon name="shield" />
+            <span>{t(saveStatus)}</span>
+          </div>
+
+          <PatientTable patients={paginatedPatients} canEdit={canEditPatientRecords} onEditPatient={openEditPatientEditor} onViewPatient={onViewPatient} />
 
           <footer className="patient-list-card__footer">
-            <span>显示 {displayStart} 至 {displayEnd} 条，共 {filteredPatients.length} 条记录</span>
+            <span>{t(`显示 ${displayStart} 至 ${displayEnd} 条，共 ${filteredPatients.length} 条记录`)}</span>
             <div className="patient-pagination">
               <button
                 type="button"
-                aria-label="上一页"
+                aria-label={t('上一页')}
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
               >
@@ -733,7 +934,7 @@ export function PatientCohortPage({
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
               >
-                下一页
+                {t('下一页')}
               </button>
             </div>
           </footer>
@@ -743,7 +944,7 @@ export function PatientCohortPage({
           <CohortOverviewPanel patients={patients} />
           <CompletenessTrendPanel patients={patients} />
           <SampleSummaryPanel patients={patients} />
-          <p className="patient-update-time">数据源：数据库实时同步</p>
+          <p className="patient-update-time">{t('数据源：数据库实时同步')}</p>
         </aside>
       </div>
     </div>

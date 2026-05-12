@@ -10,7 +10,7 @@ interface I18nContextValue {
   locale: Locale;
   setLocale: (locale: Locale) => void;
   toggleLocale: () => void;
-  t: (text: string) => string;
+  t: (text: unknown) => string;
 }
 
 const messages = {
@@ -62,7 +62,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN');
   }, [locale, setLocale]);
 
-  const t = useCallback((text: string) => translateText(text, locale), [locale]);
+  const t = useCallback((text: unknown) => translateText(text, locale), [locale]);
 
   useEffect(() => {
     applyLocale(locale);

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import linzightLogo from '../assets/linzight-logo.svg';
-import { authenticateDemoUser, demoUsers, type AuthenticatedUser } from '../data/auth';
+import { authenticateDemoUser, demoUsers, narrowAuthenticatedUserToStudy, type AuthenticatedUser } from '../data/auth';
 import { loginWithBackend } from '../services/api';
+import { useI18n } from '../i18n/I18nProvider';
 import { Icon } from './Icon';
 import { LanguageToggle } from './LanguageToggle';
 
@@ -22,6 +23,7 @@ function userCanEnterStudy(user: (typeof demoUsers)[number], studyId: string) {
 }
 
 export function LoginPage({ onAuthenticated }: LoginPageProps) {
+  const { t } = useI18n();
   const [entryMode, setEntryMode] = useState<LoginEntryMode>('study');
   const [studyId, setStudyId] = useState('LZXK-01');
   const [username, setUsername] = useState('lung-crc@demo.linzight');
@@ -57,12 +59,12 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
     }
 
     setError('');
-    onAuthenticated(user);
+    onAuthenticated(entryMode === 'study' ? narrowAuthenticatedUserToStudy(user, studyId) : user);
   }
 
   return (
     <main className="login-shell">
-      <section className="login-panel" aria-label="LinZight 登录">
+      <section className="login-panel" aria-label={t('LinZight 登录')}>
         <div className="login-panel__brand">
           <img src={linzightLogo} alt="LinZight" />
           <div className="login-panel__tools">
@@ -71,12 +73,12 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
           </div>
         </div>
         <div className="login-panel__copy">
-          <h1>真实世界研究工作台</h1>
-          <p>登录后按 Study 权限进入患者队列、CRF 录入、样本登记、多组学检测、Patient Journey 与数据分析主链路。</p>
+          <h1>{t('真实世界研究工作台')}</h1>
+          <p>{t('登录后按 Study 权限进入患者队列、CRF 录入、样本登记、多组学检测、Patient Journey 与数据分析主链路。')}</p>
         </div>
-        <div className="login-chain" aria-label="主链路">
+        <div className="login-chain" aria-label={t('主链路')}>
           {['登录', 'Study', '患者列表', 'CRF', '样本', '组学', '上传', 'Journey', '分析', '导出'].map((step) => (
-            <span key={step}>{step}</span>
+            <span key={step}>{t(step)}</span>
           ))}
         </div>
       </section>
@@ -87,59 +89,59 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
             <Icon name="shield" />
           </div>
           <div>
-            <h2>账号登录</h2>
-            <p>开发阶段 Demo 认证</p>
+            <h2>{t('账号登录')}</h2>
+            <p>{t('开发阶段 Demo 认证')}</p>
           </div>
         </header>
 
-        <div className="login-entry-switch" role="group" aria-label="入口类型">
+        <div className="login-entry-switch" role="group" aria-label={t('入口类型')}>
           <button
             className={entryMode === 'study' ? 'is-active' : undefined}
             type="button"
             onClick={() => setEntryMode('study')}
           >
-            Study 研究入口
+            {t('Study 研究入口')}
           </button>
           <button
             className={entryMode === 'lz' ? 'is-active' : undefined}
             type="button"
             onClick={() => setEntryMode('lz')}
           >
-            LZ 系统管理
+            {t('LZ 系统管理')}
           </button>
         </div>
 
         {entryMode === 'study' ? (
           <label>
-            <span>研究编号 / study_id</span>
+            <span>{t('研究编号 / study_id')}</span>
             <select value={studyId} onChange={(event) => setStudyId(event.target.value)}>
               {studyOptions.map((study) => (
                 <option value={study.id} key={study.id}>
-                  {study.id} · {study.name}
+                  {study.id} · {t(study.name)}
                 </option>
               ))}
             </select>
           </label>
         ) : (
           <div className="login-management-summary">
-            <strong>LZ 系统管理</strong>
-            <span>平台级账号，可跨 Study 管理研究、成员、CRF、质控、导出和审计。</span>
+            <strong>{t('LZ 系统管理')}</strong>
+            <span>{t('平台级账号，可跨 Study 管理研究、成员、CRF、质控、导出和审计。')}</span>
           </div>
         )}
 
         <label>
-          <span>角色账号</span>
+          <span>{t('角色账号')}</span>
           <select value={username} onChange={(event) => setUsername(event.target.value)}>
             {availableUsers.map((user) => (
               <option value={user.username} key={user.id}>
-                {user.name} · {user.roleLabel} · {user.username}
+                {t(user.name)} · {t(user.roleLabel)} · {user.username}
               </option>
             ))}
           </select>
         </label>
 
         <label>
-          <span>密码</span>
+          <span>{t('密码')}</span>
           <input
             type="password"
             value={password}
@@ -151,20 +153,20 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
         <div className="login-user-preview">
           <div className="avatar avatar--small">{selectedUser.initials}</div>
           <div>
-            <strong>{selectedUser.name}</strong>
-            <span>{selectedUser.roleLabel}</span>
+            <strong>{t(selectedUser.name)}</strong>
+            <span>{t(selectedUser.roleLabel)}</span>
           </div>
         </div>
         <div className="login-scope-preview">
-          <span>{entryMode === 'study' ? '研究编号' : '管理入口'}</span>
-          <strong>{entryMode === 'study' ? `${selectedStudy.id} · ${selectedStudy.name}` : 'LZ 系统管理 · 全部或授权 Study'}</strong>
+          <span>{entryMode === 'study' ? t('研究编号') : t('管理入口')}</span>
+          <strong>{entryMode === 'study' ? `${selectedStudy.id} · ${t(selectedStudy.name)}` : t('LZ 系统管理 · 全部或授权 Study')}</strong>
         </div>
 
-        {error ? <p className="login-error">{error}</p> : null}
+        {error ? <p className="login-error">{t(error)}</p> : null}
 
         <button className="login-submit" type="submit" disabled={isSubmitting}>
           <Icon name="lock" />
-          {isSubmitting ? '登录中' : '进入系统'}
+          {isSubmitting ? t('登录中') : t('进入系统')}
         </button>
       </form>
     </main>

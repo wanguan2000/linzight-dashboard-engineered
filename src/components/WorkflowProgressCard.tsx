@@ -1,10 +1,12 @@
 import type { CSSProperties } from 'react';
 import { workflowItems } from '../data/dashboard';
+import { useI18n } from '../i18n/I18nProvider';
 import type { WorkflowItem } from '../types';
 import { Card } from './Card';
 import { Icon } from './Icon';
 
 export function WorkflowProgressCard({ items = workflowItems, overall = 68 }: { items?: WorkflowItem[]; overall?: number }) {
+  const { t } = useI18n();
   const circumference = 2 * Math.PI * 45;
   const offset = circumference - (circumference * overall) / 100;
 
@@ -12,8 +14,8 @@ export function WorkflowProgressCard({ items = workflowItems, overall = 68 }: { 
     <Card
       title="工作流进度"
       action={
-        <select className="select-sm" aria-label="工作流研究筛选">
-          <option>全部研究</option>
+        <select className="select-sm" aria-label={t('工作流研究筛选')}>
+          <option>{t('全部研究')}</option>
         </select>
       }
       className="workflow-card"
@@ -25,7 +27,7 @@ export function WorkflowProgressCard({ items = workflowItems, overall = 68 }: { 
             return (
               <div className={`workflow-list__row workflow-list__row--${item.status ?? 'normal'}`} key={item.label}>
                 <Icon className="workflow-list__icon" name={item.icon} />
-                <span className="workflow-list__label">{item.label}</span>
+                <span className="workflow-list__label">{t(item.label)}</span>
                 <div className="workflow-list__track">
                   <div className="workflow-list__bar" style={{ '--bar-width': width } as CSSProperties} />
                 </div>
@@ -58,8 +60,8 @@ export function WorkflowProgressCard({ items = workflowItems, overall = 68 }: { 
           </svg>
           <div className="workflow-donut__center">
             <strong>{overall}%</strong>
-            <span>总体</span>
-            <span>进度</span>
+            <span>{t('总体')}</span>
+            <span>{t('进度')}</span>
           </div>
         </div>
       </div>

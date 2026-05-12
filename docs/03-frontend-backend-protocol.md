@@ -1,5 +1,7 @@
 # 前后端联调数据协议
 
+OpenAPI schema 快照由 `npm run export:openapi` 生成到 `docs/openapi.json`。后端 endpoint、schema 或权限语义变化时，应同步更新该快照、`docs/02-api-contract.md`、`src/services/contracts.ts` 和对应 smoke tests。
+
 ## 字段命名
 
 - 后端 API 固定使用 `snake_case`。
@@ -16,6 +18,18 @@ CRF 字段字典当前来自 `resource/sle-crf-v0.1.schema.json`。前端通过 
 访视计划由 `study_visit_plans` 配置，不写入 CRF 字段表。`visits` 是患者实际访视记录，通过 `visit_plan_id` 关联配置；新建患者时后端按当前 Study active 访视计划自动生成访视和初始 CRF 草稿。
 
 随访记录由 `follow_up_records` 保存，不写入 CRF 版本配置表。它隶属于患者信息，绑定 `study_id + patient_id`，并可选通过 `visit_id` 关联某次随访访视，用于记录随访方式、随访人、生存/疾病状态、疗效、转移、不良事件、生活质量和失访原因。
+
+临床数据采集页的“多次随访”表格读取计划/实际 `visits`，同时将 `follow_up_records` 映射为可回显的随访行。新增或编辑随访行时，前端通过 `saveVisitFollowUpRecord()` 写入 `/follow-up-records`；计划访视配置仍由 `study_visit_plans` 管理。
+
+系统管理页的账号创建通过 `POST /users` 执行。前端传入 `username`、`display_name`、`role`、`password`、`study_id` 和 `member_status`；后端创建用户后，如果是研究级角色，会同步创建当前 Study 的 `study_members` 记录并返回 `study_memberships`。Create Account 按钮必须使用该接口，不应只在前端插入本地账号。
+
+系统管理页的 Study 成员列表通过 `/studies/{study_id}/members` 读取，已有成员启用/停用研究级角色通过同一路径 `POST` upsert。该响应必须包含 `username` 和 `display_name`，与列表接口一致，前端才能在保存后直接更新账号行。
+
+系统管理页的 CRF 字段配置通过 `/studies/{study_id}/crf-fields` 读取当前 Study CRF version 的字段列表。新增字段调用 `POST /studies/{study_id}/crf-fields`，编辑字段调用 `PUT /studies/{study_id}/crf-fields/{field_id}`。前端可编辑字段名称、类型、模块、状态、下拉选项、必填状态、校验规则和条件逻辑；后端将字段写回 `study_crf_versions.schema_json.sections[].fields[]`，并为新增或更新操作写入 `audit_logs`。
+
+系统管理页的 CRF 版本面板通过 `/studies/{study_id}/crf-versions` 读取版本列表。`New Draft` 会从当前字段表生成 schema 并调用 `POST /studies/{study_id}/crf-versions` 创建草稿。正式发布优先走审批流：`Request Approval` 调用 `POST /studies/{study_id}/crf-migrations`，`Approve` 调用 `/approve`，`Apply` 或 `Apply Approved` 调用 `/apply`，由后端发布目标 draft 并退休该 Study 的旧 published 版本。
+`Preview Migration` 调用 `POST /studies/{study_id}/crf-versions/migration-preview`，用当前字段表生成目标 schema，并显示新增、变更、移除和未变化字段数量，同时列出字段级新增、变更项和移除明细。该接口只读，不改变版本状态。
+系统管理页同时读取 `/studies/{study_id}/crf-migrations` 展示最近的 migration approval request 和 execution log 数量；所有提交、批准和应用操作均以 `study_id` 为路径参数，并写入后端 `audit_logs`。后端禁止 request 发起人批准或应用自己的 CRF migration，前端用通用状态消息提示权限或后端拒绝。
 
 | 后端字段 | 前端字段 | 说明 |
 | --- | --- | --- |
@@ -50,6 +64,14 @@ CRF 字段字典当前来自 `resource/sle-crf-v0.1.schema.json`。前端通过 
 | `run_id` | `runId` | 检测批次号 |
 | `sent_at` | `sentAt` | 送检日期 |
 | `completed_at` | `completedAt` | 完成日期 |
+| CRF field `id` | `id` | 系统管理字段表中的 Field ID |
+| CRF field `type` | `type` | `Text`、`Number`、`Dropdown` 或 `Boolean` |
+| CRF field `module` | `module` | CRF section title |
+| CRF field `status` | `status` | `启用`、`草稿` 或 `停用` |
+| CRF field `options` | `options` | 下拉字段选项列表，非下拉字段可为空数组 |
+| CRF field `required` | `required` | 是否必填 |
+| CRF field `validationRule` | `validation_rule` | 文本化校验规则，例如 `integer >= 1` |
+| CRF field `conditionalLogic` | `conditional_logic` | 文本化条件逻辑，例如 `驱动基因突变 is not empty` |
 
 CRF 模块响应中的 `payload_version` 与 `payload_format` 不直接渲染为录入字段，但用于校验 `payload` 与当前 CRF schema 的版本一致性。后端数据库保留 `clinical_data_json` / `payload_json` TEXT JSON 兼容字段；前端不直接依赖这些底层列。
 

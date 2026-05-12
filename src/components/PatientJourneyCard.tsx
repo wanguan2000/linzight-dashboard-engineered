@@ -1,15 +1,26 @@
 import { journeyRates, journeyStages } from '../data/dashboard';
+import { useI18n } from '../i18n/I18nProvider';
 import type { JourneyStage } from '../types';
 import { Card } from './Card';
 import { Icon } from './Icon';
 
-export function PatientJourneyCard({ stages = journeyStages, rates = journeyRates }: { stages?: JourneyStage[]; rates?: string[] }) {
+export function PatientJourneyCard({
+  stages = journeyStages,
+  rates = journeyRates,
+  onOpenPatients = () => undefined
+}: {
+  stages?: JourneyStage[];
+  rates?: string[];
+  onOpenPatients?: () => void;
+}) {
+  const { t } = useI18n();
+
   return (
-    <Card title="患者旅程概览" action={<button className="link-button" type="button">查看全部患者 →</button>}>
+    <Card title="患者旅程概览" action={<button className="link-button" type="button" onClick={onOpenPatients}>{t('查看全部患者')} →</button>}>
       <div className="journey__stats">
         {stages.map((stage) => (
           <div className="journey__stat" key={stage.label}>
-            <span>{stage.label}</span>
+            <span>{t(stage.label)}</span>
             <strong>{stage.value}</strong>
           </div>
         ))}

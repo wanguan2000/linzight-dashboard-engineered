@@ -11,9 +11,9 @@ import type {
 } from '../types';
 
 export const userProfile: UserProfile = {
-  name: '约翰·伦格',
+  name: '任约翰',
   role: '主要研究者',
-  initials: 'JL'
+  initials: 'RJ'
 };
 
 export const navItems: NavItem[] = [
