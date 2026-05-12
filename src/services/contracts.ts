@@ -34,6 +34,10 @@ export type ApiUserCreate = {
   member_status?: 'active' | 'pending' | 'disabled';
 };
 
+export type ApiUserStatusUpdate = {
+  status: 'active' | 'disabled';
+};
+
 export type ApiLoginResponse = {
   access_token: string;
   token_type: 'bearer';

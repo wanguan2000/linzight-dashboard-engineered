@@ -54,6 +54,7 @@ import {
   updateSampleRecord,
   updateStudyCrfField,
   updateStudyCrfVersion,
+  updateUserAccountStatus,
   upsertStudyMember,
   uploadFileToBackend
 } from '../services/api';
@@ -2882,7 +2883,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         username: nextAccount.email,
         display_name: nextAccount.name,
         role: 'STUDY_CRC',
-        password: 'demo123',
+        password: 'Demo1234!',
         status: 'active',
         study_id: studyScope,
         member_status: 'pending'
@@ -2903,25 +2904,32 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   async function toggleSystemAccount(account: SystemAccount) {
     const nextStatus: SystemAccount['status'] = account.status === 'Disabled' ? 'Active' : 'Disabled';
     const userId = account.userId ?? userIdForEmail(account.email);
-    const studyId = scopedStudyId && account.role.startsWith('STUDY_') ? scopedStudyId : undefined;
-    if (!userId || !studyId) {
-      setSystemActionStatus('平台级用户状态需要后端用户状态 API，当前已禁用');
+    if (!userId) {
+      setSystemActionStatus('缺少用户 ID，无法同步账户状态');
       return;
     }
 
     setAccountRows((rows) => rows.map((row) => (row.email === account.email ? { ...row, status: nextStatus } : row)));
     setSystemActionStatus(`账户 ${account.email} 状态正在同步后端...`);
     try {
-      const member = await upsertStudyMember(studyId, {
-        userId,
-        studyRole: account.role as ApiStudyMember['study_role'],
-        status: studyMemberStatusFromAccountStatus(nextStatus)
-      });
-      const savedAccount = accountFromStudyMember(member);
+      let savedAccount: SystemAccount;
+      if (currentUser?.role === 'LZ_ADMIN') {
+        const updatedUser = await updateUserAccountStatus(userId, { status: nextStatus === 'Disabled' ? 'disabled' : 'active' });
+        savedAccount = accountFromApiUser(updatedUser, scopedStudyId ?? account.studyScope);
+      } else if (scopedStudyId && account.role.startsWith('STUDY_')) {
+        const member = await upsertStudyMember(scopedStudyId, {
+          userId,
+          studyRole: account.role as ApiStudyMember['study_role'],
+          status: studyMemberStatusFromAccountStatus(nextStatus)
+        });
+        savedAccount = accountFromStudyMember(member);
+      } else {
+        throw new Error('user status requires LZ_ADMIN');
+      }
       setAccountRows((rows) => upsertAccountRow(rows, savedAccount));
-      setSystemActionStatus(`Study 成员状态已同步后端：${savedAccount.email}`);
+      setSystemActionStatus(`账户状态已同步后端：${savedAccount.email}`);
     } catch {
-      setSystemActionStatus(`后端不可用或当前角色无 Study 成员写入权限，账户 ${account.email} 状态已保存在本页`);
+      setSystemActionStatus(`后端不可用或当前角色无用户状态写入权限，账户 ${account.email} 状态已保存在本页`);
     }
   }
 
@@ -3246,7 +3254,10 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                 </thead>
                 <tbody>
                   {pagedAccounts.map((account) => {
-                    const canToggleAccount = Boolean((account.userId ?? userIdForEmail(account.email)) && scopedStudyId && account.role.startsWith('STUDY_'));
+                    const canToggleAccount = Boolean(
+                      (account.userId ?? userIdForEmail(account.email)) &&
+                        (currentUser?.role === 'LZ_ADMIN' || (scopedStudyId && account.role.startsWith('STUDY_')))
+                    );
                     return (
                     <tr key={`${account.email}-${account.name}`}>
                       <td>{t(account.name)}</td>
@@ -3262,7 +3273,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                             className="module-link-button module-link-button--danger"
                             type="button"
                             disabled={!canToggleAccount}
-                            title={canToggleAccount ? undefined : t('平台级用户状态需要后端用户状态 API，当前已禁用')}
+                            title={canToggleAccount ? undefined : t('当前角色没有用户状态写入权限')}
                             onClick={() => void toggleSystemAccount(account)}
                           >
                             {account.status === 'Disabled' ? t('Enable') : t('Disable')}

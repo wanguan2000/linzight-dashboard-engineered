@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const backendUrl = process.env.DOCKER_SMOKE_BACKEND_URL || 'http://127.0.0.1:8000';
+const backendUrl = process.env.DOCKER_SMOKE_BACKEND_URL || 'http://localhost:8000';
 const frontendUrl = process.env.DOCKER_SMOKE_FRONTEND_URL || 'http://localhost:5173';
 const shouldStop = process.env.DOCKER_SMOKE_DOWN === '1';
 
@@ -44,7 +44,7 @@ async function verifyBackendLogin() {
   const response = await fetch(`${backendUrl}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'lung-crc@demo.linzight', password: 'demo123' }),
+    body: JSON.stringify({ username: 'lung-crc@demo.linzight', password: 'Demo1234!' }),
   });
   const raw = await response.text();
   assert(response.ok, `Docker backend login failed ${response.status}: ${raw}`);
@@ -54,10 +54,22 @@ async function verifyBackendLogin() {
 }
 
 async function verifyFrontend() {
-  const response = await fetch(frontendUrl);
-  const html = await response.text();
-  assert(response.ok, `Docker frontend failed ${response.status}`);
-  assert(html.includes('root') && html.includes('/assets/'), 'Docker frontend did not return the Vite app shell');
+  const deadline = Date.now() + 30000;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(frontendUrl);
+      const html = await response.text();
+      if (response.ok && html.includes('root') && html.includes('/assets/')) return;
+      lastError = new Error(`Docker frontend returned ${response.status}`);
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolveDelay) => {
+      setTimeout(resolveDelay, 1000);
+    });
+  }
+  throw lastError instanceof Error ? lastError : new Error(`Docker frontend did not become ready at ${frontendUrl}`);
 }
 
 async function runSmoke() {

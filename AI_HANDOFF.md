@@ -47,7 +47,7 @@
 
 - `npm test` 已配置为 API smoke、OpenAPI 导出、静态导出、UI smoke 和 release gate 的组合检查。
 - Docker daemon 未运行时只能执行 `docker compose config`；实际镜像构建需要先启动本机 Docker。
-- 后端使用 Demo token 和 SQLite，不能直接作为生产认证/数据层。
+- 后端已替换为本地签名 Bearer token、PBKDF2 密码哈希和账号启用/禁用控制；SQLite 仍是 Demo 数据层，不能直接承载真实患者隐私数据。
 - `resource/clinical-patient-journey-nextjs/` 是历史 Next.js 原型参考，不是当前主应用。
 - `exports/html/` 是生成产物；修改源码后必须重新运行 `npm run export:html` 才能同步。
 - 项目包含 Demo 医疗研究样例数据和模板资料；发布前必须持续检查不要混入真实患者隐私数据。

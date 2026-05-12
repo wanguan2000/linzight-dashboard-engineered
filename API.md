@@ -21,9 +21,11 @@
 
 - `POST /auth/login`
 - `GET /auth/me`
+- `POST /auth/logout`
 - `POST /users`
+- `PATCH /users/{user_id}/status`
 
-当前认证使用 demo token，不是生产级认证。
+当前认证使用 HMAC 签名 Bearer token，密码使用 PBKDF2-HMAC-SHA256 加盐哈希。`POST /users` 会执行基础密码策略校验，账号禁用后登录会被拒绝。
 
 登录响应会返回新角色码、`study_scope` 和 `study_memberships`。后续请求需要携带 Bearer token，后端按 `study_id` 自动过滤授权数据。
 `POST /users` 用于系统管理页创建账号；`STUDY_CONFIG_ADMIN` 可在本 Study 内创建研究级账号并同步写入 `study_members`，平台级账号创建仅限 `LZ_ADMIN`。
@@ -158,8 +160,7 @@ SQLite 存储层优先使用 JSONB（二进制 JSON）BLOB：
 
 ## 生产化注意事项
 
-- 替换 demo token 为正式认证。
-- 加入 HTTPS、CSRF/CORS 策略、审计和速率限制。
+- 将本地签名密钥接入生产级 secret 管理，并加入 HTTPS、CSRF/CORS 策略、审计和速率限制。
 - 所有患者相关数据必须脱敏或加权限控制。
 - API schema 变更必须同步 `contracts.ts`、文档和测试。
 - OpenAPI schema 快照通过 `npm run export:openapi` 生成到 `docs/openapi.json`。

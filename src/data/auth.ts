@@ -76,7 +76,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.STUDY_PI,
     initials: 'RJ',
     username: 'pi@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'own_studies', studyIds: ['LGL-1111'] },
     studyMemberships: [lglMembership('USR-001', 'STUDY_PI')]
   },
@@ -87,7 +87,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.STUDY_CRC,
     initials: 'LQ',
     username: 'crc@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'own_studies', studyIds: ['LGL-1111'] },
     studyMemberships: [lglMembership('USR-002', 'STUDY_CRC')]
   },
@@ -98,7 +98,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.STUDY_DATA_MANAGER,
     initials: 'CX',
     username: 'dm@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'own_studies', studyIds: ['LGL-1111'] },
     studyMemberships: [lglMembership('USR-003', 'STUDY_DATA_MANAGER')]
   },
@@ -109,7 +109,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.STUDY_CONFIG_ADMIN,
     initials: 'GM',
     username: 'config@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'own_studies', studyIds: ['LGL-1111', 'RWD-NMO-2026'] },
     studyMemberships: [lglMembership('USR-004', 'STUDY_CONFIG_ADMIN'), nmoMembership('USR-004', 'STUDY_CONFIG_ADMIN')]
   },
@@ -120,7 +120,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.LZ_ADMIN,
     initials: 'SA',
     username: 'admin@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'all_studies' },
     studyMemberships: []
   },
@@ -131,7 +131,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.LZ_CRC,
     initials: 'CC',
     username: 'lz-crc@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'assigned_studies', studyIds: ['LGL-1111', 'RWD-NMO-2026', 'LZXK-01'] },
     studyMemberships: []
   },
@@ -142,7 +142,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.LZ_CRF_ADMIN,
     initials: 'CA',
     username: 'crf-admin@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'assigned_studies', studyIds: ['LGL-1111', 'RWD-NMO-2026', 'LZXK-01'] },
     studyMemberships: []
   },
@@ -153,7 +153,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.LZ_DATA_MANAGER,
     initials: 'DM',
     username: 'lz-dm@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'assigned_studies', studyIds: ['RWD-NMO-2026'] },
     studyMemberships: [nmoMembership('USR-008', 'STUDY_DATA_MANAGER')]
   },
@@ -164,7 +164,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.LZ_AUDITOR,
     initials: 'AU',
     username: 'auditor@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'assigned_studies', studyIds: ['LGL-1111', 'RWD-NMO-2026', 'LZXK-01'] },
     studyMemberships: []
   },
@@ -175,7 +175,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.STUDY_PI,
     initials: 'LP',
     username: 'lung-pi@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'own_studies', studyIds: ['LZXK-01'] },
     studyMemberships: [lzxkMembership('USR-010', 'STUDY_PI')]
   },
@@ -186,7 +186,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.STUDY_CRC,
     initials: 'LC',
     username: 'lung-crc@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'own_studies', studyIds: ['LZXK-01'] },
     studyMemberships: [lzxkMembership('USR-011', 'STUDY_CRC')]
   },
@@ -197,7 +197,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.STUDY_CONFIG_ADMIN,
     initials: 'LA',
     username: 'lung-config@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'own_studies', studyIds: ['LZXK-01'] },
     studyMemberships: [lzxkMembership('USR-012', 'STUDY_CONFIG_ADMIN')]
   },
@@ -208,7 +208,7 @@ export const demoUsers: DemoUser[] = [
     roleLabel: roleLabels.STUDY_DATA_MANAGER,
     initials: 'LD',
     username: 'lung-dm@demo.linzight',
-    password: 'demo123',
+    password: 'Demo1234!',
     studyScope: { scopeType: 'own_studies', studyIds: ['LZXK-01'] },
     studyMemberships: [lzxkMembership('USR-013', 'STUDY_DATA_MANAGER')]
   }

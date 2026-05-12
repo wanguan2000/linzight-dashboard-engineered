@@ -62,5 +62,5 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ### Known Issues
 
-- FastAPI backend is Demo-grade and uses local SQLite plus demo token authentication.
-- Production API, production authentication, field-level privacy controls, object storage, and full browser/component test coverage are still planned work.
+- FastAPI backend is Demo-grade and uses local SQLite plus local HMAC-signed Bearer tokens.
+- Production API hardening, managed authentication/secret rotation, field-level privacy controls, object storage, and full browser/component test coverage are still planned work.

@@ -2,7 +2,7 @@
 
 当前版本：`v0.0.1-beta.0`
 
-`linzight-dashboard-engineered` 是 LinZight 真实世界研究数据采集与管理系统的工程化 Demo。项目以患者为中心，覆盖研究工作台、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析和系统管理，并提供可选 FastAPI + SQLite Demo 后端。前端在后端不可用时会自动回退到本地 mock/seed 数据，适合产品演示、静态 HTML 交付和后续增量开发。
+`linzight-dashboard-engineered` 是 LinZight 真实世界研究数据采集与管理系统的工程化 Demo。项目以患者为中心，覆盖研究工作台、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析和系统管理，并提供 FastAPI + SQLite Demo 后端。登录和写入动作依赖后端认证与 API；部分只读演示数据在后端不可用时仍可回退到本地 mock/seed 数据，适合产品演示、静态 HTML 交付和后续增量开发。
 
 未来 AI 接手本项目时，请先阅读：
 
@@ -80,7 +80,7 @@ npm run dev
 
 浏览器打开 Vite 输出地址，通常是 `http://localhost:5173/`。如果端口被占用，Vite 会自动切换到下一个可用端口。
 
-默认 Demo 登录账号可在 `src/data/auth.ts` 和 `backend/seed.py` 中查看；前端登录会优先调用后端认证，后端不可用时回退到本地 Demo 账号。登录页先选择 `Study 研究入口` 或 `LZ 系统管理`；选择 Study 入口时需要选择研究编号 `study_id`，账号列表只显示该 Study 的研究成员。
+默认 Demo 登录账号可在 `src/data/auth.ts` 和 `backend/seed.py` 中查看，默认密码为 `Demo1234!`。前端登录调用后端认证，成功后保存签名 Bearer token；后端不可用或 token 无效时会回到登录页。登录页先选择 `Study 研究入口` 或 `LZ 系统管理`；选择 Study 入口时需要选择研究编号 `study_id`，账号列表只显示该 Study 的研究成员。
 
 ## CRF 与 Demo 数据
 
@@ -166,7 +166,7 @@ Docker Compose 一键 Demo 环境：
 docker compose up --build
 ```
 
-Compose 会构建 `Dockerfile.backend` 和 `Dockerfile.frontend`，首次启动时在持久化 volume 中 seed SQLite Demo 数据，前端通过 `http://127.0.0.1:8000` 访问后端。浏览器打开 `http://127.0.0.1:5173/`。
+Compose 会构建 `Dockerfile.backend` 和 `Dockerfile.frontend`，首次启动时在持久化 volume 中 seed SQLite Demo 数据，前端通过 `http://localhost:8000` 访问后端，避免和本机可能存在的 `127.0.0.1:8000` 开发服务冲突。浏览器打开 `http://127.0.0.1:5173/`。
 
 Demo SQLite / 上传目录备份恢复：
 

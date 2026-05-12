@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import linzightLogo from '../assets/linzight-logo.svg';
-import { authenticateDemoUser, demoUsers, narrowAuthenticatedUserToStudy, type AuthenticatedUser } from '../data/auth';
+import { demoUsers, narrowAuthenticatedUserToStudy, type AuthenticatedUser } from '../data/auth';
 import { loginWithBackend } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import { Icon } from './Icon';
@@ -27,7 +27,7 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
   const [entryMode, setEntryMode] = useState<LoginEntryMode>('study');
   const [studyId, setStudyId] = useState('LZXK-01');
   const [username, setUsername] = useState('lung-crc@demo.linzight');
-  const [password, setPassword] = useState('demo123');
+  const [password, setPassword] = useState('Demo1234!');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -51,10 +51,10 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setIsSubmitting(true);
-    const user = await loginWithBackend(username, password).catch(() => authenticateDemoUser(username, password));
+    const user = await loginWithBackend(username, password).catch(() => null);
     setIsSubmitting(false);
     if (!user) {
-      setError('账号或密码不正确');
+      setError(t('账号或密码不正确，或账号已被禁用。'));
       return;
     }
 

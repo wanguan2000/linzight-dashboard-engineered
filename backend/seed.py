@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import date, timedelta
 from pathlib import Path
@@ -9,9 +8,11 @@ from typing import Any
 try:
     from .database import ROLE_VALUES, connect, encode_json, initialize_schema, sqlite_json_storage, utc_now
     from .permissions import role_can
+    from .security import DEFAULT_DEMO_PASSWORD, hash_password
 except ImportError:  # Allows `cd backend && python seed.py`.
     from database import ROLE_VALUES, connect, encode_json, initialize_schema, sqlite_json_storage, utc_now
     from permissions import role_can
+    from security import DEFAULT_DEMO_PASSWORD, hash_password
 
 
 DISEASES = ["NPSLE", "Non-NPSLE", "MS", "NMOSD", "HC"]
@@ -131,10 +132,6 @@ def lung_crf_schema() -> dict[str, Any]:
             "Study-specific lung cancer resistance fields appended for LZXK-01.",
         ],
     }
-
-
-def password_hash(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
 def patient_code(index: int) -> str:
@@ -741,7 +738,7 @@ def seed_database() -> None:
             VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
             """,
             [
-                (user_id, username, display_name, legacy_role, role_code, password_hash("demo123"), now, now)
+                (user_id, username, display_name, legacy_role, role_code, hash_password(DEFAULT_DEMO_PASSWORD), now, now)
                 for user_id, username, display_name, legacy_role, role_code in USER_ROWS
             ],
         )

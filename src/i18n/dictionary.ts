@@ -7,6 +7,7 @@ type DynamicRule = {
 
 const exactEnglish: Record<string, string> = {
   '账号或密码不正确': 'Incorrect account or password',
+  '账号或密码不正确，或账号已被禁用。': 'Incorrect account or password, or the account has been disabled.',
   'LinZight 登录': 'LinZight login',
   '真实世界研究工作台': 'Real-world study workspace',
   '登录后进入患者队列、CRF 录入、样本登记、多组学检测、Patient Journey 与数据分析主链路。':
@@ -35,6 +36,7 @@ const exactEnglish: Record<string, string> = {
   '密码': 'Password',
   '登录中': 'Signing in',
   '进入系统': 'Enter system',
+  '当前角色没有用户状态写入权限': 'Current role cannot update user status',
 
   '主导航': 'Main navigation',
   '首页工作台': 'Home',

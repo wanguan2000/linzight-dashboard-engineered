@@ -88,7 +88,7 @@ async function request(path, options = {}) {
 async function login(username) {
   const { data } = await request('/auth/login', {
     method: 'POST',
-    body: { username, password: 'demo123' },
+    body: { username, password: 'Demo1234!' },
   });
   assert(data.access_token, `missing token for ${username}`);
   return data;
@@ -123,10 +123,16 @@ async function runSmoke() {
   const crc = await login('lung-crc@demo.linzight');
   const pi = await login('lung-pi@demo.linzight');
   const dataManager = await login('lung-dm@demo.linzight');
+  const lzAdmin = await login('admin@demo.linzight');
 
   assert(configAdmin.user.role === 'STUDY_CONFIG_ADMIN', 'config admin role mismatch');
   assert(crfAdmin.user.role === 'LZ_CRF_ADMIN', 'CRF admin role mismatch');
   assert(crc.user.role === 'STUDY_CRC', 'crc role mismatch');
+  assert(!crc.access_token.startsWith('demo-token-'), 'auth token should not use the legacy demo-token format');
+  const currentUser = await request('/auth/me', { token: crc.access_token });
+  assert(currentUser.data.id === crc.user.id, 'auth/me should return the current signed-token user');
+  await request('/auth/me', { expectedStatus: 401 });
+  await request('/patients?study_id=LZXK-01', { token: 'invalid-token', expectedStatus: 401 });
 
   const patients = await request('/patients?study_id=LZXK-01', { token: crc.access_token });
   assert(patients.data.length > 0, 'LZXK-01 patients should be visible to lung CRC');
@@ -148,7 +154,7 @@ async function runSmoke() {
       username: `smoke-crc-${Date.now()}@demo.linzight`,
       display_name: 'Smoke CRC',
       role: 'STUDY_CRC',
-      password: 'demo123',
+      password: 'Demo1234!',
       status: 'active',
       study_id: 'LZXK-01',
       member_status: 'pending',
@@ -156,6 +162,31 @@ async function runSmoke() {
   });
   assert(createdUser.status === 201, 'user create should return 201');
   assert(createdUser.data.study_memberships.some((member) => member.study_id === 'LZXK-01' && member.study_role === 'STUDY_CRC'), 'created user should be linked to LZXK-01');
+  await request('/users', {
+    method: 'POST',
+    token: configAdmin.access_token,
+    body: {
+      username: `weak-crc-${Date.now()}@demo.linzight`,
+      display_name: 'Weak CRC',
+      role: 'STUDY_CRC',
+      password: 'weak',
+      status: 'active',
+      study_id: 'LZXK-01',
+      member_status: 'pending',
+    },
+    expectedStatus: 422,
+  });
+  const disabledUser = await request(`/users/${createdUser.data.id}/status`, {
+    method: 'PATCH',
+    token: lzAdmin.access_token,
+    body: { status: 'disabled' },
+  });
+  assert(disabledUser.data.status === 'disabled', 'LZ_ADMIN should be able to disable a user');
+  await request('/auth/login', {
+    method: 'POST',
+    body: { username: createdUser.data.username, password: 'Demo1234!' },
+    expectedStatus: 403,
+  });
   await request('/users', {
     method: 'POST',
     token: crc.access_token,
@@ -351,6 +382,8 @@ async function runSmoke() {
 
   const audits = await request('/audit-logs?study_id=LZXK-01&entity_type=study_crf_versions', { token: configAdmin.access_token });
   assert(audits.data.some((entry) => entry.action === 'update_crf_field'), 'CRF update audit log missing');
+  const logout = await request('/auth/logout', { method: 'POST', token: crc.access_token });
+  assert(logout.data.status === 'logged_out', 'logout should acknowledge the signed-token session');
 
   console.log('API smoke passed: auth, study isolation, user provisioning, CRF config, consent upload, samples, omics, export permissions, audit logs.');
 }

@@ -64,10 +64,14 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=3)
     display_name: str = Field(min_length=1)
     role: UserRole = "STUDY_CRC"
-    password: str = Field(default="demo123", min_length=6)
+    password: str = Field(default="Demo1234!", min_length=8)
     status: Literal["active", "disabled"] = "active"
     study_id: str | None = None
     member_status: Literal["active", "pending", "disabled"] = "pending"
+
+
+class UserStatusUpdate(BaseModel):
+    status: Literal["active", "disabled"]
 
 
 class PatientBase(BaseModel):

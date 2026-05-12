@@ -35,7 +35,7 @@
 ## Beta 发布范围
 
 - 前端：Vite + React + TypeScript dashboard，支持登录、Study scope、模块路由、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析和系统管理。
-- 后端：FastAPI + SQLite Demo API，包含 demo token、Study 权限、CRUD、导出、导入、质量规则、审计和患者全景接口。
+- 后端：FastAPI + SQLite Demo API，包含签名 Bearer token、Study 权限、CRUD、导出、导入、质量规则、审计和患者全景接口。
 - 数据：三 Study demo seed，SLE CRF V0.1 schema，LZXK-01 肺癌耐药字段和患者/访视/随访/样本/组学数据。
 - 交付：源码、工程文档、环境示例、静态 HTML 导出产物。
 
@@ -43,7 +43,7 @@
 
 - GitHub Actions：artifact 上传和 release checklist gate 已完成；后续可增加缓存细化、分支保护状态检查和 release approval gate。
 - 自动化测试：补前端组件/交互测试、扩展后端 API 测试、权限矩阵回归测试和真实浏览器 smoke 脚本；当前已有 API smoke、OpenAPI 导出、静态 UI smoke、`npm test` 综合 smoke 和 release gate。
-- 安全：替换 Demo token 为生产认证；增加密码策略、JWT/session 策略、字段级权限、脱敏规则、导出审批、文件病毒扫描和对象存储安全策略。
+- 安全：本地签名 token、密码策略、PBKDF2 密码哈希和账号禁用已完成；后续增加字段级权限、脱敏规则、导出审批、文件病毒扫描和对象存储安全策略。
 - 合规：完善真实患者数据进入系统前的脱敏流程、审计检索、下载审批、数据留存和删除策略。
 - 配置与安装：Docker Compose Demo、环境变量清单、Nginx 反向代理示例和 Demo 备份恢复说明已完成；后续补生产数据库迁移、对象存储、正式备份策略和恢复演练。
 - 数据层：将 SQLite Demo 明确升级为生产数据库适配层，并补迁移工具和 schema 版本管理。
@@ -52,5 +52,5 @@
 ## 当前限制
 
 - 当前删除、新增等完整编辑动作主要通过后端 API 验证；前端患者队列已提供 Demo 级新建/编辑表单，但还不是生产级患者主数据向导。
-- 后端仍是 Demo API，使用 SQLite 与 demo token，不应承载真实患者隐私数据。
+- 后端仍是 Demo API，使用 SQLite 和本地签名 token，不应承载真实患者隐私数据。
 - `exports/html/` 是生成产物，源码变化后必须重新运行 `npm run export:html`。

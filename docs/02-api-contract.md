@@ -4,7 +4,7 @@
 
 - Base URL：开发默认 `http://127.0.0.1:8000`
 - 格式：JSON，字段使用 `snake_case`
-- 认证：`POST /auth/login` 返回 Bearer token；开发阶段可使用 Demo token，后续可替换 JWT
+- 认证：`POST /auth/login` 返回 HMAC 签名 Bearer token；后续可替换为托管 JWT/session 服务
 - 文件上传：`multipart/form-data`，文件落本地 `uploads/`
 - 患者中心主键：`patient_id`
 - RWD EDC 研究隔离字段：`study_id`
@@ -19,7 +19,9 @@
 | --- | --- | --- | --- |
 | 登录 | `POST` | `/auth/login` | 用户登录，返回 token 与用户角色 |
 | 登录 | `GET` | `/auth/me` | 当前用户信息 |
+| 登录 | `POST` | `/auth/logout` | 记录登出审计并返回登出状态 |
 | 用户 | `POST` | `/users` | 创建平台或研究级用户；研究级用户可同步加入指定 Study |
+| 用户 | `PATCH` | `/users/{user_id}/status` | `LZ_ADMIN` 启用或禁用账号；禁用账号不能登录 |
 | Study | `GET` | `/studies` | 当前用户可访问 Study |
 | Study 成员 | `GET` | `/studies/{study_id}/members` | 查询 Study 成员 |
 | Study 成员 | `POST` | `/studies/{study_id}/members` | 分配或更新研究级角色，返回与列表一致的成员展示字段 |
@@ -96,7 +98,7 @@ Study CRF 版本发布使用 `PUT /studies/{study_id}/crf-versions/{version_id}`
 ```json
 {
   "username": "crc@demo.linzight",
-  "password": "demo123"
+  "password": "Demo1234!"
 }
 ```
 

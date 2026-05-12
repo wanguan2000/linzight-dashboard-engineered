@@ -32,6 +32,7 @@ import type {
   ApiStudyVisitPlan,
   ApiUser,
   ApiUserCreate,
+  ApiUserStatusUpdate,
   ApiVisit
 } from './contracts';
 
@@ -91,6 +92,7 @@ export type CrfMigrationApprovalRecord = {
 
 const configuredBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
 const apiBases = Array.from(new Set([configuredBase, 'http://127.0.0.1:8000', 'http://127.0.0.1:8001'].filter(Boolean))) as string[];
+export const authTokenStorageKey = 'linzight-auth-token';
 type FetchInit = Parameters<typeof window.fetch>[1];
 
 export class ApiRequestError extends Error {
@@ -136,7 +138,7 @@ async function requestJson<T>(path: string, init?: FetchInit): Promise<T> {
 
     try {
       const headers = new window.Headers(init?.headers);
-      const token = window.localStorage.getItem('linzight-demo-token');
+      const token = window.localStorage.getItem(authTokenStorageKey);
       if (token && !headers.has('Authorization') && path !== '/auth/login') {
         headers.set('Authorization', `Bearer ${token}`);
       }
@@ -161,7 +163,8 @@ async function requestJson<T>(path: string, init?: FetchInit): Promise<T> {
 
 export async function loginWithBackend(username: string, password: string): Promise<AuthenticatedUser> {
   const response = await postJson<ApiLoginResponse>('/auth/login', { username, password });
-  window.localStorage.setItem('linzight-demo-token', response.access_token);
+  window.localStorage.removeItem('linzight-demo-token');
+  window.localStorage.setItem(authTokenStorageKey, response.access_token);
   const initials = response.user.display_name
     .split('')
     .filter((char) => /[A-Za-z\u4e00-\u9fa5]/.test(char))
@@ -191,6 +194,32 @@ export async function loginWithBackend(username: string, password: string): Prom
   };
 }
 
+export async function fetchCurrentUser(): Promise<AuthenticatedUser> {
+  const response = await getJson<ApiUser>('/auth/me');
+  const initials = response.display_name
+    .split('')
+    .filter((char) => /[A-Za-z\u4e00-\u9fa5]/.test(char))
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+  const normalizedUser = normalizeAuthenticatedUser({
+    id: response.id,
+    username: response.username,
+    name: response.display_name,
+    role: response.role,
+    roleLabel: roleLabels[response.role] ?? String(response.role),
+    studyScope: response.study_scope ?? { scopeType: 'own_studies', studyIds: ['LGL-1111'] },
+    studyMemberships: response.study_memberships ?? [],
+    initials
+  });
+  if (!normalizedUser) throw new Error('invalid current user response');
+  return normalizedUser;
+}
+
+export async function logoutFromBackend(): Promise<void> {
+  await postJson<{ status: string }>('/auth/logout', {});
+}
+
 export async function uploadFileToBackend(
   file: globalThis.File,
   metadata: {
@@ -211,7 +240,7 @@ export async function uploadFileToBackend(
   if (metadata.omicsId) formData.append('omics_id', metadata.omicsId);
   if (metadata.consentId) formData.append('consent_id', metadata.consentId);
 
-  const token = window.localStorage.getItem('linzight-demo-token');
+  const token = window.localStorage.getItem(authTokenStorageKey);
   return requestJson<ApiFileMetadata>('/files', {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -220,7 +249,7 @@ export async function uploadFileToBackend(
 }
 
 export async function createExportJob(exportType = 'cohort_csv'): Promise<ApiExportJob> {
-  const token = window.localStorage.getItem('linzight-demo-token');
+  const token = window.localStorage.getItem(authTokenStorageKey);
   const studyId = getCurrentScopedStudyId() ?? 'LGL-1111';
   return postJson<ApiExportJob>(
     '/exports',
@@ -234,7 +263,7 @@ export async function createExportJob(exportType = 'cohort_csv'): Promise<ApiExp
 }
 
 export async function downloadExportJob(job: ApiExportJob): Promise<void> {
-  const token = window.localStorage.getItem('linzight-demo-token');
+  const token = window.localStorage.getItem(authTokenStorageKey);
   const response = await window.fetch(`${apiBases[0]}/exports/${encodeURIComponent(job.id)}/download`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined
   });
@@ -345,6 +374,14 @@ export async function fetchStudyMembers(studyId = getCurrentScopedStudyId() ?? '
 
 export async function createUserAccount(payload: ApiUserCreate): Promise<ApiUser> {
   return postJson<ApiUser>('/users', payload);
+}
+
+export async function updateUserAccountStatus(userId: string, payload: ApiUserStatusUpdate): Promise<ApiUser> {
+  return requestJson<ApiUser>(`/users/${encodeURIComponent(userId)}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function upsertStudyMember(
@@ -467,7 +504,7 @@ export async function updateStudyCrfField(field: StudyCrfFieldRecord): Promise<S
 }
 
 export async function runQualityChecks(): Promise<{ status: string; created: number }> {
-  const token = window.localStorage.getItem('linzight-demo-token');
+  const token = window.localStorage.getItem(authTokenStorageKey);
   return postJson<{ status: string; created: number }>(withCurrentStudyQuery('/quality/run'), {}, token ? { Authorization: `Bearer ${token}` } : undefined);
 }
 
@@ -495,7 +532,7 @@ export async function fetchConsentRecords(): Promise<ConsentRecord[]> {
 }
 
 export async function updateConsentRecord(id: string, payload: Partial<Pick<ConsentRecord, 'status' | 'signedAt' | 'version' | 'method'>>): Promise<ConsentRecord> {
-  const token = window.localStorage.getItem('linzight-demo-token');
+  const token = window.localStorage.getItem(authTokenStorageKey);
   const response = await requestJson<ApiConsent>(`/consents/${id}`, {
     method: 'PUT',
     headers: {

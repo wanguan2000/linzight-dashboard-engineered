@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { LoginPage } from './components/LoginPage';
 import {
@@ -16,6 +16,7 @@ import { authStorageKey, normalizeAuthenticatedUser, userCanAccessStudy, type Au
 import { navItems } from './data/dashboard';
 import type { PatientRecord } from './data/patientCohort';
 import { useI18n } from './i18n/I18nProvider';
+import { authTokenStorageKey, fetchCurrentUser, logoutFromBackend } from './services/api';
 
 declare global {
   interface Window {
@@ -156,6 +157,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(getInitialUser);
   const [activeNavIndex, setActiveNavIndex] = useState(getInitialNavIndex);
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
+  const hasVerifiedSession = useRef(false);
   const visibleNavItems = useMemo(() => navItems.filter((item) => canAccessModule(currentUser, item.label)), [currentUser]);
   const activeModule = navItems[activeNavIndex]?.label ?? '首页工作台';
   const visibleActiveIndex = Math.max(0, visibleNavItems.findIndex((item) => item.label === activeModule));
@@ -173,6 +175,29 @@ export default function App() {
   useEffect(() => {
     syncModuleRoute(activeModule);
   }, [activeModule]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentUser || hasVerifiedSession.current) return undefined;
+    hasVerifiedSession.current = true;
+    fetchCurrentUser()
+      .then((user) => {
+        if (cancelled) return;
+        window.localStorage.setItem(authStorageKey, JSON.stringify(user));
+        setCurrentUser(user);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        window.localStorage.removeItem(authStorageKey);
+        window.localStorage.removeItem(authTokenStorageKey);
+        window.localStorage.removeItem('linzight-demo-token');
+        setSelectedPatient(null);
+        setCurrentUser(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser || canAccessModule(currentUser, activeModule)) return;
@@ -207,7 +232,9 @@ export default function App() {
   }
 
   function handleLogout() {
+    logoutFromBackend().catch(() => undefined);
     window.localStorage.removeItem(authStorageKey);
+    window.localStorage.removeItem(authTokenStorageKey);
     window.localStorage.removeItem('linzight-demo-token');
     setSelectedPatient(null);
     setActiveNavIndex(0);

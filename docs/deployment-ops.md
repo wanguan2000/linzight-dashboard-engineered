@@ -8,7 +8,7 @@ Frontend:
 
 | Variable | Example | Notes |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | `https://edc-api.example.com` | Build-time API base URL for the Vite frontend. For local Docker Compose, use `http://127.0.0.1:8000`. |
+| `VITE_API_BASE_URL` | `https://edc-api.example.com` | Build-time API base URL for the Vite frontend. For local Docker Compose, use `http://localhost:8000` so it resolves to the Compose-published backend port. |
 
 Backend:
 
@@ -42,7 +42,7 @@ docker compose up -d
 curl http://127.0.0.1:8000/health
 curl -X POST http://127.0.0.1:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"lung-crc@demo.linzight","password":"demo123"}'
+  -d '{"username":"lung-crc@demo.linzight","password":"Demo1234!"}'
 docker compose ps
 docker compose logs --tail=80 backend frontend
 ```

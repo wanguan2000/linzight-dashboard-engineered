@@ -42,7 +42,8 @@ try:
         utc_now,
     )
     from .permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
-    from .schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate
+    from .security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
+    from .schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
     from .seed import seed_database
 except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from database import (
@@ -74,7 +75,8 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         utc_now,
     )
     from permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
-    from schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate
+    from security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
+    from schemas import ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
     from seed import seed_database
 
 app = FastAPI(title="LinZight RWS Demo API", version="1.0.0")
@@ -104,6 +106,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     initialize_schema()
+    upgrade_legacy_demo_passwords()
 
 
 def dump_model(model: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
@@ -116,12 +119,15 @@ def not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="record not found")
 
 
-def password_hash(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
-
-def demo_token(user_id: str) -> str:
-    return f"demo-token-{user_id}"
+def upgrade_legacy_demo_passwords() -> None:
+    legacy_hash = legacy_sha256_hash("demo123")
+    with connect() as conn:
+        rows = conn.execute("SELECT id FROM users WHERE password_hash = ?", (legacy_hash,)).fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+                (hash_password(DEFAULT_DEMO_PASSWORD), utc_now(), row["id"]),
+            )
 
 
 def token_to_user_id(authorization: str | None = None, token: str | None = None) -> str | None:
@@ -129,9 +135,10 @@ def token_to_user_id(authorization: str | None = None, token: str | None = None)
     if authorization:
         scheme, _, value = authorization.partition(" ")
         raw_token = value if scheme.lower() == "bearer" else authorization
-    if not raw_token or not raw_token.startswith("demo-token-"):
+    if not raw_token:
         return None
-    return raw_token.replace("demo-token-", "", 1)
+    payload = parse_access_token(raw_token)
+    return str(payload["sub"]) if payload else None
 
 
 def load_user(conn: Any, user_id: str) -> dict[str, Any]:
@@ -583,23 +590,39 @@ def seed() -> dict[str, str]:
 @app.post("/auth/login")
 def login(payload: LoginRequest) -> dict[str, Any]:
     with connect() as conn:
-        row = conn.execute("SELECT * FROM users WHERE username = ? AND status = 'active'", (payload.username,)).fetchone()
-        if row is None or row["password_hash"] != password_hash(payload.password):
+        row = conn.execute("SELECT * FROM users WHERE username = ?", (payload.username,)).fetchone()
+        if row is None or not verify_password(payload.password, row["password_hash"]):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid username or password")
+        if row["status"] != "active":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="user account disabled")
+        if not row["password_hash"].startswith("pbkdf2_sha256$"):
+            conn.execute(
+                "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+                (hash_password(payload.password), utc_now(), row["id"]),
+            )
         user = load_user(conn, row["id"])
-        return {"access_token": demo_token(user["id"]), "token_type": "bearer", "user": user}
+        insert_audit(conn, user, "login", "users", user["id"], after={"username": user["username"]}, study_id=first_accessible_study_id(conn, user) or "LGL-1111")
+        return {"access_token": create_access_token(user["id"], user_role(user)), "token_type": "bearer", "user": user}
 
 
 @app.get("/auth/me")
 def me(token: str | None = Query(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     user_id = token_to_user_id(authorization=authorization, token=token)
     if user_id is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing demo token")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing or invalid bearer token")
     with connect() as conn:
         try:
             return load_user(conn, user_id)
         except KeyError as exc:
-            raise not_found() from exc
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid bearer token") from exc
+
+
+@app.post("/auth/logout")
+def logout(authorization: str | None = Header(default=None)) -> dict[str, str]:
+    with connect() as conn:
+        user = authorize(authorization, "studies", "read", conn=conn)
+        insert_audit(conn, user, "logout", "users", user["id"], after={"username": user["username"]}, study_id=first_accessible_study_id(conn, user) or "LGL-1111")
+        return {"status": "logged_out"}
 
 
 @app.post("/users", status_code=status.HTTP_201_CREATED)
@@ -627,6 +650,8 @@ def create_user(payload: UserCreate, authorization: str | None = Header(default=
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="study account role required")
         if conn.execute("SELECT 1 FROM users WHERE username = ?", (data["username"],)).fetchone():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username already exists")
+        if not password_meets_policy(data["password"]):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=PASSWORD_POLICY_MESSAGE)
         conn.execute(
             """
             INSERT INTO users (id, username, display_name, role, role_code, password_hash, status, created_at, updated_at)
@@ -638,7 +663,7 @@ def create_user(payload: UserCreate, authorization: str | None = Header(default=
                 data["display_name"],
                 LEGACY_ROLE_BY_ROLE_CODE.get(role_code, "investigator"),
                 role_code,
-                password_hash(data["password"]),
+                hash_password(data["password"]),
                 data["status"],
                 now,
                 now,
@@ -669,6 +694,21 @@ def create_user(payload: UserCreate, authorization: str | None = Header(default=
         ]
         insert_audit(conn, actor, "create", "users", user_id, after=created, study_id=study_id or first_accessible_study_id(conn, actor) or "LGL-1111")
         return created
+
+
+@app.patch("/users/{user_id}/status")
+def update_user_status(user_id: str, payload: UserStatusUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with connect() as conn:
+        actor = authorize(authorization, "studies", "write", conn=conn)
+        if user_role(actor) != "LZ_ADMIN":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can enable or disable users")
+        before = row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,)))
+        now = utc_now()
+        conn.execute("UPDATE users SET status = ?, updated_at = ? WHERE id = ?", (payload.status, now, user_id))
+        after = row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,)))
+        after["study_scope"] = get_user_study_scope(conn, after)
+        insert_audit(conn, actor, "update_status", "users", user_id, before=before, after=after, study_id=first_accessible_study_id(conn, after) or first_accessible_study_id(conn, actor) or "LGL-1111")
+        return after
 
 
 @app.get("/studies")

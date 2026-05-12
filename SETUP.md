@@ -82,10 +82,10 @@ docker compose config
 curl http://127.0.0.1:8000/health
 curl -X POST http://127.0.0.1:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"crc@demo.linzight","password":"demo123"}'
+  -d '{"username":"crc@demo.linzight","password":"Demo1234!"}'
 curl -X POST http://127.0.0.1:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"lung-crc@demo.linzight","password":"demo123"}'
+  -d '{"username":"lung-crc@demo.linzight","password":"Demo1234!"}'
 ```
 
 患者、CRF、样本、导出和审计接口都需要 Bearer token，并会按当前用户的 `study_id` 授权范围过滤。`lung-crc@demo.linzight` 只访问 `LZXK-01` 的 20 名肺癌耐药研究患者。常用 Demo 账号见 `README.md` 和 `src/data/auth.ts`。
