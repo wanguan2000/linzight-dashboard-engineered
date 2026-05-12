@@ -17,7 +17,7 @@
 - Docker Compose：已提供前端/后端镜像和本地 Demo 编排，后端首次启动会在 SQLite volume 中 seed 三 Study Demo 数据；`docker compose config` 用于校验编排文件语法。
 - Docker 实测：Docker Desktop 启动后，`docker compose build` 和 `docker compose up -d` 已通过；后端容器首次启动成功 seed 70 名患者，`GET /health` 与 `POST /auth/login` 正常，前端容器通过 `http://localhost:5173/` 可访问。前端 Dockerfile 已复制 `resource/sle-crf-v0.1.schema.json`，避免容器内 TypeScript build 缺 CRF schema。
 - 部署运维：已补 `docs/deployment-ops.md`，包括环境变量清单、Nginx 反向代理示例、Docker Compose 说明和 Demo SQLite/上传目录备份恢复脚本。
-- 浏览器交互补充：System Management 的平台角色 Study selector 已验证可切换到 `LZXK-01` 并重新加载该 Study 的成员、CRF 字段、CRF migration 和访视计划；同一 requester 的 CRF migration Approve/Apply 在前端禁用并显示 separate reviewer 状态。
+- 浏览器交互补充：System Management 的平台角色 Study selector 已验证可切换到 `LZXK-01` 并重新加载该 Study 的成员、CRF 字段、CRF migration、访视计划、Study site 和 Query；同一 requester 的 CRF migration Approve/Apply 在前端禁用并显示 separate reviewer 状态。Query 管理页面已接入 `/queries` 的新建、回复、关闭；多中心配置页面已接入 `/studies/{study_id}/sites` 和 `/studies/{study_id}/sites/{site_id}/users`。
 - 浏览器英文文案补充：`sample-testing`、`system-management`、`data-analysis`、`home-workbench` 在 `locale=en-US` 下复查无可见中文残留，语言切换控件除外。
 - CI：`.github/workflows/ci.yml` 会在 push/PR 上运行 npm install、lint、build、Python backend compile、`npm run smoke:api`、`npm run export:openapi`、`npm run export:html`、`npm run smoke:ui`、`npm run release:check`、`npm run smoke:docker`，并上传 `exports/html/` artifact。
 - 前端浏览器 smoke：验证 Study 登录、LZXK-01 后端实时数据展示、患者列表筛选数据、患者“查看”进入 Journey、“编辑”进入临床数据采集、模块切换与控制台错误。
@@ -34,7 +34,7 @@
 
 ## Beta 发布范围
 
-- 前端：Vite + React + TypeScript dashboard，支持登录、Study scope、模块路由、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析和系统管理。
+- 前端：Vite + React + TypeScript dashboard，支持登录、Study scope、模块路由、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析、系统管理、Query 管理和多中心配置。
 - 后端：FastAPI + SQLite Demo API，包含签名 Bearer token、Study 权限、CRUD、导出、导入、质量规则、审计和患者全景接口。
 - 数据：三 Study demo seed，SLE CRF V0.1 schema，LZXK-01 肺癌耐药字段和患者/访视/随访/样本/组学数据。
 - 交付：源码、工程文档、环境示例、静态 HTML 导出产物。
@@ -47,7 +47,7 @@
 - 合规：完善真实患者数据进入系统前的脱敏流程、审计检索、下载审批、数据留存和删除策略。
 - 配置与安装：Docker Compose Demo、环境变量清单、Nginx 反向代理示例和 Demo 备份恢复说明已完成；后续补生产数据库迁移、对象存储、正式备份策略和恢复演练。
 - 数据层：将 SQLite Demo 明确升级为生产数据库适配层，并补迁移工具和 schema 版本管理。
-- 发布管理：release checklist 与 CHANGELOG 发布段落已建立；后续创建实际版本 tag、GitHub release notes，并在发布前确认回滚 artifact。
+- 发布管理：release checklist 与 CHANGELOG 发布段落已建立；后续推送候选 tag、创建 GitHub Release，并在发布前确认回滚 artifact。
 
 ## 当前限制
 

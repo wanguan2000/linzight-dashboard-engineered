@@ -342,6 +342,45 @@ export type ApiApprovalRequest = {
   }>;
 };
 
+export type ApiStudySite = {
+  id: string;
+  study_id: string;
+  code: string;
+  name: string;
+  status: 'active' | 'disabled';
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiSiteUser = {
+  id: string;
+  study_id: string;
+  site_id: string;
+  user_id: string;
+  role: string;
+  status: 'active' | 'disabled';
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiDataQuery = {
+  id: string;
+  study_id: string;
+  patient_id: string;
+  visit_id: string | null;
+  form_id: string;
+  field_name: string;
+  title: string;
+  description: string;
+  status: 'open' | 'answered' | 'closed' | 'cancelled';
+  assigned_to: string | null;
+  created_by: string | null;
+  response: string;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+};
+
 export type ApiAnalysisSummary = {
   patient_count: number;
   disease_distribution: Record<DiseaseType, number>;

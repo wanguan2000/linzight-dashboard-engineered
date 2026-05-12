@@ -24,11 +24,14 @@ import {
   applyStudyCrfMigration,
   approveApprovalRequest,
   approveStudyCrfMigration,
+  assignStudySiteUser,
   createApprovalRequest,
+  createDataQuery,
   createOmicsRecord,
   createSampleRecord,
   createExportJob,
   createStudyCrfField,
+  createStudySite,
   createStudyCrfVersion,
   createStudyVisitPlan,
   createUserAccount,
@@ -37,10 +40,12 @@ import {
   fetchDemoDataset,
   fetchOmicsRecords,
   fetchSamples,
+  fetchDataQueries,
   fetchStudyCrfFields,
   fetchStudyCrfMigrations,
   fetchStudyCrfVersions,
   fetchStudyMembers,
+  fetchStudySites,
   fetchStudyVisitPlans,
   fetchApprovalRequests,
   filterRecordsByCurrentStudyScope,
@@ -54,6 +59,7 @@ import {
   saveVisitFollowUpRecord,
   updatePatientClinicalData,
   updateConsentRecord,
+  updateDataQuery,
   updateOmicsRecord,
   updateSampleRecord,
   updateStudyCrfField,
@@ -62,7 +68,7 @@ import {
   upsertStudyMember,
   uploadFileToBackend
 } from '../services/api';
-import type { ApiApprovalRequest, ApiExportJob, ApiStudyMember, ApiUser } from '../services/contracts';
+import type { ApiApprovalRequest, ApiDataQuery, ApiExportJob, ApiSiteUser, ApiStudyMember, ApiStudySite, ApiUser } from '../services/contracts';
 import type { CrfMigrationApprovalRecord, CrfMigrationPreview, StudyCrfVersionRecord } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
@@ -2754,6 +2760,9 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [crfMigrationRows, setCrfMigrationRows] = useState<CrfMigrationApprovalRecord[]>([]);
   const [approvalRows, setApprovalRows] = useState<ApiApprovalRequest[]>([]);
   const [visitPlanRows, setVisitPlanRows] = useState<StudyVisitPlanRecord[]>(systemVisitPlans);
+  const [siteRows, setSiteRows] = useState<ApiStudySite[]>([]);
+  const [siteUserRows, setSiteUserRows] = useState<ApiSiteUser[]>([]);
+  const [queryRows, setQueryRows] = useState<ApiDataQuery[]>([]);
   const [systemActionStatus, setSystemActionStatus] = useState('等待系统管理操作');
   const normalizedQuery = systemQuery.trim().toLowerCase();
   const visibleAccounts = useMemo(() => {
@@ -2802,6 +2811,24 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     () => approvalRows.filter((approval) => !scopedStudyId || approval.study_id === scopedStudyId).slice(0, 4),
     [approvalRows, scopedStudyId]
   );
+  const visibleSites = useMemo(() => {
+    const scopedSites = scopedStudyId ? siteRows.filter((site) => site.study_id === scopedStudyId) : siteRows;
+    if (!normalizedQuery) return scopedSites;
+    return scopedSites.filter((site) =>
+      [site.study_id, site.code, site.name, site.status].some((item) => item.toLowerCase().includes(normalizedQuery))
+    );
+  }, [normalizedQuery, scopedStudyId, siteRows]);
+  const visibleQueries = useMemo(() => {
+    const scopedQueries = scopedStudyId ? queryRows.filter((query) => query.study_id === scopedStudyId) : queryRows;
+    if (!normalizedQuery) return scopedQueries.slice(0, 6);
+    return scopedQueries
+      .filter((query) =>
+        [query.id, query.study_id, query.patient_id, query.visit_id ?? '', query.form_id, query.field_name, query.title, query.description, query.status, query.assigned_to ?? ''].some((item) =>
+          item.toLowerCase().includes(normalizedQuery)
+        )
+      )
+      .slice(0, 6);
+  }, [normalizedQuery, queryRows, scopedStudyId]);
 
   useEffect(() => {
     if (!availableSystemStudies.includes(selectedSystemStudyId)) {
@@ -2832,9 +2859,11 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       fetchStudyCrfFields(scopedStudyId),
       fetchStudyCrfVersions(scopedStudyId),
       fetchStudyCrfMigrations(scopedStudyId),
-      fetchApprovalRequests(scopedStudyId)
+      fetchApprovalRequests(scopedStudyId),
+      fetchStudySites(scopedStudyId),
+      fetchDataQueries(scopedStudyId)
     ])
-      .then(([visitPlanResult, memberResult, crfFieldResult, crfVersionResult, crfMigrationResult, approvalResult]) => {
+      .then(([visitPlanResult, memberResult, crfFieldResult, crfVersionResult, crfMigrationResult, approvalResult, siteResult, queryResult]) => {
         if (ignore) return;
         if (visitPlanResult.status === 'fulfilled' && visitPlanResult.value.length) {
           setVisitPlanRows((rows) => [
@@ -2868,6 +2897,18 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
           setApprovalRows((rows) => [
             ...rows.filter((approval) => approval.study_id !== scopedStudyId),
             ...approvalResult.value
+          ]);
+        }
+        if (siteResult.status === 'fulfilled') {
+          setSiteRows((rows) => [
+            ...rows.filter((site) => site.study_id !== scopedStudyId),
+            ...siteResult.value
+          ]);
+        }
+        if (queryResult.status === 'fulfilled') {
+          setQueryRows((rows) => [
+            ...rows.filter((query) => query.study_id !== scopedStudyId),
+            ...queryResult.value
           ]);
         }
       })
@@ -3199,6 +3240,106 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       setSystemActionStatus(`访视计划已同步后端：${created.studyId} / ${created.code}`);
     } catch {
       setSystemActionStatus('后端不可用，访视计划草稿已保存在本页');
+    }
+  }
+
+  async function createSiteConfiguration() {
+    const studyId = scopedStudyId ?? 'LGL-1111';
+    const existingSites = siteRows.filter((site) => site.study_id === studyId);
+    const index = existingSites.length + 1;
+    const code = `SITE-${String(index).padStart(2, '0')}`;
+    const nextSite: ApiStudySite = {
+      id: `LOCAL-SITE-${Date.now().toString().slice(-6)}`,
+      study_id: studyId,
+      code,
+      name: `${t('新增研究中心')} ${index}`,
+      status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    setSiteRows((rows) => [nextSite, ...rows]);
+    setSystemActionStatus('Study site 正在创建并写入后端...');
+    try {
+      const created = await createStudySite(studyId, {
+        code,
+        name: nextSite.name,
+        status: 'active'
+      });
+      setSiteRows((rows) => [created, ...rows.filter((site) => site.id !== nextSite.id && !(site.study_id === created.study_id && site.code === created.code))]);
+      setSystemActionStatus(`Study site 已同步后端：${created.study_id} / ${created.code}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 Study site 写入权限，中心草稿已保存在本页');
+    }
+  }
+
+  async function assignCurrentUserToSite(site: ApiStudySite) {
+    if (!currentUser?.id) {
+      setSystemActionStatus('请先登录真实用户后再分配 site 用户');
+      return;
+    }
+    setSystemActionStatus(`Site 用户分配正在同步后端：${site.code} / ${currentUser.username}`);
+    try {
+      const assignment = await assignStudySiteUser(site.study_id, site.id, {
+        userId: currentUser.id,
+        role: currentUser.role,
+        status: 'active'
+      });
+      setSiteUserRows((rows) => [assignment, ...rows.filter((row) => !(row.site_id === assignment.site_id && row.user_id === assignment.user_id))]);
+      setSystemActionStatus(`Site 用户分配已写入后端：${site.code} / ${currentUser.username}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 site 用户分配权限');
+    }
+  }
+
+  async function createSystemDataQuery() {
+    const studyId = scopedStudyId ?? 'LGL-1111';
+    setSystemActionStatus('Query 正在创建并写入后端...');
+    try {
+      const dataset = await fetchDemoDataset();
+      const patient = dataset.patients.find((record) => record.studyId === studyId);
+      if (!patient?.id) {
+        setSystemActionStatus('当前 Study 没有可绑定 Query 的患者');
+        return;
+      }
+      const created = await createDataQuery({
+        study_id: studyId,
+        patient_id: patient.id,
+        visit_id: dataset.visits.find((visit) => visit.studyId === studyId && visit.patientId === patient.id)?.id ?? null,
+        form_id: 'clinical_capture',
+        field_name: 'data_completeness',
+        title: `${t('数据核查 Query')} ${queryRows.filter((query) => query.study_id === studyId).length + 1}`,
+        description: 'Please verify the source record and reply with correction status.',
+        assigned_to: currentUser?.id ?? null
+      });
+      setQueryRows((rows) => [created, ...rows.filter((query) => query.id !== created.id)]);
+      setSystemActionStatus(`Query 已创建并绑定患者：${created.id} / ${created.patient_id}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 Query 创建权限');
+    }
+  }
+
+  async function answerSystemDataQuery(query: ApiDataQuery) {
+    setSystemActionStatus(`Query ${query.id} 正在回复...`);
+    try {
+      const answered = await updateDataQuery(query.id, {
+        status: 'answered',
+        response: 'Verified in source record from System Management.'
+      });
+      setQueryRows((rows) => [answered, ...rows.filter((row) => row.id !== answered.id)]);
+      setSystemActionStatus(`Query 已回复：${answered.id}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 Query 回复权限');
+    }
+  }
+
+  async function closeSystemDataQuery(query: ApiDataQuery) {
+    setSystemActionStatus(`Query ${query.id} 正在关闭...`);
+    try {
+      const closed = await updateDataQuery(query.id, { status: 'closed' });
+      setQueryRows((rows) => [closed, ...rows.filter((row) => row.id !== closed.id)]);
+      setSystemActionStatus(`Query 已关闭：${closed.id}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 Query 关闭权限');
     }
   }
 
@@ -3661,6 +3802,114 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                       ))}
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="module-card system-query-card">
+            <header className="module-card__header">
+              <div>
+                <h2>{t('Query Management | Query 管理')}</h2>
+                <span>{t('创建、指派、回复和关闭 Query，绑定 subject / visit / form。')}</span>
+              </div>
+              <button className="module-link-button module-link-button--primary" type="button" onClick={() => void createSystemDataQuery()}>
+                <Icon name="filePlus" />{t('新增 Query')}
+              </button>
+            </header>
+            <div className="module-table-wrap">
+              <table className="module-table system-query-table">
+                <thead>
+                  <tr>
+                    <th>Query</th>
+                    <th>Subject</th>
+                    <th>Form / Field</th>
+                    <th>Assignee</th>
+                    <th>Status</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleQueries.length ? visibleQueries.map((query) => (
+                    <tr key={query.id}>
+                      <td>
+                        <strong>{query.id}</strong>
+                        <span>{t(query.title)}</span>
+                      </td>
+                      <td>{query.patient_id}</td>
+                      <td>{query.form_id || '-'} / {query.field_name || '-'}</td>
+                      <td>{query.assigned_to ?? '-'}</td>
+                      <td><span className={`status-pill status-pill--${query.status === 'closed' ? 'success' : query.status === 'answered' ? 'info' : query.status === 'cancelled' ? 'danger' : 'warning'}`}>{t(query.status)}</span></td>
+                      <td>{query.updated_at.slice(0, 10)}</td>
+                      <td>
+                        <div className="module-table-actions">
+                          <button className="module-link-button" type="button" disabled={query.status === 'closed' || query.status === 'cancelled'} onClick={() => void answerSystemDataQuery(query)}>{t('回复')}</button>
+                          <button className="module-link-button module-link-button--danger" type="button" disabled={query.status === 'closed' || query.status === 'cancelled'} onClick={() => void closeSystemDataQuery(query)}>{t('关闭')}</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={7}>{t('暂无 Query')}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="module-card system-site-card">
+            <header className="module-card__header">
+              <div>
+                <h2>{t('Site Configuration | 多中心配置')}</h2>
+                <span>{t('维护 Study site、site user assignment 和 study-site 隔离。')}</span>
+              </div>
+              <button className="module-link-button module-link-button--primary" type="button" onClick={() => void createSiteConfiguration()}>
+                <Icon name="filePlus" />{t('新增中心')}
+              </button>
+            </header>
+            <div className="module-table-wrap">
+              <table className="module-table system-site-table">
+                <thead>
+                  <tr>
+                    <th>Study</th>
+                    <th>Site Code</th>
+                    <th>Site Name</th>
+                    <th>Status</th>
+                    <th>Assignments</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleSites.length ? visibleSites.map((site) => {
+                    const currentAssignment = siteUserRows.find((row) => row.site_id === site.id && row.user_id === currentUser?.id);
+                    return (
+                      <tr key={site.id}>
+                        <td>{site.study_id}</td>
+                        <td>{site.code}</td>
+                        <td>{t(site.name)}</td>
+                        <td><span className={`status-pill status-pill--${site.status === 'active' ? 'success' : 'danger'}`}>{t(site.status)}</span></td>
+                        <td>{currentAssignment ? `${currentAssignment.user_id} · ${t(currentAssignment.status)}` : '-'}</td>
+                        <td>
+                          <div className="module-table-actions">
+                            <button
+                              className="module-link-button"
+                              type="button"
+                              disabled={Boolean(currentAssignment)}
+                              onClick={() => void assignCurrentUserToSite(site)}
+                            >
+                              {t('指派当前用户')}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }) : (
+                    <tr>
+                      <td colSpan={6}>{t('暂无中心')}</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

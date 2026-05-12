@@ -544,6 +544,40 @@ const exactEnglish: Record<string, string> = {
   '导出与分析 / Export & Analytics': 'Export & Analytics',
   '审计日志 / Audit Logs': 'Audit Logs',
   'active': 'Active',
+  'disabled': 'Disabled',
+  'open': 'Open',
+  'answered': 'Answered',
+  'closed': 'Closed',
+  'Query Management | Query 管理': 'Query Management',
+  '创建、指派、回复和关闭 Query，绑定 subject / visit / form。':
+    'Create, assign, answer, and close Queries linked to subject / visit / form.',
+  '新增 Query': 'New Query',
+  '回复': 'Reply',
+  '关闭': 'Close',
+  '暂无 Query': 'No Queries yet',
+  '数据核查 Query': 'Data review Query',
+  'Site Configuration | 多中心配置': 'Site Configuration',
+  '维护 Study site、site user assignment 和 study-site 隔离。':
+    'Manage Study sites, site user assignments, and study-site isolation.',
+  '新增中心': 'New Site',
+  '新增研究中心': 'New Study Site',
+  '指派当前用户': 'Assign Current User',
+  '暂无中心': 'No Sites yet',
+  '等待系统管理操作': 'Waiting for system management action',
+  'Study site 正在创建并写入后端...': 'Creating Study site and writing to backend...',
+  'Query 正在创建并写入后端...': 'Creating Query and writing to backend...',
+  '当前 Study 没有可绑定 Query 的患者': 'The current Study has no subject available for Query binding',
+  '请先登录真实用户后再分配 site 用户': 'Sign in as a real user before assigning a site user',
+  '后端不可用或当前角色无 Study site 写入权限，中心草稿已保存在本页':
+    'Backend unavailable or current role lacks Study site write permission; site draft saved on this page',
+  '后端不可用或当前角色无 site 用户分配权限':
+    'Backend unavailable or current role lacks site-user assignment permission',
+  '后端不可用或当前角色无 Query 创建权限':
+    'Backend unavailable or current role lacks Query creation permission',
+  '后端不可用或当前角色无 Query 回复权限':
+    'Backend unavailable or current role lacks Query answer permission',
+  '后端不可用或当前角色无 Query 关闭权限':
+    'Backend unavailable or current role lacks Query close permission',
   'Research Doctor / PI研究医生 / PI': 'Research Doctor / PI',
   'CRC / Research AssistantCRC / 研究助理': 'CRC / Research Assistant',
   'System Administrator系统管理员': 'System Administrator',
@@ -788,7 +822,6 @@ const exactEnglish: Record<string, string> = {
   '已发起重签，正在同步后端中...': 'Re-sign started; syncing backend...',
   '已发起重签，已同步后端': 'Re-sign started; backend synced',
   '已发起重签，后端不可用，已保存在本页': 'Re-sign started; backend unavailable, saved on this page',
-  '等待系统管理操作': 'Waiting for system admin action',
   '平台级用户状态需要后端用户状态 API，当前已禁用': 'Platform user status changes require a backend user-status API and are disabled for now',
   '快捷操作已在顶部工作台接入': 'Quick actions are connected in the main workbench',
   '等待样本操作': 'Waiting for sample action',
@@ -1374,6 +1407,38 @@ const dynamicRules: DynamicRule[] = [
   {
     pattern: /^用户账户已创建并加入 Study：(.+)$/,
     format: (email) => `User account created and added to Study: ${email}`
+  },
+  {
+    pattern: /^Study site 已同步后端：(.+) \/ (.+)$/,
+    format: (study, site) => `Study site synced to backend: ${study} / ${site}`
+  },
+  {
+    pattern: /^Site 用户分配正在同步后端：(.+) \/ (.+)$/,
+    format: (site, user) => `Site user assignment syncing to backend: ${site} / ${user}`
+  },
+  {
+    pattern: /^Site 用户分配已写入后端：(.+) \/ (.+)$/,
+    format: (site, user) => `Site user assignment written to backend: ${site} / ${user}`
+  },
+  {
+    pattern: /^Query 已创建并绑定患者：(.+) \/ (.+)$/,
+    format: (query, patient) => `Query created and linked to subject: ${query} / ${patient}`
+  },
+  {
+    pattern: /^Query (.+) 正在回复\.\.\.$/,
+    format: (query) => `Query ${query} is being answered...`
+  },
+  {
+    pattern: /^Query 已回复：(.+)$/,
+    format: (query) => `Query answered: ${query}`
+  },
+  {
+    pattern: /^Query (.+) 正在关闭\.\.\.$/,
+    format: (query) => `Query ${query} is being closed...`
+  },
+  {
+    pattern: /^Query 已关闭：(.+)$/,
+    format: (query) => `Query closed: ${query}`
   },
   {
     pattern: /^后端不可用或当前角色无用户创建权限，账户已保存在本页$/,

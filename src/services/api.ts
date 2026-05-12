@@ -18,6 +18,7 @@ import type {
   ApiConsent,
   ApiCrfEntry,
   ApiCrfMigrationApproval,
+  ApiDataQuery,
   ApiExportJob,
   ApiFileMetadata,
   ApiFollowUpRecord,
@@ -27,9 +28,11 @@ import type {
   ApiPatient,
   ApiSample,
   ApiCrfMigrationPreview,
+  ApiSiteUser,
   ApiStudyCrfField,
   ApiStudyCrfVersion,
   ApiStudyMember,
+  ApiStudySite,
   ApiStudyVisitPlan,
   ApiUser,
   ApiUserCreate,
@@ -395,6 +398,57 @@ export async function createStudyVisitPlan(plan: StudyVisitPlanRecord): Promise<
 
 export async function fetchStudyMembers(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiStudyMember[]> {
   return getJson<ApiStudyMember[]>(`/studies/${encodeURIComponent(studyId)}/members`);
+}
+
+export async function fetchStudySites(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiStudySite[]> {
+  return getJson<ApiStudySite[]>(`/studies/${encodeURIComponent(studyId)}/sites`);
+}
+
+export async function createStudySite(
+  studyId: string,
+  payload: { code: string; name: string; status?: ApiStudySite['status'] }
+): Promise<ApiStudySite> {
+  return postJson<ApiStudySite>(`/studies/${encodeURIComponent(studyId)}/sites`, {
+    code: payload.code,
+    name: payload.name,
+    status: payload.status ?? 'active'
+  });
+}
+
+export async function assignStudySiteUser(
+  studyId: string,
+  siteId: string,
+  payload: { userId: string; role: string; status?: ApiSiteUser['status'] }
+): Promise<ApiSiteUser> {
+  return postJson<ApiSiteUser>(`/studies/${encodeURIComponent(studyId)}/sites/${encodeURIComponent(siteId)}/users`, {
+    user_id: payload.userId,
+    role: payload.role,
+    status: payload.status ?? 'active'
+  });
+}
+
+export async function fetchDataQueries(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiDataQuery[]> {
+  return getJson<ApiDataQuery[]>(`/queries?study_id=${encodeURIComponent(studyId)}`);
+}
+
+export async function createDataQuery(payload: {
+  study_id: string;
+  patient_id: string;
+  visit_id?: string | null;
+  form_id?: string;
+  field_name?: string;
+  title: string;
+  description?: string;
+  assigned_to?: string | null;
+}): Promise<ApiDataQuery> {
+  return postJson<ApiDataQuery>('/queries', payload);
+}
+
+export async function updateDataQuery(
+  queryId: string,
+  payload: Partial<Pick<ApiDataQuery, 'status' | 'assigned_to' | 'response'>>
+): Promise<ApiDataQuery> {
+  return putJson<ApiDataQuery>(`/queries/${encodeURIComponent(queryId)}`, payload);
 }
 
 export async function createUserAccount(payload: ApiUserCreate): Promise<ApiUser> {
