@@ -92,7 +92,7 @@ npm run dev
 - `backend/seed.py` 读取同一份 schema，生成 70 名测试患者、210 条访视、140 条随访记录、210 条 CRF 记录及关联样本/组学/知情同意数据；其中 `LZXK-01` 为真实世界肺癌耐药研究，默认 20 名患者。
 - `study_visit_plans` 为每个 Study 独立配置 V1/V2/V3 访视计划、时间窗、必填 CRF 表单和样本要求；`visits.visit_plan_id` 关联配置，新建患者时后端自动生成计划访视和 CRF 草稿。
 - `follow_up_records` 隶属于患者信息，绑定 `study_id + patient_id`，可选关联 `visit_id`，记录随访方式、随访人、生存/疾病状态、疗效、转移、不良事件、生活质量和失访原因。
-- `LZXK-01` 发布独立 Study CRF V1.0，在 SLE CRF V0.1 基础上追加 15 个肺癌耐药字段，已录入数据保留各自 `crf_version_id`。
+- `LZXK-01` 发布独立 Study CRF V1.0，使用 15 个肺癌耐药字段，不继承 SLE CRF 字段；已录入数据保留各自 `crf_version_id`。
 - SQLite 使用 JSONB（二进制 JSON）优先保存 CRF：`patients.clinical_data_jsonb` 与 `crf_entries.payload_jsonb` 为 BLOB，同时保留 `*_version` 与 `*_format` 供 API 和迁移校验。
 - 当前 CSV 中 `免疫制剂2` 出现两次，V0.1 schema 将第二个字段规范为 `免疫制剂2（第2项）`，避免 JSON payload 字段覆盖。
 
@@ -144,6 +144,12 @@ npm run export:openapi
 npm run smoke:api
 ```
 
+CRF 语义 smoke（检查 `LZXK-01` 患者、CRF payload、CRF 字段字典不混入 SLE 字段，并验证肺癌 Study 拒绝 `SLEDAI评分` Query）：
+
+```bash
+npm run smoke:crf-semantics
+```
+
 静态 UI smoke（检查导出 manifest、8 个 HTML 页面、关键按钮文案、CRF migration approval、execution logs、separate reviewer 和多 Study selector 文案）：
 
 ```bash
@@ -168,7 +174,7 @@ npm run demo:e2e
 npm run release:check
 ```
 
-综合 smoke 测试（API smoke、OpenAPI 导出、静态导出、UI smoke、release gate）：
+综合 smoke 测试（API smoke、CRF 语义 smoke、OpenAPI 导出、静态导出、UI smoke、release gate）：
 
 ```bash
 npm test

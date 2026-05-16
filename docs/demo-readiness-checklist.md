@@ -9,6 +9,7 @@ This checklist is for customer-facing walkthroughs of the LinZight RWD EDC demo.
 Run the browser chain before a customer demo:
 
 ```bash
+npm run smoke:crf-semantics
 npm run demo:e2e
 ```
 

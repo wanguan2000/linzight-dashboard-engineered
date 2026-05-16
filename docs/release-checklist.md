@@ -12,6 +12,7 @@ Run these from the repository root:
 npm run lint
 npm run build
 npm run smoke:api
+npm run smoke:crf-semantics
 npm run export:openapi
 npm run export:html
 npm run smoke:ui
@@ -40,7 +41,7 @@ git status --short --branch
 
 - Required package scripts are present.
 - Core handoff, changelog, API, protocol, OpenAPI snapshot, release-readiness, frontend audit, deployment operations, and HTML export docs exist.
-- GitHub Actions runs lint, build, backend compile, API smoke, OpenAPI export, HTML export, UI smoke, the release gate, and Docker smoke.
+- GitHub Actions runs lint, build, backend compile, API smoke, CRF semantics smoke, OpenAPI export, HTML export, UI smoke, browser matrix, demo E2E, the release gate, and Docker smoke.
 - Browser regression is layered via `npm run regression:browser`; if Playwright is not installed, the script writes a limitation report under `reports/`.
 - Role/Study browser matrix is layered via `npm run browser:matrix`; if Playwright is not installed, the script writes a skipped report under `reports/browser-matrix.json`.
 - End-to-end customer demo chain is layered via `npm run demo:e2e`; it validates `admin@demo.linzight`, `lung-crc@demo.linzight`, and `lung-dm@demo.linzight` from login through patient queue, CRF, eConsent, sample/testing, Journey, analytics, Query, approval and audit.

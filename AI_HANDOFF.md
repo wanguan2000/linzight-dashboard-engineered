@@ -39,8 +39,8 @@
 
 - 完整生产级认证、集中身份源、权限审批流和用户管理。
 - 真实 EDC/EMR/LIS/组学平台 API 接入。
-- 前端组件/真实浏览器自动化测试需要继续扩展；当前已提供 `npm run smoke:api`、`npm run export:openapi`、`npm run smoke:ui`、`npm run browser:matrix`、`npm run demo:e2e`、`npm run release:check` 和 `npm test` 综合 smoke，后续仍需纳入 CI 并扩展到更多浏览器。
-- CI/CD 自动发布流程；GitHub Actions 已覆盖基础验证、release gate 和静态 HTML artifact 上传。
+- 前端组件/真实浏览器自动化测试需要继续扩展；当前已提供并纳入 CI/release gate 的检查包括 `npm run smoke:api`、`npm run smoke:crf-semantics`、`npm run export:openapi`、`npm run smoke:ui`、`npm run browser:matrix`、`npm run demo:e2e`、`npm run release:check` 和 `npm test` 综合 smoke，后续仍需扩展到更多浏览器和截图基线。
+- CI/CD 自动发布流程；GitHub Actions 已覆盖基础验证、CRF 语义 smoke、角色浏览器矩阵、demo E2E、release gate 和静态 HTML artifact 上传。
 - 生产级部署模板；当前已提供本地 Demo 用 `Dockerfile.frontend`、`Dockerfile.backend` 和 `docker-compose.yml`。
 - 真实文件对象存储、病毒扫描、长期归档策略和 PostgreSQL migration 仍需替换为生产基础设施并完成演练。
 - Query 管理、字段级审计 before/after diff、eConsent 撤回/重签审批、访视窗口超窗预警和数据字典规则已有 Demo first pass，仍需产品化 reviewer UX、报表和 CI gate。锁库和脱敏审批属于内部治理流程，当前客户演示发布前不作为外显范围。
@@ -58,7 +58,7 @@
 
 ## 下一步开发优先级
 
-1. 将当前 API smoke 与 `browser:matrix` 扩展为正式 CI 权限矩阵：patients、samples、omics、visits、follow-ups、consents、CRF、files、queries、quality、exports、approvals、audit logs 全部覆盖正向和越权用例。
+1. 继续扩展正式 CI 权限矩阵：patients、samples、omics、visits、follow-ups、consents、CRF、files、queries、quality、exports、approvals、audit logs 已有正向/越权 smoke，下一步补字段级权限、中心级权限和真实身份源映射。
 2. 把浏览器矩阵扩展到更多浏览器和截图基线，覆盖管理员 Study selector、Study ID 列、Study CRC 只看本 Study、移动端卡片视图和导出下载闭环。
 3. 抽离 mock data，形成可替换的 demo dataset 层，确保 API 失败 fallback 不泄露未授权 Study。
 4. 细化 API 契约和错误处理，继续产品化字段级 Query、审计 diff 展示、文件归档和 eConsent 重签流程。

@@ -26,7 +26,7 @@ function gitLsFiles() {
 }
 
 const packageJson = readJson('package.json');
-for (const script of ['lint', 'build', 'export:html', 'export:openapi', 'smoke:api', 'smoke:ui', 'smoke:docker', 'release:check', 'backup:sqlite', 'restore:sqlite', 'test']) {
+for (const script of ['lint', 'build', 'export:html', 'export:openapi', 'smoke:api', 'smoke:crf-semantics', 'smoke:ui', 'smoke:docker', 'browser:matrix', 'demo:e2e', 'release:check', 'backup:sqlite', 'restore:sqlite', 'test']) {
   assert(packageJson.scripts?.[script], `package.json missing script "${script}"`);
 }
 
@@ -49,6 +49,9 @@ for (const path of [
   'Dockerfile.frontend',
   'docker-compose.yml',
   'scripts/backup-sqlite.mjs',
+  'scripts/browser-matrix.mjs',
+  'scripts/crf-semantics-smoke.mjs',
+  'scripts/demo-e2e.mjs',
   'scripts/docker-smoke.mjs',
   'scripts/export-openapi.mjs',
   'scripts/restore-sqlite.mjs',
@@ -59,7 +62,7 @@ for (const path of [
 }
 
 const workflow = readFileSync(join(projectRoot, '.github/workflows/ci.yml'), 'utf8');
-for (const marker of ['npm run lint', 'npm run build', 'npm run smoke:api', 'npm run export:openapi', 'npm run export:html', 'npm run smoke:ui', 'npm run release:check', 'npm run smoke:docker', 'actions/upload-artifact']) {
+for (const marker of ['npm run lint', 'npm run build', 'npm run smoke:api', 'npm run smoke:crf-semantics', 'npm run export:openapi', 'npm run export:html', 'npm run smoke:ui', 'npm run browser:matrix', 'npm run demo:e2e', 'npm run release:check', 'npm run smoke:docker', 'actions/upload-artifact']) {
   assert(workflow.includes(marker), `.github/workflows/ci.yml missing "${marker}"`);
 }
 
