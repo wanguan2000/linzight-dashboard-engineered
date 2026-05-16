@@ -81,8 +81,9 @@ RWD EDC 主链路统一使用 `study_id`，不使用 `project_id`。样本检测
 ### Visits
 
 - `GET /visits`
+- `PUT /visits/{visit_id}`
 
-`study_visit_plans` 保存每个 Study 的访视配置，`visits.visit_plan_id` 关联该配置。新建患者时后端会按当前 Study 的 active 访视计划生成初始访视，并为每个计划指定的 `required_forms` 创建 CRF 草稿。
+`study_visit_plans` 保存每个 Study 的访视配置，`visits.visit_plan_id` 关联该配置。新建患者时后端会按当前 Study 的 active 访视计划生成初始访视，并为每个计划指定的 `required_forms` 创建 CRF 草稿。`PUT /visits/{visit_id}` 可更新实际访视日期、访视类型、临床指标、完整度和状态，并写入 before/after diff 审计；`POST /quality/run` 会基于访视计划窗口生成超窗问题。
 
 ### Follow-up Records
 
@@ -105,6 +106,10 @@ RWD EDC 主链路统一使用 `study_id`，不使用 `project_id`。样本检测
 
 - `GET /consents`
 - `PUT /consents/{consent_id}`
+- `POST /consents/{consent_id}/withdrawal-request`
+- `POST /consents/{consent_id}/resign-request`
+
+知情同意撤回和重签通过 Approval Center 处理。请求接口只创建审批；批准并 complete 后，后端才会将 consent 状态更新为 `已撤回` 或 `待签署`。
 
 ### CRF
 
@@ -126,13 +131,15 @@ SQLite 存储层优先使用 JSONB（二进制 JSON）BLOB：
 - `POST /files`
 
 上传分类包括 `consent`、`clinical`、`sample`、`omics_result`、`analysis_export`、`other`。临床、组学结果和分析导出类文件必须标记脱敏。
-文件 API 记录 `study_id`、上传者、MIME type、size、SHA-256、存储后端、mock 病毒扫描状态和归档状态；`GET /files/{file_id}/download` 会校验权限、扫描状态和归档状态，并写入审计日志。
+文件 API 记录 `study_id`、上传者、MIME type、size、SHA-256、存储后端、病毒扫描状态和归档状态；`GET /files/{file_id}/download` 会校验权限、扫描状态和归档状态，并写入审计日志。默认使用本地存储；`LINZIGHT_STORAGE_BACKEND=object` 时返回 `object://bucket/prefix/...` URI，便于生产式对象存储 smoke。
 
 ### Analytics 和 Quality
 
 - `GET /analytics/summary`
 - `GET /quality/issues`
 - `POST /quality/run`
+
+质量检查包含基础完整性、样本缺失、知情状态和访视窗口规则。访视窗口问题写入 `data_quality_issues`，`source_table=visits`、`field_name=visit_date`。
 
 ### Exports 和 Imports
 
@@ -145,6 +152,8 @@ SQLite 存储层优先使用 JSONB（二进制 JSON）BLOB：
 
 - `GET /audit-logs`
 
+审计日志返回 `before`、`after` 和结构化 `diff` 数组，便于前端展示字段级变更路径、修改前值和修改后值。
+
 ## 前端契约
 
 - 后端响应类型在 `src/services/contracts.ts`。
@@ -155,10 +164,10 @@ SQLite 存储层优先使用 JSONB（二进制 JSON）BLOB：
 
 - `/studies`：Study、中心、版本和配置。
 - `/dictionaries`：字段字典、样本类型、访视窗口、CRF schema。
-- `/queries`：数据质量 query 创建、关闭、审计。
+- `/queries`：数据质量 query 创建、回复、关闭、审计；当前已校验 Study、患者、访视和 CRF 字段一致性。
 - `/permissions`：角色、权限矩阵、字段级权限。
-- `/approvals`：导出、脱敏导出和 CRF 发布审批状态机。
-- `/files/presign`：对象存储上传和下载。
+- `/approvals`：导出、CRF 发布和 eConsent 撤回/重签审批状态机。脱敏审批作为内部治理能力保留，不作为当前客户演示范围。
+- `/files/presign`：真实对象存储直传和下载签名。
 - `/integrations`：EMR/LIS/组学平台接入状态。
 
 ## 生产化注意事项

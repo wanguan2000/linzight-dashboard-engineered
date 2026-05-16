@@ -1,0 +1,71 @@
+# Production Adapter Notes
+
+Last updated: 2026-05-16
+
+This demo still runs on FastAPI + SQLite by default, but the production-facing adapter points are now explicit.
+
+## PostgreSQL Migration
+
+Use the export package as a staging migration artifact:
+
+```bash
+npm run export:postgres-migration
+```
+
+The command writes `exports/postgres-migration/manifest.json`, one CSV and one JSON file per SQLite table, plus:
+
+- `schema-postgres.sql`: an operator-reviewed schema sketch generated from SQLite metadata.
+- `load-postgres.sql`: `psql` `\copy` commands for staging imports.
+- `README.md`: migration run notes.
+
+Production cutover should be:
+
+1. Seed or migrate into a staging PostgreSQL database.
+2. Review JSON payload columns and convert clinical payload columns to `jsonb` where required.
+3. Run API smoke and browser matrix against the staging API.
+4. Freeze writes, take backups, perform final import, then run smoke checks again.
+
+## Object Storage
+
+The file API keeps local storage as the default:
+
+```bash
+LINZIGHT_STORAGE_BACKEND=local
+```
+
+For production-style testing:
+
+```bash
+LINZIGHT_STORAGE_BACKEND=object
+LINZIGHT_OBJECT_BUCKET=linzight-rws
+LINZIGHT_OBJECT_PREFIX=prod
+```
+
+The demo object adapter stores bytes under `uploads/object-store/...` but returns `object://bucket/prefix/category/file` URIs, so API behavior matches object-storage semantics without adding a vendor SDK to the demo.
+
+## Virus Scanning
+
+Default scanner:
+
+```bash
+LINZIGHT_VIRUS_SCAN_PROVIDER=mock
+```
+
+Production-style scanner config:
+
+```bash
+LINZIGHT_VIRUS_SCAN_PROVIDER=clamav
+LINZIGHT_VIRUS_SCAN_ENDPOINT=tcp://clamav:3310
+```
+
+The external scanner adapter is deterministic in the demo and still blocks EICAR test files. A real deployment should replace the adapter body with ClamAV, OSS/S3 malware scanning, or a vendor gateway, and keep the `scan_status` / `scan_message` contract unchanged.
+
+## Browser Permission Matrix
+
+Run:
+
+```bash
+npm run browser:matrix
+```
+
+The matrix covers desktop and 390px mobile viewports across admin, Study CRC, LGL CRC, and Study data manager roles. It verifies role-scoped navigation, Study counts, core pages, and mobile table/card rendering. If Playwright is not installed, the command writes a skipped report under `reports/browser-matrix.json`.

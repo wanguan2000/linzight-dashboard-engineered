@@ -51,6 +51,7 @@
 ```
 
 Beta 发布前验证与剩余正式化工作见 `docs/05-beta-release-readiness.md`。
+客户演示前检查口径见 `docs/demo-readiness-checklist.md`。
 
 ## 本地安装
 
@@ -155,6 +156,12 @@ npm run smoke:ui
 npm run regression:browser
 ```
 
+三角色端到端演示链路（临时后端 + 临时前端，覆盖 `admin@demo.linzight`、`lung-crc@demo.linzight`、`lung-dm@demo.linzight`）：
+
+```bash
+npm run demo:e2e
+```
+
 发布检查（检查必备脚本/文档/CI gate、静态导出、敏感文件和大文件跟踪风险）：
 
 ```bash
@@ -181,9 +188,10 @@ Demo SQLite / 上传目录备份恢复：
 npm run backup:sqlite
 npm run restore:sqlite -- backups/linzight-<timestamp>
 npm run export:postgres-migration -- exports/postgres-migration
+npm run browser:matrix
 ```
 
-部署运维说明见 `docs/deployment-ops.md`。
+部署运维说明见 `docs/deployment-ops.md`，生产适配说明见 `docs/06-production-adapters.md`。
 
 导出文件位于 `exports/html/`，包括：
 
@@ -217,6 +225,11 @@ cp backend/.env.example backend/.env
 | `LINZIGHT_POSTGRES_URL` | 预留 PostgreSQL 配置 |
 | `LINZIGHT_UPLOADS_DIR` | 后端本地上传目录 |
 | `LINZIGHT_BACKUP_DIR` | Demo SQLite 备份目录，默认 `./backups` |
+| `LINZIGHT_STORAGE_BACKEND` | 文件存储适配器，`local` 或 Demo `object` |
+| `LINZIGHT_OBJECT_BUCKET` | Demo object storage bucket 名称 |
+| `LINZIGHT_OBJECT_PREFIX` | Demo object storage 路径前缀 |
+| `LINZIGHT_VIRUS_SCAN_PROVIDER` | 病毒扫描适配器，默认 `mock`，可用 `clamav` 做生产式 smoke |
+| `LINZIGHT_VIRUS_SCAN_ENDPOINT` | 外部扫描服务 endpoint 记录字段 |
 
 不要提交 `.env`、`.env.local`、真实 token、真实患者数据或真实医疗敏感数据。
 
