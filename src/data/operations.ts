@@ -53,7 +53,7 @@ export interface OmicsRecord {
   patientName: string;
   sampleId: string;
   sampleType: string;
-  assay: 'WGS' | 'TCR/BCR' | 'Olink/Simoa' | '蛋白组' | '代谢组';
+  assay: 'WGS' | 'TCR/BCR' | 'Olink/Simoa' | '蛋白组' | '代谢组' | 'NGS panel' | 'ctDNA' | '病理复核';
   platform: string;
   runId: string;
   status: '样本接收' | '文库构建' | '测序完成' | '数据分析' | '结果归档';
@@ -180,7 +180,10 @@ const assayPlatforms: Record<OmicsRecord['assay'], string> = {
   'TCR/BCR': 'MiSeq',
   'Olink/Simoa': 'Olink Explore',
   蛋白组: 'Exploris 480',
-  代谢组: 'Q-Exactive'
+  代谢组: 'Q-Exactive',
+  'NGS panel': 'NovaSeq 6000',
+  ctDNA: 'NextSeq 2000',
+  病理复核: 'Pathology Archive'
 };
 
 function isoDateFromSeed(index: number, dayOffset = 0) {
@@ -188,7 +191,13 @@ function isoDateFromSeed(index: number, dayOffset = 0) {
   return date.toISOString().slice(0, 10);
 }
 
-function linkedOmicsForSample(patientIndex: number, sampleIndex: number, isControl: boolean): OmicsRecord['assay'][] {
+function linkedOmicsForSample(patientIndex: number, sampleIndex: number, isControl: boolean, isLungStudy: boolean, sampleType: string): OmicsRecord['assay'][] {
+  if (isLungStudy) {
+    if (sampleType === '组织') return ['NGS panel', '病理复核'];
+    if (sampleType === '胸水') return ['ctDNA'];
+    return ['ctDNA', 'NGS panel'];
+  }
+
   const primary = assays[(patientIndex + sampleIndex) % assays.length];
   if (isControl || sampleIndex !== 1) return [primary];
   return [primary, assays[(patientIndex + sampleIndex + 2) % assays.length]];
@@ -196,7 +205,7 @@ function linkedOmicsForSample(patientIndex: number, sampleIndex: number, isContr
 
 export const samples: SampleRecord[] = patientRecords.flatMap((patient, patientIndex) =>
   samplePlanForDisease(patient.diseaseType, patientIndex).map((sampleType, sampleIndex) => {
-    const linkedOmics = linkedOmicsForSample(patientIndex, sampleIndex + 1, patient.diseaseType === 'HC');
+    const linkedOmics = linkedOmicsForSample(patientIndex, sampleIndex + 1, patient.diseaseType === 'HC', patient.studyId === 'LZXK-01', sampleType);
     return {
       id: `SPL-2024-${String(patientIndex + 1).padStart(3, '0')}-${String(sampleIndex + 1).padStart(2, '0')}`,
       studyId: patient.studyId,
@@ -302,6 +311,12 @@ export function getStudyVisitPlans(studyId: string) {
 export const visits: VisitRecord[] = patientRecords.flatMap((patient, patientIndex) =>
   getStudyVisitPlans(patient.studyId).map((plan, visitIndex) => {
     const baselineSledai = Number(patient.clinicalData['SLEDAI评分'] ?? 0);
+    const lungVisitMetric =
+      plan.code === 'V1'
+        ? `ECOG ${patient.clinicalData['ECOG评分'] ?? 1} / 基线`
+        : plan.code === 'V2'
+          ? `ECOG ${patient.clinicalData['ECOG评分'] ?? 1} / ctDNA复核`
+          : `ECOG ${patient.clinicalData['ECOG评分'] ?? 1} / RECIST ${patient.clinicalData['ORR评估'] ?? 'SD'}`;
     const completeness = Math.max(0, calculateClinicalCompleteness(patient.clinicalData) - visitIndex * 4);
     return {
       id: `VIS-${String(patientIndex + 1).padStart(3, '0')}-${visitIndex + 1}`,
@@ -316,7 +331,7 @@ export const visits: VisitRecord[] = patientRecords.flatMap((patient, patientInd
       visit: plan.name,
       visitDate: isoDateFromSeed(patientIndex, plan.dayOffset),
       visitType: plan.visitType,
-      sleDai: String(Math.max(0, baselineSledai - visitIndex * 2)),
+      sleDai: patient.studyId === 'LZXK-01' ? lungVisitMetric : String(Math.max(0, baselineSledai - visitIndex * 2)),
       medication:
         patient.diseaseType === 'HC'
           ? '无'
@@ -426,7 +441,7 @@ export const workflowEvents = [
   '样本采集',
   '多组学检测',
   '随访管理',
-  '数据锁库'
+  '导出审计'
 ];
 
 export function getSelectedPatient(selectedPatient?: PatientRecord | null) {

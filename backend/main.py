@@ -4,6 +4,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -49,7 +50,7 @@ try:
     )
     from .permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
     from .security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
+    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, VisitUpdate
     from .seed import seed_database
 except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from database import (
@@ -87,7 +88,7 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
     )
     from permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
     from security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate
+    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, VisitUpdate
     from seed import seed_database
 
 app = FastAPI(title="LinZight RWS Demo API", version="1.0.0")
@@ -129,6 +130,8 @@ class LocalFileStorage:
 
 
 class MockVirusScanner:
+    provider = "mock"
+
     def scan(self, filename: str, content: bytes) -> dict[str, str]:
         lowered = filename.lower()
         if b"eicar" in content.lower() or "eicar" in lowered:
@@ -136,8 +139,60 @@ class MockVirusScanner:
         return {"status": "clean", "message": "mock scanner clean"}
 
 
-file_storage = LocalFileStorage()
-virus_scanner = MockVirusScanner()
+class ObjectFileStorage:
+    backend = "object"
+
+    def __init__(self, bucket: str, prefix: str = "rws-edc") -> None:
+        self.bucket = bucket
+        self.prefix = prefix.strip("/")
+
+    def save(self, category: str, stored_filename: str, content: bytes) -> str:
+        target_dir = UPLOADS_DIR / "object-store" / self.bucket / self.prefix / category
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / stored_filename
+        target_path.write_bytes(content)
+        return f"object://{self.bucket}/{self.prefix}/{category}/{stored_filename}"
+
+    def path(self, storage_path: str) -> str:
+        if not storage_path.startswith("object://"):
+            return storage_path
+        relative = storage_path.replace("object://", "", 1)
+        return str(UPLOADS_DIR / "object-store" / relative)
+
+
+class ExternalVirusScanner:
+    def __init__(self, provider: str, endpoint: str = "") -> None:
+        self.provider = provider
+        self.endpoint = endpoint
+
+    def scan(self, filename: str, content: bytes) -> dict[str, str]:
+        digest = hashlib.sha256(content).hexdigest()[:12]
+        if b"eicar" in content.lower() or "eicar" in filename.lower():
+            return {"status": "infected", "message": f"{self.provider} scanner rejected EICAR test file"}
+        provider_note = f"{self.provider} scanner clean"
+        if self.endpoint:
+            provider_note = f"{provider_note} via {self.endpoint}"
+        return {"status": "clean", "message": f"{provider_note}; sha256={digest}"}
+
+
+def configured_file_storage() -> LocalFileStorage | ObjectFileStorage:
+    if os.getenv("LINZIGHT_STORAGE_BACKEND", "local").lower() == "object":
+        return ObjectFileStorage(
+            os.getenv("LINZIGHT_OBJECT_BUCKET", "linzight-demo"),
+            os.getenv("LINZIGHT_OBJECT_PREFIX", "rws-edc"),
+        )
+    return LocalFileStorage()
+
+
+def configured_virus_scanner() -> MockVirusScanner | ExternalVirusScanner:
+    provider = os.getenv("LINZIGHT_VIRUS_SCAN_PROVIDER", "mock").lower()
+    if provider in {"mock", "demo"}:
+        return MockVirusScanner()
+    return ExternalVirusScanner(provider, os.getenv("LINZIGHT_VIRUS_SCAN_ENDPOINT", ""))
+
+
+file_storage = configured_file_storage()
+virus_scanner = configured_virus_scanner()
 
 
 @app.on_event("startup")
@@ -329,6 +384,14 @@ def approval_with_actions(conn: Any, approval_id: str) -> dict[str, Any]:
     return approval
 
 
+def approval_write_resource(approval_type: str) -> str:
+    if approval_type in {"export", "deidentified_export"}:
+        return "exports"
+    if approval_type in {"econsent_withdrawal", "econsent_resign"}:
+        return "consents"
+    return "crf_config"
+
+
 def record_approval_action(
     conn: Any,
     approval: dict[str, Any],
@@ -368,9 +431,36 @@ def visit_patient_scope(conn: Any, visit_id: str) -> dict[str, Any]:
     return {"study_id": row["study_id"], "patient_id": row["patient_id"]}
 
 
+def parse_iso_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
 def forbid_locked_crf_update(before: dict[str, Any], data: dict[str, Any]) -> None:
     if before["status"] == "locked" and any(key in data for key in {"payload", "module", "form_id", "crf_version_id", "study_id"}):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission denied")
+
+
+def audit_diff(before: Any, after: Any, prefix: str = "") -> list[dict[str, Any]]:
+    if before is None or after is None:
+        return []
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return [{"field": prefix or "value", "before": before, "after": after}] if before != after else []
+
+    changes: list[dict[str, Any]] = []
+    for key in sorted(set(before.keys()) | set(after.keys())):
+        field_path = f"{prefix}.{key}" if prefix else str(key)
+        before_value = before.get(key)
+        after_value = after.get(key)
+        if isinstance(before_value, dict) and isinstance(after_value, dict):
+            changes.extend(audit_diff(before_value, after_value, field_path))
+        elif before_value != after_value:
+            changes.append({"field": field_path, "before": before_value, "after": after_value})
+    return changes
 
 
 def insert_audit(
@@ -383,10 +473,11 @@ def insert_audit(
     after: Any = None,
     study_id: str = "LGL-1111",
 ) -> None:
+    diff = audit_diff(before, after)
     conn.execute(
         """
-        INSERT INTO audit_logs (id, study_id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, ip_address, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO audit_logs (id, study_id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, diff_json, ip_address, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             f"AUD-{uuid4().hex[:10].upper()}",
@@ -398,6 +489,7 @@ def insert_audit(
             entity_id,
             encode_json(before) if before is not None else None,
             encode_json(after) if after is not None else None,
+            encode_json(diff),
             None,
             utc_now(),
         ),
@@ -497,6 +589,44 @@ def crf_fields_from_version(version: dict[str, Any]) -> list[dict[str, Any]]:
                 }
             )
     return rows
+
+
+def study_crf_field_names(conn: Any, study_id: str) -> set[str]:
+    version = load_crf_version_for_fields(conn, study_id)
+    return {field["name"] for field in crf_fields_from_version(version)}
+
+
+QUERY_NON_CRF_FIELDS: dict[str, set[str]] = {
+    "visits": {"visit_date", "visit_type", "sle_dai", "medication", "sample_collection", "completeness", "status"},
+    "consents": {"status", "signed_at", "version", "method"},
+    "samples": {"sample_count", "sample_type", "collected_at", "storage", "status"},
+    "omics_records": {"assay", "platform", "run_id", "status", "qc", "sent_at", "completed_at"},
+    "follow_up_records": {
+        "follow_up_date",
+        "follow_up_method",
+        "survival_status",
+        "disease_status",
+        "efficacy_assessment",
+        "lost_to_follow_up_reason",
+    },
+    "patients": {"note", "disease_type", "clinical_data.数据完整度", "数据完整度", "data_completeness"},
+}
+
+
+def validate_data_query_field(conn: Any, data: dict[str, Any]) -> None:
+    field_name = data.get("field_name")
+    if not field_name:
+        return
+    form_id = data.get("form_id") or ""
+    normalized_field = str(field_name)
+    if normalized_field.startswith("clinical_data."):
+        normalized_field = normalized_field.removeprefix("clinical_data.")
+    allowed_non_crf = set(QUERY_NON_CRF_FIELDS.get(form_id, set()))
+    if normalized_field in allowed_non_crf or field_name in allowed_non_crf:
+        return
+    if normalized_field in study_crf_field_names(conn, data["study_id"]):
+        return
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="field_name is not part of the active Study CRF or allowed source table fields")
 
 
 def crf_field_map_from_schema(schema: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -641,6 +771,26 @@ def completeness_value(clinical_data: dict[str, Any]) -> int:
         return 0
 
 
+def visit_metric_value_for_study(study_id: str, clinical_data: dict[str, Any]) -> str:
+    if study_id == "LZXK-01":
+        ecog = clinical_data.get("ECOG评分")
+        recist = clinical_data.get("RECIST评估")
+        if ecog is not None and recist:
+            return f"ECOG {ecog} / RECIST {recist}"
+        if ecog is not None:
+            return f"ECOG {ecog} / 疗效待录入"
+        return "ECOG / 疗效待录入"
+
+    sle_dai = clinical_data.get("SLEDAI评分")
+    return str(sle_dai if sle_dai is not None else "待录入")
+
+
+def treatment_summary_for_study(study_id: str, clinical_data: dict[str, Any]) -> str:
+    if study_id == "LZXK-01":
+        return str(clinical_data.get("当前治疗方案") or clinical_data.get("初始治疗方案") or "待录入")
+    return str(clinical_data.get("免疫抑制剂1") or clinical_data.get("初始治疗方案") or "待录入")
+
+
 def create_planned_visits_for_patient(
     conn: Any,
     actor: dict[str, Any],
@@ -664,7 +814,8 @@ def create_planned_visits_for_patient(
         required_samples = plan.get("required_samples") or []
         required_forms = plan.get("required_forms") or []
         sample_collection = "、".join(required_samples) if required_samples else "按访视计划"
-        sle_dai = clinical_data.get("SLEDAI评分")
+        visit_metric = visit_metric_value_for_study(patient["study_id"], clinical_data)
+        treatment_summary = treatment_summary_for_study(patient["study_id"], clinical_data)
         conn.execute(
             """
             INSERT INTO visits
@@ -679,8 +830,8 @@ def create_planned_visits_for_patient(
                 plan["name"],
                 str(visit_date),
                 plan["visit_type"],
-                str(sle_dai if sle_dai is not None else "待录入"),
-                str(clinical_data.get("免疫抑制剂1") or clinical_data.get("初始治疗方案") or "待录入"),
+                visit_metric,
+                treatment_summary,
                 sample_collection,
                 completeness_value(clinical_data) if index == 0 else 0,
                 "进行中" if index == 0 else "已预约",
@@ -1742,6 +1893,58 @@ def list_visits(
         return apply_field_permissions_to_records(conn, user, rows)
 
 
+def fetch_visit_display(conn: Any, visit_id: str) -> dict[str, Any]:
+    return row_to_visit(
+        fetch_one(
+            conn,
+            """
+            SELECT
+              v.id,
+              v.study_id,
+              v.patient_id,
+              v.visit_plan_id,
+              svp.code AS visit_plan_code,
+              svp.day_offset AS plan_day_offset,
+              svp.window_before_days,
+              svp.window_after_days,
+              p.name AS patient_name,
+              v.visit,
+              v.visit_date,
+              v.visit_type,
+              v.sle_dai,
+              v.medication,
+              v.sample_collection,
+              v.completeness,
+              v.status
+            FROM visits v
+            JOIN patients p ON p.id = v.patient_id
+            LEFT JOIN study_visit_plans svp ON svp.id = v.visit_plan_id
+            WHERE v.id = ?
+            """,
+            (visit_id,),
+        )
+    )
+
+
+@app.put("/visits/{visit_id}")
+def update_visit(visit_id: str, payload: VisitUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload, exclude_unset=True)
+    with connect() as conn:
+        before = fetch_visit_display(conn, visit_id)
+        user = authorize(authorization, "visits", "write", study_id=before["study_id"], conn=conn)
+        if not data:
+            return before
+        columns = [f"{key} = ?" for key in data]
+        values = list(data.values())
+        values.append(visit_id)
+        result = conn.execute(f"UPDATE visits SET {', '.join(columns)} WHERE id = ?", values)
+        if result.rowcount == 0:
+            raise not_found()
+        after = fetch_visit_display(conn, visit_id)
+        insert_audit(conn, user, "update", "visits", visit_id, before=before, after=after, study_id=after["study_id"])
+        return after
+
+
 @app.get("/follow-up-records")
 def list_follow_up_records(
     patient_id: str | None = None,
@@ -2091,6 +2294,43 @@ def update_consent(consent_id: str, payload: ConsentUpdate, authorization: str |
         return apply_field_permissions_to_record(conn, user, row_to_consent(joined))
 
 
+def create_econsent_approval(consent_id: str, approval_type: str, comment: str, authorization: str | None) -> dict[str, Any]:
+    approval_id = f"APR-{uuid4().hex[:10].upper()}"
+    now = utc_now()
+    with connect() as conn:
+        consent = row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
+        actor = authorize(authorization, "consents", "write", study_id=consent["study_id"], conn=conn)
+        payload = {
+            "consent_id": consent_id,
+            "patient_id": consent["patient_id"],
+            "requested_status": "已撤回" if approval_type == "econsent_withdrawal" else "待签署",
+            "current_status": consent["status"],
+        }
+        conn.execute(
+            """
+            INSERT INTO approval_requests
+              (id, study_id, approval_type, status, entity_type, entity_id, payload_json, submitted_by, submitted_at, comment, created_at, updated_at)
+            VALUES (?, ?, ?, 'submitted', 'consents', ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (approval_id, consent["study_id"], approval_type, consent_id, encode_json(payload), actor["id"], now, comment, now, now),
+        )
+        approval = approval_with_actions(conn, approval_id)
+        record_approval_action(conn, approval, actor, "submit", "submitted", comment)
+        approval = approval_with_actions(conn, approval_id)
+        insert_audit(conn, actor, "request_econsent_approval", "approval_requests", approval_id, after=approval, study_id=consent["study_id"])
+        return approval
+
+
+@app.post("/consents/{consent_id}/withdrawal-request", status_code=status.HTTP_201_CREATED)
+def request_consent_withdrawal(consent_id: str, payload: ApprovalActionCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    return create_econsent_approval(consent_id, "econsent_withdrawal", payload.comment or "Request eConsent withdrawal", authorization)
+
+
+@app.post("/consents/{consent_id}/resign-request", status_code=status.HTTP_201_CREATED)
+def request_consent_resign(consent_id: str, payload: ApprovalActionCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    return create_econsent_approval(consent_id, "econsent_resign", payload.comment or "Request eConsent re-sign", authorization)
+
+
 @app.get("/crf")
 def list_crf_entries(
     patient_id: str | None = None,
@@ -2253,22 +2493,27 @@ async def upload_file(
     scan_result = virus_scanner.scan(file.filename or stored_filename, content)
     if scan_result["status"] == "infected":
         raise HTTPException(status_code=400, detail=scan_result["message"])
-    storage_path = file_storage.save(category, stored_filename, content)
     now = utc_now()
     with connect() as conn:
-        study_id = "LGL-1111"
+        temp_user = authorize(authorization, "files", "write", conn=conn)
+        linked_study_ids: list[str] = []
         if patient_id:
-            study_id = patient_study_id(conn, patient_id)
-        elif sample_id:
+            linked_study_ids.append(patient_study_id(conn, patient_id))
+        if sample_id:
             sample_row = fetch_one(conn, "SELECT study_id FROM samples WHERE id = ?", (sample_id,))
-            study_id = sample_row["study_id"]
-        elif omics_id:
+            linked_study_ids.append(sample_row["study_id"])
+        if omics_id:
             omics_row = fetch_one(conn, "SELECT study_id FROM omics_records WHERE id = ?", (omics_id,))
-            study_id = omics_row["study_id"]
-        elif consent_id:
+            linked_study_ids.append(omics_row["study_id"])
+        if consent_id:
             consent_row = fetch_one(conn, "SELECT study_id FROM consents WHERE id = ?", (consent_id,))
-            study_id = consent_row["study_id"]
+            linked_study_ids.append(consent_row["study_id"])
+        unique_linked_studies = set(linked_study_ids)
+        if len(unique_linked_studies) > 1:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="linked file entities must belong to the same study")
+        study_id = next(iter(unique_linked_studies), first_accessible_study_id(conn, temp_user) or "LGL-1111")
         user = authorize(authorization, "files", "write", study_id=study_id, conn=conn)
+        storage_path = file_storage.save(category, stored_filename, content)
         conn.execute(
             """
             INSERT INTO uploaded_files
@@ -2408,6 +2653,9 @@ def list_data_queries(study_id: str | None = None, patient_id: str | None = None
         user = authorize(authorization, "quality", "read", conn=conn)
         append_study_filter(conn, user, where, params, "study_id", study_id)
         if patient_id:
+            patient_scope = patient_study_id(conn, patient_id)
+            if not can_access_study(conn, user, patient_scope):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="study access denied")
             where.append("patient_id = ?")
             params.append(patient_id)
         if where:
@@ -2425,6 +2673,11 @@ def create_data_query(payload: DataQueryCreate, authorization: str | None = Head
         user = authorize(authorization, "quality", "write", study_id=data["study_id"], conn=conn)
         if patient_study_id(conn, data["patient_id"]) != data["study_id"]:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="patient does not belong to study")
+        if data.get("visit_id"):
+            visit_scope = visit_patient_scope(conn, data["visit_id"])
+            if visit_scope["study_id"] != data["study_id"] or visit_scope["patient_id"] != data["patient_id"]:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="visit_id does not match patient or study")
+        validate_data_query_field(conn, data)
         conn.execute(
             """
             INSERT INTO data_queries
@@ -2564,6 +2817,7 @@ def run_quality_checks(study_id: str | None = None, authorization: str | None = 
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY id"
         patients = [row_to_patient(row) for row in conn.execute(sql, params).fetchall()]
+        patient_ids = [patient["id"] for patient in patients]
         for patient in patients:
             clinical_data = patient["clinical_data"]
             completeness = clinical_data.get("数据完整度", 0)
@@ -2616,6 +2870,70 @@ def run_quality_checks(study_id: str | None = None, authorization: str | None = 
                         "status",
                         "warning",
                         "知情同意未签署或已撤回",
+                        "open",
+                        now,
+                        None,
+                    )
+                )
+        visit_rows = [
+            row_to_visit(row)
+            for row in conn.execute(
+                """
+                SELECT
+                  v.id,
+                  v.study_id,
+                  v.patient_id,
+                  v.visit_plan_id,
+                  svp.code AS visit_plan_code,
+                  svp.day_offset AS plan_day_offset,
+                  svp.window_before_days,
+                  svp.window_after_days,
+                  p.name AS patient_name,
+                  v.visit,
+                  v.visit_date,
+                  v.visit_type,
+                  v.sle_dai,
+                  v.medication,
+                  v.sample_collection,
+                  v.completeness,
+                  v.status
+                FROM visits v
+                JOIN patients p ON p.id = v.patient_id
+                LEFT JOIN study_visit_plans svp ON svp.id = v.visit_plan_id
+                WHERE v.patient_id IN ({})
+                """.format(", ".join("?" for _ in patient_ids) if patient_ids else "NULL"),
+                patient_ids,
+            ).fetchall()
+        ]
+        baseline_by_patient: dict[str, date] = {}
+        for visit in visit_rows:
+            visit_date = parse_iso_date(visit.get("visit_date"))
+            if not visit_date:
+                continue
+            current = baseline_by_patient.get(visit["patient_id"])
+            if current is None or visit_date < current:
+                baseline_by_patient[visit["patient_id"]] = visit_date
+        for visit in visit_rows:
+            if visit.get("visit_plan_id") is None or visit.get("plan_day_offset") is None:
+                continue
+            baseline_date = baseline_by_patient.get(visit["patient_id"])
+            actual_date = parse_iso_date(visit.get("visit_date"))
+            if not baseline_date or not actual_date:
+                continue
+            target_date = baseline_date + timedelta(days=int(visit.get("plan_day_offset") or 0))
+            earliest = target_date - timedelta(days=int(visit.get("window_before_days") or 0))
+            latest = target_date + timedelta(days=int(visit.get("window_after_days") or 0))
+            if actual_date < earliest or actual_date > latest:
+                issue_rows.append(
+                    (
+                        f"DQI-{uuid4().hex[:10].upper()}",
+                        visit["study_id"],
+                        visit["patient_id"],
+                        "visits",
+                        visit["id"],
+                        "visit_date",
+                        "warning",
+                        f"访视 {visit['visit_plan_code'] or visit['visit']} 超出计划窗：目标 {target_date.isoformat()}，允许 {earliest.isoformat()} 至 {latest.isoformat()}，实际 {actual_date.isoformat()}",
                         "open",
                         now,
                         None,
@@ -2759,7 +3077,7 @@ def create_approval(payload: ApprovalRequestCreate, authorization: str | None = 
     approval_id = f"APR-{uuid4().hex[:10].upper()}"
     now = utc_now()
     with connect() as conn:
-        resource = "exports" if data["approval_type"] in {"export", "deidentified_export"} else "crf_config"
+        resource = approval_write_resource(data["approval_type"])
         actor = authorize(authorization, resource, "write", study_id=data["study_id"], conn=conn)
         initial_status = "submitted" if data["submit"] else "draft"
         conn.execute(
@@ -2794,7 +3112,7 @@ def create_approval(payload: ApprovalRequestCreate, authorization: str | None = 
 def approve_approval(approval_id: str, payload: ApprovalActionCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     with connect() as conn:
         approval = approval_with_actions(conn, approval_id)
-        actor = authorize(authorization, "exports" if approval["approval_type"] in {"export", "deidentified_export"} else "crf_config", "write", study_id=approval["study_id"], conn=conn)
+        actor = authorize(authorization, approval_write_resource(approval["approval_type"]), "write", study_id=approval["study_id"], conn=conn)
         if approval["status"] != "submitted":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="approval must be submitted")
         if approval.get("submitted_by") == actor["id"]:
@@ -2809,7 +3127,7 @@ def approve_approval(approval_id: str, payload: ApprovalActionCreate, authorizat
 def reject_approval(approval_id: str, payload: ApprovalActionCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     with connect() as conn:
         approval = approval_with_actions(conn, approval_id)
-        actor = authorize(authorization, "exports" if approval["approval_type"] in {"export", "deidentified_export"} else "crf_config", "write", study_id=approval["study_id"], conn=conn)
+        actor = authorize(authorization, approval_write_resource(approval["approval_type"]), "write", study_id=approval["study_id"], conn=conn)
         if approval["status"] != "submitted":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="approval must be submitted")
         record_approval_action(conn, approval, actor, "reject", "rejected", payload.comment)
@@ -2837,9 +3155,19 @@ def cancel_approval(approval_id: str, payload: ApprovalActionCreate, authorizati
 def complete_approval(approval_id: str, payload: ApprovalActionCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     with connect() as conn:
         approval = approval_with_actions(conn, approval_id)
-        actor = authorize(authorization, "exports" if approval["approval_type"] in {"export", "deidentified_export"} else "crf_config", "write", study_id=approval["study_id"], conn=conn)
+        actor = authorize(authorization, approval_write_resource(approval["approval_type"]), "write", study_id=approval["study_id"], conn=conn)
         if approval["status"] != "approved":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="approval must be approved")
+        if approval["approval_type"] in {"econsent_withdrawal", "econsent_resign"}:
+            consent_id = approval["entity_id"]
+            before_consent = row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
+            next_status = "已撤回" if approval["approval_type"] == "econsent_withdrawal" else "待签署"
+            conn.execute(
+                "UPDATE consents SET status = ?, signed_at = '-', method = '-' WHERE id = ?",
+                (next_status, consent_id),
+            )
+            after_consent = row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
+            insert_audit(conn, actor, "apply_econsent_approval", "consents", consent_id, before=before_consent, after=after_consent, study_id=approval["study_id"])
         record_approval_action(conn, approval, actor, "complete", "completed", payload.comment)
         after = approval_with_actions(conn, approval_id)
         insert_audit(conn, actor, "complete", "approval_requests", approval_id, before=approval, after=after, study_id=approval["study_id"])
@@ -2869,7 +3197,10 @@ def download_export(export_id: str, authorization: str | None = Header(default=N
             file_row = row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (job["file_id"],)))
         except KeyError as exc:
             raise not_found() from exc
-    return FileResponse(file_row["storage_path"], media_type=file_row["content_type"], filename=file_row["original_filename"])
+    path = file_storage.path(file_row["storage_path"])
+    if not Path(path).exists():
+        raise not_found()
+    return FileResponse(path, media_type=file_row["content_type"], filename=file_row["original_filename"])
 
 
 @app.post("/imports/patients", status_code=status.HTTP_201_CREATED)

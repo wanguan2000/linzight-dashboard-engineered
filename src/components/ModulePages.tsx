@@ -25,6 +25,7 @@ import {
   approveApprovalRequest,
   approveStudyCrfMigration,
   assignStudySiteUser,
+  completeApprovalRequest,
   createApprovalRequest,
   createDataQuery,
   createOmicsRecord,
@@ -48,10 +49,14 @@ import {
   fetchStudySites,
   fetchStudyVisitPlans,
   fetchApprovalRequests,
+  fetchAuditLogs,
   filterRecordsByCurrentStudyScope,
+  fetchQualityIssues,
   getCurrentScopedStudyId,
   previewStudyCrfMigration,
   recordBelongsToCurrentStudyScope,
+  requestConsentResign,
+  requestConsentWithdrawal,
   requestStudyCrfMigrationApproval,
   rejectApprovalRequest,
   runQualityChecks,
@@ -68,7 +73,7 @@ import {
   upsertStudyMember,
   uploadFileToBackend
 } from '../services/api';
-import type { ApiApprovalRequest, ApiDataQuery, ApiExportJob, ApiSiteUser, ApiStudyMember, ApiStudySite, ApiUser } from '../services/contracts';
+import type { ApiApprovalRequest, ApiAuditLog, ApiDataQuery, ApiExportJob, ApiQualityIssue, ApiSiteUser, ApiStudyMember, ApiStudySite, ApiUser } from '../services/contracts';
 import type { CrfMigrationApprovalRecord, CrfMigrationPreview, StudyCrfVersionRecord } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
@@ -255,6 +260,87 @@ const consentPreviewContent: ConsentPreviewSection[] = [
   }
 ];
 
+const lungConsentPreviewContent: ConsentPreviewSection[] = [
+  {
+    title: '肺癌耐药研究概述',
+    icon: 'file',
+    eyebrow: '真实世界肺癌耐药队列',
+    blocks: [
+      {
+        paragraphs: [
+          '本项目《真实世界肺癌耐药研究》为非干预性真实世界研究，聚焦 NSCLC 患者靶向治疗、免疫治疗及耐药后的临床结局。',
+          '研究采集临床诊疗过程中已经产生的病史、治疗线数、ECOG、TNM 分期、影像疗效、ctDNA/NGS 检测和随访结局数据。',
+          '本研究不会改变受试者既有诊疗方案，研究结果用于队列分析、耐药机制探索、ORR/PFS 相关评估和后续研究设计。'
+        ]
+      }
+    ]
+  },
+  {
+    title: '样本和检测用途',
+    icon: 'lab',
+    eyebrow: '组织、血液与 ctDNA/NGS',
+    blocks: [
+      {
+        paragraphs: ['受试者的临床信息和剩余样本将用于以下研究分析：'],
+        items: [
+          '肿瘤组织或胸水样本：用于病理复核、驱动基因和耐药机制分析。',
+          '外周血样本：用于 ctDNA 动态监测、治疗前后突变丰度变化和随访风险评估。',
+          'NGS panel 检测结果：用于 EGFR、ALK、MET 扩增、组织学转化等耐药机制归因。'
+        ]
+      }
+    ]
+  },
+  {
+    title: '风险与隐私保护',
+    icon: 'lock',
+    eyebrow: '低风险、匿名化与合规',
+    blocks: [
+      {
+        paragraphs: [
+          '本研究主要使用诊疗过程中已采集的信息和剩余样本，不额外增加侵入性操作。',
+          '所有研究数据将进行去标识化处理，研究分析和发表不会公开患者姓名、住院号、联系方式或其他可识别身份信息。',
+          '如需补充样本或上传外部检测文件，研究团队会在确认授权和样本质量后进行登记、归档和审计留痕。'
+        ]
+      }
+    ]
+  },
+  {
+    title: '知情同意声明',
+    icon: 'shield',
+    eyebrow: '自愿参加与签署确认',
+    blocks: [
+      {
+        title: '声明确认',
+        items: [
+          '我已经了解本研究的目的、数据范围、样本用途和隐私保护方式。',
+          '我理解本研究不会替代医生对我的临床诊疗决策。',
+          '我同意经去标识化后的临床数据、样本信息和组学检测结果用于肺癌耐药真实世界研究。',
+          '我知道可以按研究流程申请撤回或重新签署知情同意。'
+        ],
+        variant: 'checklist'
+      },
+      {
+        title: '选择项',
+        items: ['同意', '不同意'],
+        variant: 'choice'
+      },
+      {
+        title: '签署信息',
+        items: ['打印知情', '上传知情', '查看知情'],
+        variant: 'documentActions'
+      }
+    ]
+  }
+];
+
+function getConsentPreviewContent(studyId?: string) {
+  return studyId === 'LZXK-01' ? lungConsentPreviewContent : consentPreviewContent;
+}
+
+function getConsentStudyTitle(studyId?: string) {
+  return studyId === 'LZXK-01' ? '真实世界肺癌耐药研究知情同意' : '免疫相关性神经系统疾病多组学解析及机制探索';
+}
+
 function statusTone(status: string) {
   if (['完成', '已完成', '已签署', '结果回传', '检测完成', '结果归档', '可导出', '通过', 'Active'].includes(status)) return 'success';
   if (['进行中', '检测中', '数据分析', '文库构建', '生成中', '待确认', '待签署'].includes(status)) return 'warning';
@@ -408,7 +494,10 @@ function SimpleTimeline({ items }: { items: Array<{ label: string; helper: strin
 }
 
 function patientSamples(patient: PatientRecord, sampleRows: SampleRecord[] = samples) {
-  return sampleRows.filter((sample) => sample.patientName === patient.name);
+  return sampleRows.filter((sample) =>
+    (sample.patientId && patient.id ? sample.patientId === patient.id : sample.patientName === patient.name) &&
+    (!sample.studyId || sample.studyId === patient.studyId)
+  );
 }
 
 function normalizeSampleStatus(status: SampleRecord['status']): '已采集' | '检测中' | '检测完成' {
@@ -423,6 +512,7 @@ type OmicsFilterStatus = '全部' | OmicsDisplayStatus;
 
 type SampleDetectionRow = {
   id: string;
+  studyId?: string;
   patientName: string;
   sampleId: string;
   sampleType: string;
@@ -436,6 +526,7 @@ type SampleDetectionRow = {
 
 type SampleLedgerRow = {
   id: string;
+  studyId?: string;
   patientName: string;
   hospitalNo: string;
   sampleId: string;
@@ -447,6 +538,10 @@ type SampleLedgerRow = {
 type SampleTestingEditor =
   | { kind: 'sample'; draft: SampleRecord }
   | { kind: 'omics'; draft: OmicsRecord };
+
+function uniqueOptionalStudyIds(records: Array<{ studyId?: string }>) {
+  return Array.from(new Set(records.map((record) => record.studyId).filter(Boolean) as string[])).sort();
+}
 
 function normalizeOmicsDisplayStatus(status?: OmicsRecord['status'], sampleStatus?: SampleRecord['status']): OmicsDisplayStatus {
   if (status === '结果归档') return '已归档';
@@ -471,6 +566,7 @@ function buildSampleDetectionRows(sampleRows: SampleRecord[], omicsRows: OmicsRe
 
     return {
       id: record.id,
+      studyId: record.studyId ?? sample?.studyId,
       patientName: record.patientName,
       sampleId,
       sampleType: sample?.sampleType ?? record.sampleType,
@@ -493,6 +589,7 @@ function buildSampleDetectionRows(sampleRows: SampleRecord[], omicsRows: OmicsRe
 
       return assays.map((assay, index) => ({
         id: `${sample.id}-${index}`,
+        studyId: sample.studyId,
         patientName: sample.patientName,
         sampleId,
         sampleType: sample.sampleType,
@@ -511,7 +608,7 @@ function buildSampleDetectionRows(sampleRows: SampleRecord[], omicsRows: OmicsRe
 function formatSampleLedgerId(sample: SampleRecord, sampleRows: SampleRecord[]) {
   const baseId = formatSampleLibraryId(sample);
   const siblingSamples = sampleRows.filter(
-    (item) => item.patientName === sample.patientName && item.sampleType === sample.sampleType
+    (item) => item.patientName === sample.patientName && item.sampleType === sample.sampleType && item.studyId === sample.studyId
   );
   if (siblingSamples.length <= 1) return baseId;
 
@@ -523,6 +620,7 @@ function buildSampleLedgerRows(sampleRows: SampleRecord[]): SampleLedgerRow[] {
   return sampleRows
     .map((sample) => ({
       id: sample.id,
+      studyId: sample.studyId,
       patientName: sample.patientName,
       hospitalNo: sample.hospitalNo,
       sampleId: formatSampleLedgerId(sample, sampleRows),
@@ -540,6 +638,14 @@ type ClinicalFormSection = {
   items: Array<[string, string]>;
 };
 
+const lungClinicalDataGroups = [
+  { title: '肺癌研究基本信息', fields: ['研究编号', '研究名称', '病种', '分期', 'TNM分期'] },
+  { title: '肺癌治疗与耐药评估', fields: ['ECOG评分', '治疗线数', '当前治疗方案', '驱动基因突变', '耐药机制', 'RECIST评估'] },
+  { title: '肺癌组学与疗效终点', fields: ['ctDNA突变丰度', 'PFS（月）', 'ORR评估', '检测项目'] }
+];
+
+const lungClinicalFieldAllowList = new Set(lungClinicalDataGroups.flatMap((group) => group.fields));
+
 function formatClinicalValue(value: string | number | undefined) {
   if (value === undefined || value === null || value === '') return '-';
   return String(value);
@@ -547,7 +653,8 @@ function formatClinicalValue(value: string | number | undefined) {
 
 function buildClinicalSectionsFromPatient(patient: PatientRecord): ClinicalFormSection[] {
   const consumedFields = new Set<string>();
-  const sections = clinicalDataGroups
+  const groups = patient.studyId === 'LZXK-01' ? lungClinicalDataGroups : clinicalDataGroups;
+  const sections = groups
     .map((group) => {
       const items = group.fields
         .filter((field) => field in patient.clinicalData)
@@ -561,6 +668,7 @@ function buildClinicalSectionsFromPatient(patient: PatientRecord): ClinicalFormS
 
   const otherItems = Object.entries(patient.clinicalData)
     .filter(([field]) => field !== '数据完整度' && !consumedFields.has(field))
+    .filter(([field]) => patient.studyId !== 'LZXK-01' || lungClinicalFieldAllowList.has(field))
     .map(([field, value]) => [field, formatClinicalValue(value)] as [string, string]);
 
   if (otherItems.length) sections.push({ title: '其他已录入字段', items: otherItems });
@@ -585,6 +693,7 @@ const emptyClinicalPatient: PatientRecord = {
 function followUpRecordToClinicalVisit(record: FollowUpRecord): VisitRecord {
   const completenessMatch = record.efficacyAssessment.match(/完整度\s*(\d+)%/);
   const completeness = completenessMatch ? Number(completenessMatch[1]) : 0;
+  const isLungStudy = record.studyId === 'LZXK-01';
   const status: VisitRecord['status'] = record.diseaseStatus === '进行中'
     ? '进行中'
     : record.diseaseStatus === '已预约'
@@ -599,9 +708,9 @@ function followUpRecordToClinicalVisit(record: FollowUpRecord): VisitRecord {
     visit: `随访记录 · ${record.followUpMethod}`,
     visitDate: record.followUpDate,
     visitType: record.followUpMethod,
-    sleDai: record.symptomsSigns.replace(/^SLEDAI\s*/, '') || '待录入',
-    medication: record.adverseEvents || '待录入',
-    sampleCollection: record.imagingLabSummary || '待录入',
+    sleDai: isLungStudy ? record.efficacyAssessment || 'ECOG / 疗效待录入' : record.symptomsSigns.replace(/^SLEDAI\s*/, '') || '待录入',
+    medication: isLungStudy ? record.symptomsSigns || record.adverseEvents || '待录入治疗方案' : record.adverseEvents || '待录入',
+    sampleCollection: isLungStudy ? record.imagingLabSummary || 'ctDNA / 影像待录入' : record.imagingLabSummary || '待录入',
     completeness,
     status
   };
@@ -663,6 +772,8 @@ export function ClinicalDataCapturePage({
   }, []);
 
   const patient = patients.find((record) => record.name === activePatientName) ?? scopedSelectedPatient ?? patients[0] ?? emptyClinicalPatient;
+  const clinicalMetricLabel = patient.studyId === 'LZXK-01' ? 'ECOG / 疗效' : 'SLEDAI';
+  const displayedClinicalFields = patient.studyId === 'LZXK-01' ? Array.from(lungClinicalFieldAllowList) : clinicalFields;
   const patientVisitRows = useMemo(() => visitRows.filter((record) => record.patientName === patient.name), [patient.name, visitRows]);
   const patientSampleRows = useMemo(() => patientSamples(patient, sampleRows), [patient, sampleRows]);
 
@@ -710,7 +821,8 @@ export function ClinicalDataCapturePage({
   }
 
   function getNextClinicalFieldLabel(sectionTitle: string, currentItems: Array<[string, string]>) {
-    const group = clinicalDataGroups.find((item) => item.title === sectionTitle);
+    const groups = patient.studyId === 'LZXK-01' ? lungClinicalDataGroups : clinicalDataGroups;
+    const group = groups.find((item) => item.title === sectionTitle);
     const usedFields = new Set(currentItems.map(([label]) => label));
     const nextTemplateField = group?.fields.find((field) => !usedFields.has(field));
 
@@ -766,18 +878,19 @@ export function ClinicalDataCapturePage({
   function addVisitRow() {
     const nextIndex = visitRows.length + 1;
     const id = `V-NEW-${Date.now()}`;
+    const isLungStudy = patient.studyId === 'LZXK-01';
     setVisitRows((rows) => [
       {
         id,
         studyId: patient.studyId,
         patientId: patient.id,
         patientName: patient.name,
-        visit: `V${nextIndex} 新建随访`,
+        visit: isLungStudy ? `V${nextIndex} 新建疗效随访` : `V${nextIndex} 新建随访`,
         visitDate: '2026-04-28',
         visitType: '随访访视',
-        sleDai: '待录入',
-        medication: '待录入',
-        sampleCollection: '待录入',
+        sleDai: isLungStudy ? 'ECOG 1 / 待评估' : '待录入',
+        medication: isLungStudy ? '待录入治疗方案' : '待录入',
+        sampleCollection: isLungStudy ? 'ctDNA / NGS待确认' : '待录入',
         completeness: 0,
         status: '进行中'
       },
@@ -854,7 +967,11 @@ export function ClinicalDataCapturePage({
           <section className="module-card module-card--wide">
             <header className="module-card__header">
               <h2>{t('患者数据录入')}</h2>
-              <span>SLE CRF {crfTemplateVersion} · {crfTemplateFieldCount} {t('字段')}</span>
+              <span>
+                {patient.studyId === 'LZXK-01'
+                  ? t('LZXK-01 肺癌耐药 CRF V1.0 · ECOG / TNM / ctDNA / NGS')
+                  : `SLE CRF ${crfTemplateVersion} · ${crfTemplateFieldCount} ${t('字段')}`}
+              </span>
             </header>
             <div className="clinical-entry-summary">
               <div className="clinical-entry-summary__icon"><Icon name="patients" size={24} /></div>
@@ -864,9 +981,10 @@ export function ClinicalDataCapturePage({
                   <strong>{patient.name}</strong>
                 </div>
             {[
+              ['Study ID', patient.studyId],
               ['住院号', patient.hospitalNo],
               ['疾病类型', patient.diseaseType],
-              ['已填字段', `${clinicalFields.filter((field) => patient.clinicalData[field] !== undefined && patient.clinicalData[field] !== '').length} / ${clinicalFields.length}`],
+              ['已填字段', `${displayedClinicalFields.filter((field) => patient.clinicalData[field] !== undefined && patient.clinicalData[field] !== '').length} / ${displayedClinicalFields.length}`],
               ['完整度', `${getCompleteness(patient)}%`],
               ['存储格式', patient.clinicalDataFormat === 'jsonb' ? 'SQLite JSONB' : 'SQLite JSON'],
               ['最近更新', 'SQLite 实时']
@@ -945,6 +1063,7 @@ export function ClinicalDataCapturePage({
               records={patientVisitRows}
               onChange={(nextRows) => setVisitRows((rows) => [...rows.filter((record) => record.patientName !== patient.name), ...nextRows])}
               onSave={(record) => saveClinicalVisit(record)}
+              metricLabel={clinicalMetricLabel}
               initialEditingId={newVisitEditId}
               onInitialEditingHandled={() => setNewVisitEditId(null)}
             />
@@ -977,12 +1096,14 @@ function VisitTable({
   records,
   onChange,
   onSave,
+  metricLabel = 'SLEDAI',
   initialEditingId,
   onInitialEditingHandled
 }: {
   records: VisitRecord[];
   onChange?: (records: VisitRecord[]) => void;
   onSave?: (record: VisitRecord) => Promise<VisitRecord | void> | VisitRecord | void;
+  metricLabel?: string;
   initialEditingId?: string | null;
   onInitialEditingHandled?: () => void;
 }) {
@@ -1037,7 +1158,7 @@ function VisitTable({
       <div className="module-table-wrap">
         <table className="module-table">
           <thead>
-            <tr><th>{t('访视')}</th><th>{t('日期')}</th><th>{t('类型')}</th><th>SLEDAI</th><th>{t('用药变化')}</th><th>{t('样本采集')}</th><th>{t('完整度')}</th><th>{t('编辑')}</th></tr>
+            <tr><th>{t('访视')}</th><th>{t('日期')}</th><th>{t('类型')}</th><th>{t(metricLabel)}</th><th>{t('用药变化')}</th><th>{t('样本采集')}</th><th>{t('完整度')}</th><th>{t('编辑')}</th></tr>
           </thead>
           <tbody>
             {pageRecords.map((record) => {
@@ -1216,27 +1337,31 @@ function ClinicalTableFooter({
 function OmicsTable({
   records,
   onView,
-  onEdit
+  onEdit,
+  showStudyId = false
 }: {
   records: SampleDetectionRow[];
   onView: (record: SampleDetectionRow) => void;
   onEdit: (record: SampleDetectionRow) => void;
+  showStudyId?: boolean;
 }) {
   const { t } = useI18n();
   const patientRowSpans = records.map((row, index) => {
-    if (index > 0 && records[index - 1].patientName === row.patientName) return 0;
+    if (index > 0 && records[index - 1].studyId === row.studyId && records[index - 1].patientName === row.patientName) return 0;
     let count = 1;
-    while (records[index + count]?.patientName === row.patientName) count += 1;
+    while (records[index + count]?.studyId === row.studyId && records[index + count]?.patientName === row.patientName) count += 1;
     return count;
   });
   const sampleRowSpans = records.map((row, index) => {
     if (
       index > 0 &&
+      records[index - 1].studyId === row.studyId &&
       records[index - 1].patientName === row.patientName &&
       records[index - 1].sampleId === row.sampleId
     ) return 0;
     let count = 1;
     while (
+      records[index + count]?.studyId === row.studyId &&
       records[index + count]?.patientName === row.patientName &&
       records[index + count]?.sampleId === row.sampleId
     ) count += 1;
@@ -1248,6 +1373,7 @@ function OmicsTable({
       <table className="module-table module-table--omics">
         <thead>
           <tr>
+            {showStudyId ? <th>{t('Study ID')}</th> : null}
             <th>{t('患者编号')}</th>
             <th>{t('样本编号')}</th>
             <th>{t('样本类型')}</th>
@@ -1262,6 +1388,7 @@ function OmicsTable({
         <tbody>
           {records.map((record, index) => (
             <tr key={record.id}>
+              {showStudyId ? <td><span className="status-pill status-pill--info">{record.studyId}</span></td> : null}
               {patientRowSpans[index] > 0 && <td rowSpan={patientRowSpans[index]}>{record.patientName}</td>}
               {sampleRowSpans[index] > 0 && <td rowSpan={sampleRowSpans[index]}>{record.sampleId}</td>}
               <td>{t(record.sampleType)}</td>
@@ -1287,11 +1414,13 @@ function OmicsTable({
 function SampleLedgerTable({
   rows,
   onView,
-  onEdit
+  onEdit,
+  showStudyId = false
 }: {
   rows: SampleLedgerRow[];
   onView: (row: SampleLedgerRow) => void;
   onEdit: (row: SampleLedgerRow) => void;
+  showStudyId?: boolean;
 }) {
   const { t } = useI18n();
   return (
@@ -1299,6 +1428,7 @@ function SampleLedgerTable({
       <table className="module-table module-table--sample-ledger">
         <thead>
           <tr>
+            {showStudyId ? <th>{t('Study ID')}</th> : null}
             <th>{t('患者编号')}</th>
             <th>{t('住院号')}</th>
             <th>{t('样本编号')}</th>
@@ -1311,6 +1441,7 @@ function SampleLedgerTable({
         <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
+              {showStudyId ? <td><span className="status-pill status-pill--info">{row.studyId}</span></td> : null}
               <td>{row.patientName}</td>
               <td>{row.hospitalNo}</td>
               <td>{row.sampleId}</td>
@@ -1384,7 +1515,7 @@ function SampleTestingStatTiles({
   );
 }
 
-export function ConsentManagementPage() {
+export function ConsentManagementPage({ currentUser }: { currentUser?: AuthenticatedUser | null } = {}) {
   const { t } = useI18n();
   const initialConsentRecords = filterRecordsByCurrentStudyScope(consentRecords);
   const consentUploadInputRef = useRef<globalThis.HTMLInputElement>(null);
@@ -1406,16 +1537,24 @@ export function ConsentManagementPage() {
   const [understoodRecords, setUnderstoodRecords] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'全部' | ConsentRecord['status']>('全部');
+  const [studyFilter, setStudyFilter] = useState('全部 Study');
   const [currentPage, setCurrentPage] = useState(1);
   const [activeConsentSection, setActiveConsentSection] = useState(0);
   const [consentActionStatus, setConsentActionStatus] = useState('等待知情同意操作');
   const [pendingConsentUploadRecord, setPendingConsentUploadRecord] = useState<ConsentRecord | null>(null);
+  const [consentApprovals, setConsentApprovals] = useState<ApiApprovalRequest[]>([]);
   const records = useMemo(() => {
     return baseRecords.map((record) => ({ ...record, ...recordOverrides[record.id] }));
   }, [baseRecords, recordOverrides]);
+  const consentStudyOptions = useMemo(() => uniqueOptionalStudyIds(records), [records]);
+  const showConsentStudyId = consentStudyOptions.length > 1;
+  const studyFilteredRecords = useMemo(
+    () => records.filter((record) => studyFilter === '全部 Study' || record.studyId === studyFilter),
+    [records, studyFilter]
+  );
   const selectedRecord = records.find((record) => record.id === selected.id) ?? records[0] ?? emptyConsentRecord;
   const statusCounts = useMemo(() => {
-    return records.reduce<Record<'全部' | ConsentRecord['status'], number>>(
+    return studyFilteredRecords.reduce<Record<'全部' | ConsentRecord['status'], number>>(
       (acc, record) => {
         acc.全部 += 1;
         acc[record.status] += 1;
@@ -1423,21 +1562,29 @@ export function ConsentManagementPage() {
       },
       { 全部: 0, 待签署: 0, 已签署: 0, 已撤回: 0 }
     );
-  }, [records]);
-  const currentConsentSection = consentPreviewContent[activeConsentSection];
+  }, [studyFilteredRecords]);
+  const selectedConsentPreviewContent = getConsentPreviewContent(selectedRecord.studyId);
+  const visibleConsentApprovals = useMemo(() => {
+    const visibleStudyIds = new Set(studyFilteredRecords.map((record) => record.studyId).filter(Boolean));
+    return consentApprovals
+      .filter((approval) => approval.approval_type.startsWith('econsent_'))
+      .filter((approval) => !visibleStudyIds.size || visibleStudyIds.has(approval.study_id))
+      .slice(0, 5);
+  }, [consentApprovals, studyFilteredRecords]);
+  const currentConsentSection = selectedConsentPreviewContent[Math.min(activeConsentSection, selectedConsentPreviewContent.length - 1)]!;
   const selectedUnderstood = understoodRecords[selectedRecord.id] || selectedRecord.status !== '待签署';
   const flowStepIndex = selectedRecord.status === '已签署' ? 3 : selectedRecord.status === '已撤回' ? 1 : selectedUnderstood ? 1 : 0;
   const filteredRecords = useMemo(() => {
     const normalized = query.trim().toLowerCase();
 
-    return records
+    return studyFilteredRecords
       .filter((record) => statusFilter === '全部' || record.status === statusFilter)
       .filter((record) => {
         if (!normalized) return true;
-        return [record.patientName, record.hospitalNo, record.diseaseType, record.status]
+        return [record.studyId ?? '', record.patientName, record.hospitalNo, record.diseaseType, record.status]
           .some((value) => value.toLowerCase().includes(normalized));
       });
-  }, [query, records, statusFilter]);
+  }, [query, statusFilter, studyFilteredRecords]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRecords.length / consentPageSize));
   const pageStart = (currentPage - 1) * consentPageSize;
@@ -1447,6 +1594,12 @@ export function ConsentManagementPage() {
 
   const printConsentPdf = () => {
     setUnderstoodRecords((current) => ({ ...current, [selectedRecord.id]: true }));
+    const previewWindow = window.open(consentPreviewPdfUrl, '_blank', 'noopener,noreferrer');
+    if (previewWindow) {
+      setConsentActionStatus('已打开知情同意 PDF 预览；如需纸质归档，请在预览页打印');
+    } else {
+      setConsentActionStatus('浏览器阻止了 PDF 预览弹窗，已尝试在后台触发打印');
+    }
     const printFrame = document.createElement('iframe');
     printFrame.src = consentPreviewPdfUrl;
     printFrame.title = '打印知情同意书';
@@ -1528,15 +1681,27 @@ export function ConsentManagementPage() {
   };
 
   const withdrawConsent = (record: ConsentRecord) => {
-    void applyConsentUpdate(record, { status: '已撤回', method: record.method }, '已撤回知情同意');
+    setConsentActionStatus(`正在提交 ${record.patientName} 知情撤回审批...`);
+    void requestConsentWithdrawal(record.id, `撤回 ${record.patientName} 知情同意`)
+      .then((approval) => {
+        setConsentApprovals((rows) => [approval, ...rows.filter((row) => row.id !== approval.id)]);
+        setConsentActionStatus(`知情撤回审批已提交：${approval.id}`);
+      })
+      .catch(() => {
+        setConsentActionStatus('知情撤回审批提交失败；后端不可用或当前角色无权限');
+      });
   };
 
   const resignConsent = (record: ConsentRecord) => {
-    void applyConsentUpdate(
-      record,
-      { status: '待签署', signedAt: '-', method: '-', version: consentVersion },
-      '已发起重签'
-    );
+    setConsentActionStatus(`正在提交 ${record.patientName} 知情重签审批...`);
+    void requestConsentResign(record.id, `重签 ${record.patientName} 知情同意`)
+      .then((approval) => {
+        setConsentApprovals((rows) => [approval, ...rows.filter((row) => row.id !== approval.id)]);
+        setConsentActionStatus(`知情重签审批已提交：${approval.id}`);
+      })
+      .catch(() => {
+        setConsentActionStatus('知情重签审批提交失败；后端不可用或当前角色无权限');
+      });
   };
 
   const viewConsent = (record: ConsentRecord) => {
@@ -1544,13 +1709,60 @@ export function ConsentManagementPage() {
     setConsentActionStatus(`正在查看 ${record.patientName} 的知情同意记录`);
   };
 
+  async function refreshConsentApprovals(studyIds = consentStudyOptions.length ? consentStudyOptions : [selectedRecord.studyId ?? 'LGL-1111']) {
+    const results = await Promise.allSettled(studyIds.map((studyId) => fetchApprovalRequests(studyId)));
+    const approvals = results
+      .flatMap((result) => (result.status === 'fulfilled' ? result.value : []))
+      .filter((approval) => approval.approval_type.startsWith('econsent_'));
+    setConsentApprovals((rows) => {
+      const next = [...approvals, ...rows];
+      return next.filter((approval, index) => next.findIndex((item) => item.id === approval.id) === index);
+    });
+  }
+
+  async function approveConsentApproval(approval: ApiApprovalRequest) {
+    setConsentActionStatus(`eConsent 审批 ${approval.id} 正在批准...`);
+    try {
+      const approved = await approveApprovalRequest(approval.id, 'Approved from eConsent page.');
+      setConsentApprovals((rows) => [approved, ...rows.filter((row) => row.id !== approved.id)]);
+      setConsentActionStatus(`eConsent 审批已批准：${approved.id}`);
+    } catch {
+      setConsentActionStatus('eConsent 审批批准失败；可能是提交人自批或权限不足');
+    }
+  }
+
+  async function completeConsentApproval(approval: ApiApprovalRequest) {
+    setConsentActionStatus(`eConsent 审批 ${approval.id} 正在完成并同步知情状态...`);
+    try {
+      const completed = await completeApprovalRequest(approval.id, 'Completed from eConsent page.');
+      setConsentApprovals((rows) => [completed, ...rows.filter((row) => row.id !== completed.id)]);
+      const nextRecords = await fetchConsentRecords();
+      if (nextRecords.length) {
+        setBaseRecords(nextRecords);
+        setRecordOverrides({});
+        const refreshedSelected = nextRecords.find((record) => record.id === approval.entity_id) ?? nextRecords[0];
+        setSelected(refreshedSelected);
+      }
+      await refreshConsentApprovals([completed.study_id]);
+      setConsentActionStatus(`eConsent 审批已完成并同步状态：${completed.id}`);
+    } catch {
+      setConsentActionStatus('eConsent 审批完成失败；请确认当前角色具备完成权限');
+    }
+  }
+
   const markSelectedUnderstood = () => {
     setUnderstoodRecords((current) => ({ ...current, [selectedRecord.id]: true }));
   };
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [query, statusFilter]);
+  }, [query, statusFilter, studyFilter]);
+
+  useEffect(() => {
+    if (studyFilter !== '全部 Study' && !consentStudyOptions.includes(studyFilter)) {
+      setStudyFilter('全部 Study');
+    }
+  }, [consentStudyOptions, studyFilter]);
 
   useEffect(() => {
     let ignore = false;
@@ -1570,8 +1782,34 @@ export function ConsentManagementPage() {
   }, []);
 
   useEffect(() => {
+    let ignore = false;
+    const studyIds = studyFilter === '全部 Study' ? consentStudyOptions : [studyFilter];
+    if (!studyIds.length) return undefined;
+    void Promise.allSettled(studyIds.map((studyId) => fetchApprovalRequests(studyId)))
+      .then((results) => {
+        if (ignore) return;
+        const approvals = results
+          .flatMap((result) => (result.status === 'fulfilled' ? result.value : []))
+          .filter((approval) => approval.approval_type.startsWith('econsent_'));
+        setConsentApprovals((rows) => {
+          const next = [...approvals, ...rows];
+          return next.filter((approval, index) => next.findIndex((item) => item.id === approval.id) === index);
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      ignore = true;
+    };
+  }, [consentStudyOptions, studyFilter]);
+
+  useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    setActiveConsentSection(0);
+  }, [selectedRecord.studyId]);
 
   return (
     <div className="content workspace-page">
@@ -1581,6 +1819,7 @@ export function ConsentManagementPage() {
             <h2><Icon name="file" />{t('知情同意')}</h2>
             <div className="consent-workbench__badges">
               <span>{t('当前版本')} <strong>{consentVersion}</strong></span>
+              <span><Icon name="database" />{t('Study ID')} <strong>{selectedRecord.studyId ?? '-'}</strong></span>
               <span className="consent-workbench__badge--patient"><Icon name="patients" />{t('当前患者')} <strong>{selectedRecord.patientName}</strong></span>
               <span className="consent-workbench__badge--hospital"><Icon name="building" />{t('住院号')} <strong>{selectedRecord.hospitalNo}</strong></span>
               <span><Icon name="calendar" />{t('最近更新')} <strong>2026-04-23</strong></span>
@@ -1589,7 +1828,7 @@ export function ConsentManagementPage() {
           </div>
           <button className="consent-study-link" type="button" disabled title={t('研究详情入口当前为展示状态')}>
             <Icon name="building" />
-            {t('免疫相关性神经系统疾病多组学解析及机制探索')}
+            {t(getConsentStudyTitle(selectedRecord.studyId))}
             <Icon name="chevronRight" />
           </button>
         </header>
@@ -1597,7 +1836,7 @@ export function ConsentManagementPage() {
         <div className="consent-workbench__main">
           <nav className="consent-preview__nav" aria-label={t('知情同意书章节')}>
             <h3><Icon name="file" />{t('知情同意内容')}</h3>
-            {consentPreviewContent.map((section, index) => (
+            {selectedConsentPreviewContent.map((section, index) => (
               <button
                 className={index === activeConsentSection ? 'is-active' : undefined}
                 type="button"
@@ -1656,6 +1895,45 @@ export function ConsentManagementPage() {
           <Icon name="shield" />
           <span>{t(consentActionStatus)}</span>
         </div>
+        <div className="consent-approval-panel">
+          <div>
+            <strong>{t('eConsent 审批队列')}</strong>
+            <span>{t('撤回/重签必须进入 Approval Center 后才会改变知情状态')}</span>
+          </div>
+          <div className="consent-approval-list">
+            {visibleConsentApprovals.length ? visibleConsentApprovals.map((approval) => (
+              <div className="consent-approval-row" key={approval.id}>
+                <span className="status-pill status-pill--info">{approval.study_id}</span>
+                <span>{approval.id}</span>
+                <strong>{t(approvalTypeLabel(approval.approval_type))}</strong>
+                <span>{approval.entity_id}</span>
+                <span>{t('目标状态')}: {String(approval.payload?.requested_status ?? '-')}</span>
+                <span className={`status-pill status-pill--${approval.status === 'completed' || approval.status === 'approved' ? 'success' : approval.status === 'rejected' || approval.status === 'cancelled' ? 'danger' : 'warning'}`}>{t(approval.status)}</span>
+                <div className="module-table-actions">
+                  <button
+                    className="module-link-button"
+                    type="button"
+                    disabled={approval.status !== 'submitted' || approval.submitted_by === currentUser?.id}
+                    title={approval.submitted_by === currentUser?.id ? t('Separate reviewer required') : undefined}
+                    onClick={() => void approveConsentApproval(approval)}
+                  >
+                    {t('Approve')}
+                  </button>
+                  <button
+                    className="module-link-button module-link-button--primary"
+                    type="button"
+                    disabled={approval.status !== 'approved'}
+                    onClick={() => void completeConsentApproval(approval)}
+                  >
+                    {t('完成')}
+                  </button>
+                </div>
+              </div>
+            )) : (
+              <span className="module-empty-note">{t('暂无 eConsent 审批；点击已签署记录的撤回或已撤回记录的重签可创建。')}</span>
+            )}
+          </div>
+        </div>
         <input
           ref={consentUploadInputRef}
           type="file"
@@ -1674,6 +1952,15 @@ export function ConsentManagementPage() {
             </div>
           </header>
           <div className="workspace-filter-row">
+            {showConsentStudyId ? (
+              <label>
+                <span>{t('Study ID')}</span>
+                <select value={studyFilter} onChange={(event) => setStudyFilter(event.target.value)}>
+                  <option value="全部 Study">{t('全部 Study')}</option>
+                  {consentStudyOptions.map((studyId) => <option value={studyId} key={studyId}>{studyId}</option>)}
+                </select>
+              </label>
+            ) : null}
             {consentStatusOptions.map((item) => (
               <button
                 className={`consent-status-chip consent-status-chip--${consentStatusClass[item]}${statusFilter === item ? ' is-selected' : ''}`}
@@ -1688,10 +1975,11 @@ export function ConsentManagementPage() {
           </div>
           <div className="module-table-wrap">
             <table className="module-table">
-              <thead><tr><th>{t('患者编号')}</th><th>{t('住院号')}</th><th>{t('疾病类型')}</th><th>{t('当前状态')}</th><th>{t('签署日期')}</th><th>{t('版本')}</th><th>{t('操作')}</th></tr></thead>
+              <thead><tr>{showConsentStudyId ? <th>{t('Study ID')}</th> : null}<th>{t('患者编号')}</th><th>{t('住院号')}</th><th>{t('疾病类型')}</th><th>{t('当前状态')}</th><th>{t('签署日期')}</th><th>{t('版本')}</th><th>{t('操作')}</th></tr></thead>
               <tbody>
                 {paginatedRecords.map((record) => (
                   <tr className={selectedRecord.id === record.id ? 'is-selected' : undefined} key={record.id} onClick={() => setSelected(record)}>
+                    {showConsentStudyId ? <td><span className="status-pill status-pill--info">{record.studyId}</span></td> : null}
                     <td>{record.patientName}</td><td>{record.hospitalNo}</td><td>{t(record.diseaseType)}</td><td><StatusPill value={record.status} /></td>
                     <td>{record.signedAt}</td><td>{record.version}</td>
                     <td>
@@ -1998,6 +2286,7 @@ export function SampleTestingPage() {
   const { t } = useI18n();
   const [sampleRows, setSampleRows] = useState(filterRecordsByCurrentStudyScope(samples));
   const [records, setRecords] = useState(filterRecordsByCurrentStudyScope(omicsRecords));
+  const [studyFilter, setStudyFilter] = useState('全部 Study');
   const [samplePatientQuery, setSamplePatientQuery] = useState('');
   const [sampleIdQuery, setSampleIdQuery] = useState('');
   const [sampleTypeFilter, setSampleTypeFilter] = useState('全部');
@@ -2011,15 +2300,25 @@ export function SampleTestingPage() {
   const [omicsPage, setOmicsPage] = useState(1);
   const [uploadStatus, setUploadStatus] = useState('未上传文件');
   const [sampleTestingEditor, setSampleTestingEditor] = useState<SampleTestingEditor | null>(null);
-  const detectionRows = useMemo(() => buildSampleDetectionRows(sampleRows, records), [sampleRows, records]);
-  const sampleLedgerRows = useMemo(() => buildSampleLedgerRows(sampleRows), [sampleRows]);
+  const studyOptions = useMemo(() => uniqueOptionalStudyIds([...sampleRows, ...records]), [records, sampleRows]);
+  const showStudyId = studyOptions.length > 1;
+  const filteredSampleRowsByStudy = useMemo(
+    () => sampleRows.filter((sample) => studyFilter === '全部 Study' || sample.studyId === studyFilter),
+    [sampleRows, studyFilter]
+  );
+  const filteredRecordsByStudy = useMemo(
+    () => records.filter((record) => studyFilter === '全部 Study' || record.studyId === studyFilter),
+    [records, studyFilter]
+  );
+  const detectionRows = useMemo(() => buildSampleDetectionRows(filteredSampleRowsByStudy, filteredRecordsByStudy), [filteredRecordsByStudy, filteredSampleRowsByStudy]);
+  const sampleLedgerRows = useMemo(() => buildSampleLedgerRows(filteredSampleRowsByStudy), [filteredSampleRowsByStudy]);
   const sampleTypeOptions = useMemo(() => ['全部', ...Array.from(new Set(sampleLedgerRows.map((row) => row.sampleType)))], [sampleLedgerRows]);
   const filteredSampleLedgerRows = useMemo(() => {
     const patientQuery = samplePatientQuery.trim().toLowerCase();
     const idQuery = sampleIdQuery.trim().toLowerCase();
 
     return sampleLedgerRows.filter((row) => {
-      if (patientQuery && !row.patientName.toLowerCase().includes(patientQuery)) return false;
+      if (patientQuery && !row.patientName.toLowerCase().includes(patientQuery) && !row.studyId?.toLowerCase().includes(patientQuery)) return false;
       if (idQuery && !row.sampleId.toLowerCase().includes(idQuery)) return false;
       if (sampleTypeFilter !== '全部' && row.sampleType !== sampleTypeFilter) return false;
       if (sampleDateFrom && row.collectedAt < sampleDateFrom) return false;
@@ -2035,6 +2334,7 @@ export function SampleTestingPage() {
   );
   const sortedDetectionRows = useMemo(() => {
     return [...detectionRows].sort((a, b) =>
+      (a.studyId ?? '').localeCompare(b.studyId ?? '') ||
       a.patientName.localeCompare(b.patientName) ||
       a.sampleId.localeCompare(b.sampleId) ||
       a.assay.localeCompare(b.assay)
@@ -2047,7 +2347,7 @@ export function SampleTestingPage() {
     return sortedDetectionRows.filter((row) => {
       if (omicsStatusFilter !== '全部' && row.status !== omicsStatusFilter) return false;
       if (omicsAssayFilter !== '全部' && row.assay !== omicsAssayFilter) return false;
-      if (patientQuery && !row.patientName.toLowerCase().includes(patientQuery)) return false;
+      if (patientQuery && !row.patientName.toLowerCase().includes(patientQuery) && !row.studyId?.toLowerCase().includes(patientQuery)) return false;
       if (sampleQuery && !row.sampleId.toLowerCase().includes(sampleQuery)) return false;
       return true;
     });
@@ -2061,24 +2361,49 @@ export function SampleTestingPage() {
   const completed = detectionRows.filter((row) => row.status === '检测完成').length;
   const running = detectionRows.filter((row) => row.status === '检测中').length;
   const archived = detectionRows.filter((row) => row.status === '已归档').length;
+  const isLungSampleContext = studyFilter === 'LZXK-01' || (studyFilter === '全部 Study' && filteredSampleRowsByStudy.length > 0 && filteredSampleRowsByStudy.every((sample) => sample.studyId === 'LZXK-01'));
   const sampleStatItems = useMemo(() => {
-    const blood = sampleRows.filter((sample) => sample.sampleType === '血液').length;
-    const csf = sampleRows.filter((sample) => sample.sampleType === 'CSF').length;
-    const kidney = sampleRows.filter((sample) => sample.sampleType.includes('肾')).length;
+    const blood = filteredSampleRowsByStudy.filter((sample) => sample.sampleType === '血液').length;
+    const csf = filteredSampleRowsByStudy.filter((sample) => sample.sampleType === 'CSF').length;
+    const kidney = filteredSampleRowsByStudy.filter((sample) => sample.sampleType.includes('肾')).length;
+    const tissue = filteredSampleRowsByStudy.filter((sample) => sample.sampleType === '组织').length;
+    const pleural = filteredSampleRowsByStudy.filter((sample) => sample.sampleType === '胸水').length;
+
+    if (isLungSampleContext) {
+      return [
+        { label: '已采集样本数', value: filteredSampleRowsByStudy.length, icon: 'sampleBank' as IconName },
+        { label: '血液', value: blood, icon: 'sampleTube' as IconName },
+        { label: '组织', value: tissue, icon: 'database' as IconName },
+        { label: '胸水', value: pleural, icon: 'lab' as IconName }
+      ];
+    }
 
     return [
-      { label: '已采集样本数', value: sampleRows.length, icon: 'sampleBank' as IconName },
+      { label: '已采集样本数', value: filteredSampleRowsByStudy.length, icon: 'sampleBank' as IconName },
       { label: '血液', value: blood, icon: 'sampleTube' as IconName },
       { label: 'CSF', value: csf, icon: 'lab' as IconName },
       { label: '肾', value: kidney, icon: 'database' as IconName }
     ];
-  }, [sampleRows]);
+  }, [filteredSampleRowsByStudy, isLungSampleContext]);
   const omicsStatItems = useMemo(() => {
     const completedOrArchived = detectionRows.filter((row) => row.status === '检测完成' || row.status === '已归档').length;
     const rnaSeq = detectionRows.filter((row) => row.assay === 'RNA-seq').length;
     const tcrBcr = detectionRows.filter((row) => row.assay === 'TCR/BCR').length;
     const csfRna = detectionRows.filter((row) => row.sampleType === 'CSF' && row.assay === 'RNA-seq').length;
     const scrnaSeq = detectionRows.filter((row) => row.assay === 'scRNA-seq').length;
+    const ngsPanel = detectionRows.filter((row) => row.assay === 'NGS panel').length;
+    const ctdna = detectionRows.filter((row) => row.assay === 'ctDNA').length;
+    const pathology = detectionRows.filter((row) => row.assay === '病理复核').length;
+
+    if (isLungSampleContext) {
+      return [
+        { label: '检测中', value: running, icon: 'clock' as IconName },
+        { label: '检测完成', value: completedOrArchived, icon: 'check' as IconName },
+        { label: 'NGS panel', value: ngsPanel, icon: 'dna' as IconName },
+        { label: 'ctDNA', value: ctdna, icon: 'shield' as IconName },
+        { label: '病理复核', value: pathology, icon: 'lab' as IconName }
+      ];
+    }
 
     return [
       { label: '检测中', value: running, icon: 'clock' as IconName },
@@ -2088,9 +2413,16 @@ export function SampleTestingPage() {
       { label: 'CSF/RNA', value: csfRna, icon: 'lab' as IconName },
       { label: 'scRNA-seq', value: scrnaSeq, icon: 'sampleTube' as IconName }
     ];
-  }, [detectionRows, running]);
+  }, [detectionRows, isLungSampleContext, running]);
   const omicsStatusOptions: OmicsFilterStatus[] = ['全部', '待检测', '检测中', '检测完成', '已归档'];
-  const omicsAssayOptions: Array<OmicsRecord['assay']> = ['WGS', 'TCR/BCR', 'Olink/Simoa', '蛋白组', '代谢组'];
+  const omicsAssayOptions = useMemo<Array<OmicsRecord['assay']>>(() => {
+    const baseOptions: Array<OmicsRecord['assay']> = isLungSampleContext
+      ? ['NGS panel', 'ctDNA', '病理复核']
+      : ['WGS', 'TCR/BCR', 'Olink/Simoa', '蛋白组', '代谢组'];
+    const seen = new Set<OmicsRecord['assay']>(baseOptions);
+    for (const record of filteredRecordsByStudy) seen.add(record.assay);
+    return Array.from(seen);
+  }, [filteredRecordsByStudy, isLungSampleContext]);
 
   useEffect(() => {
     let ignore = false;
@@ -2110,14 +2442,20 @@ export function SampleTestingPage() {
 
   useEffect(() => {
     setSampleLedgerPage(1);
-  }, [sampleDateFrom, sampleDateTo, sampleIdQuery, samplePatientQuery, sampleTypeFilter]);
+  }, [sampleDateFrom, sampleDateTo, sampleIdQuery, samplePatientQuery, sampleTypeFilter, studyFilter]);
 
   useEffect(() => {
     setOmicsPage(1);
-  }, [omicsAssayFilter, omicsPatientQuery, omicsSampleQuery, omicsStatusFilter]);
+  }, [omicsAssayFilter, omicsPatientQuery, omicsSampleQuery, omicsStatusFilter, studyFilter]);
+
+  useEffect(() => {
+    if (studyFilter !== '全部 Study' && !studyOptions.includes(studyFilter)) {
+      setStudyFilter('全部 Study');
+    }
+  }, [studyFilter, studyOptions]);
 
   async function handleResultFileUpload(file: globalThis.File) {
-    const linkedSample = sampleRows[0];
+    const linkedSample = filteredSampleRowsByStudy[0] ?? sampleRows[0];
     setUploadStatus('上传中...');
     try {
       const uploaded = await uploadFileToBackend(file, {
@@ -2133,7 +2471,7 @@ export function SampleTestingPage() {
   }
 
   async function handleAddSample() {
-    const template = sampleRows[0];
+    const template = filteredSampleRowsByStudy[0] ?? sampleRows[0];
     if (!template) {
       setUploadStatus('暂无患者样本上下文，无法新增样本');
       return;
@@ -2148,15 +2486,8 @@ export function SampleTestingPage() {
       status: '已采集',
       linkedOmics: ['待选择']
     };
-    setSampleRows((rows) => [nextSample, ...rows]);
-    setUploadStatus('新增样本已加入列表，正在同步后端...');
-    try {
-      const created = await createSampleRecord(nextSample);
-      setSampleRows((rows) => rows.map((row) => (row.id === nextSample.id ? created : row)));
-      setUploadStatus(`新增样本已同步后端：${created.id}`);
-    } catch {
-      setUploadStatus('后端不可用，新增样本已保存在本页');
-    }
+    setSampleTestingEditor({ kind: 'sample', draft: nextSample });
+    setUploadStatus('请确认患者、访视、样本类型、采集时间、条码和保存位置后保存');
   }
 
   async function handleEditSample(row: SampleLedgerRow) {
@@ -2172,7 +2503,7 @@ export function SampleTestingPage() {
   }
 
   async function handleAddOmics() {
-    const sample = sampleRows[0];
+    const sample = filteredSampleRowsByStudy[0] ?? sampleRows[0];
     if (!sample) {
       setUploadStatus('暂无样本上下文，无法新增检测');
       return;
@@ -2185,23 +2516,16 @@ export function SampleTestingPage() {
       patientName: sample.patientName,
       sampleId: sample.id,
       sampleType: sample.sampleType,
-      assay: 'WGS',
-      platform: 'NovaSeq 6000',
+      assay: sample.studyId === 'LZXK-01' ? 'ctDNA' : 'WGS',
+      platform: sample.studyId === 'LZXK-01' ? 'NextSeq 2000' : 'NovaSeq 6000',
       runId: `RUN-${Date.now().toString().slice(-6)}`,
       status: '样本接收',
       qc: '待确认',
       sentAt: new Date().toISOString().slice(0, 10),
       completedAt: '-'
     };
-    setRecords((rows) => [nextRecord, ...rows]);
-    setUploadStatus('新增检测已加入列表，正在同步后端...');
-    try {
-      const created = await createOmicsRecord(nextRecord);
-      setRecords((rows) => rows.map((record) => (record.id === nextRecord.id ? created : record)));
-      setUploadStatus(`新增检测已同步后端：${created.id}`);
-    } catch {
-      setUploadStatus('后端不可用，新增检测已保存在本页');
-    }
+    setSampleTestingEditor({ kind: 'omics', draft: nextRecord });
+    setUploadStatus('请确认样本编号、检测项目、送检时间、平台、批次和 QC 要求后保存');
   }
 
   async function handleEditOmics(row: SampleDetectionRow) {
@@ -2212,7 +2536,10 @@ export function SampleTestingPage() {
       return;
     }
 
-    const sample = sampleRows.find((item) => formatSampleLedgerId(item, sampleRows) === row.sampleId || item.id === row.sampleId);
+    const sample = sampleRows.find((item) =>
+      item.studyId === row.studyId &&
+      (formatSampleLedgerId(item, sampleRows) === row.sampleId || item.id === row.sampleId)
+    );
     if (!sample) return;
     const nextRecord: OmicsRecord = {
       id: `OMX-NEW-${Date.now()}`,
@@ -2222,8 +2549,8 @@ export function SampleTestingPage() {
       patientName: sample.patientName,
       sampleId: sample.id,
       sampleType: sample.sampleType,
-      assay: 'WGS',
-      platform: 'NovaSeq 6000',
+      assay: sample.studyId === 'LZXK-01' ? 'ctDNA' : 'WGS',
+      platform: sample.studyId === 'LZXK-01' ? 'NextSeq 2000' : 'NovaSeq 6000',
       runId: `RUN-${Date.now().toString().slice(-6)}`,
       status: '样本接收',
       qc: '待确认',
@@ -2255,7 +2582,7 @@ export function SampleTestingPage() {
         setUploadStatus('样本表单缺少必填字段');
         return;
       }
-      setSampleRows((rows) => rows.map((row) => (row.id === draft.id ? draft : row)));
+      setSampleRows((rows) => (rows.some((row) => row.id === draft.id) ? rows.map((row) => (row.id === draft.id ? draft : row)) : [draft, ...rows]));
       setUploadStatus(`样本 ${draft.id} 正在同步后端...`);
       try {
         const saved = draft.id.startsWith('SPL-NEW-') ? await createSampleRecord(draft) : await updateSampleRecord(draft);
@@ -2290,7 +2617,7 @@ export function SampleTestingPage() {
   return (
     <div className="content workspace-page">
       <section className="module-kpis">
-        <ModuleKpi icon="sampleTube" label="总样本数" value={`${sampleRows.length}`} helper="样本台账" />
+        <ModuleKpi icon="sampleTube" label="总样本数" value={`${filteredSampleRowsByStudy.length}`} helper="样本台账" />
         <ModuleKpi icon="dna" label="检测项目" value={`${detectionRows.length}`} helper="按项目展开" tone="purple" />
         <ModuleKpi icon="clock" label="检测中" value={`${running}`} helper="待完成检测" tone="orange" />
         <ModuleKpi icon="check" label="检测完成" value={`${completed + archived}`} helper="含结果文件" tone="green" />
@@ -2317,6 +2644,14 @@ export function SampleTestingPage() {
               </div>
             </header>
             <div className="sample-testing-editor-grid">
+              <label>
+                <span>{t('Study ID')}</span>
+                <input value={sampleTestingEditor.draft.studyId ?? '-'} readOnly />
+              </label>
+              <label>
+                <span>{t('条码 / 样本编号')}</span>
+                <input value={sampleTestingEditor.draft.id} onChange={(event) => patchSampleTestingDraft({ id: event.target.value })} />
+              </label>
               <label>
                 <span>{t('患者编号')}</span>
                 <input value={sampleTestingEditor.draft.patientName} onChange={(event) => patchSampleTestingDraft({ patientName: event.target.value })} />
@@ -2358,6 +2693,15 @@ export function SampleTestingPage() {
         ) : null}
         <SampleTestingStatTiles items={sampleStatItems} />
         <div className="sample-testing-filter-bar">
+          {showStudyId ? (
+            <label>
+              <span>{t('Study ID')}</span>
+              <select value={studyFilter} onChange={(event) => setStudyFilter(event.target.value)}>
+                <option value="全部 Study">{t('全部 Study')}</option>
+                {studyOptions.map((studyId) => <option value={studyId} key={studyId}>{studyId}</option>)}
+              </select>
+            </label>
+          ) : null}
           <label>
             <span>{t('患者编号')}</span>
             <input value={samplePatientQuery} onChange={(event) => setSamplePatientQuery(event.target.value)} placeholder={t('搜索患者编号')} />
@@ -2381,7 +2725,7 @@ export function SampleTestingPage() {
             <input type="date" value={sampleDateTo} onChange={(event) => setSampleDateTo(event.target.value)} />
           </label>
         </div>
-        <SampleLedgerTable rows={pagedSampleLedgerRows} onView={handleViewSample} onEdit={(row) => void handleEditSample(row)} />
+        <SampleLedgerTable rows={pagedSampleLedgerRows} onView={handleViewSample} onEdit={(row) => void handleEditSample(row)} showStudyId={showStudyId} />
         <ModuleTableFooter page={safeSampleLedgerPage} total={filteredSampleLedgerRows.length} pageSize={sampleLedgerPageSize} onPageChange={setSampleLedgerPage} />
       </section>
 
@@ -2424,6 +2768,10 @@ export function SampleTestingPage() {
               </div>
             </header>
             <div className="sample-testing-editor-grid">
+              <label>
+                <span>{t('Study ID')}</span>
+                <input value={sampleTestingEditor.draft.studyId ?? '-'} readOnly />
+              </label>
               <label>
                 <span>{t('患者编号')}</span>
                 <input value={sampleTestingEditor.draft.patientName} onChange={(event) => patchSampleTestingDraft({ patientName: event.target.value })} />
@@ -2475,6 +2823,15 @@ export function SampleTestingPage() {
         ) : null}
         <SampleTestingStatTiles items={omicsStatItems} />
         <div className="sample-testing-filter-bar sample-testing-filter-bar--omics">
+          {showStudyId ? (
+            <label>
+              <span>{t('Study ID')}</span>
+              <select value={studyFilter} onChange={(event) => setStudyFilter(event.target.value)}>
+                <option value="全部 Study">{t('全部 Study')}</option>
+                {studyOptions.map((studyId) => <option value={studyId} key={studyId}>{studyId}</option>)}
+              </select>
+            </label>
+          ) : null}
           <label>
             <span>{t('患者编号')}</span>
             <input value={omicsPatientQuery} onChange={(event) => setOmicsPatientQuery(event.target.value)} placeholder={t('搜索患者编号')} />
@@ -2512,7 +2869,7 @@ export function SampleTestingPage() {
             ))}
           </div>
         </div>
-        <OmicsTable records={pagedDetectionRows} onView={handleViewOmics} onEdit={(row) => void handleEditOmics(row)} />
+        <OmicsTable records={pagedDetectionRows} onView={handleViewOmics} onEdit={(row) => void handleEditOmics(row)} showStudyId={showStudyId} />
         <ModuleTableFooter page={safeOmicsPage} total={filteredDetectionRows.length} pageSize={omicsTestingPageSize} onPageChange={setOmicsPage} />
       </section>
     </div>
@@ -2624,10 +2981,21 @@ const systemAccounts: SystemAccount[] = [
 ];
 
 const lungStudyFields: SystemField[] = [
-  { studyId: 'LZXK-01', id: 'LUNG-RESIST-001', name: '驱动基因突变', type: 'Dropdown', module: '肺癌耐药研究字段', updatedAt: '2026-04-27', status: '启用', options: ['EGFR', 'ALK', 'ROS1', '其他'], required: true, validationRule: 'required', conditionalLogic: '' },
-  { studyId: 'LZXK-01', id: 'LUNG-RESIST-002', name: '耐药机制', type: 'Dropdown', module: '肺癌耐药研究字段', updatedAt: '2026-04-27', status: '启用', options: ['T790M', 'MET扩增', '组织学转化', '未知'], required: true, validationRule: 'required', conditionalLogic: 'driver_gene_mutation is not empty' },
-  { studyId: 'LZXK-01', id: 'LUNG-RESIST-003', name: '治疗线数', type: 'Number', module: '肺癌耐药研究字段', updatedAt: '2026-04-27', status: '启用', options: [], required: false, validationRule: 'integer >= 1', conditionalLogic: '' },
-  { studyId: 'LZXK-01', id: 'LUNG-RESIST-004', name: 'RECIST 评估', type: 'Dropdown', module: '肺癌耐药研究字段', updatedAt: '2026-04-27', status: '启用', options: ['CR', 'PR', 'SD', 'PD'], required: false, validationRule: '', conditionalLogic: '' }
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-001', name: '研究编号', type: 'Text', module: '肺癌研究基本信息', updatedAt: '2026-04-27', status: '启用', options: [], required: true, validationRule: 'required', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-002', name: '研究名称', type: 'Text', module: '肺癌研究基本信息', updatedAt: '2026-04-27', status: '启用', options: [], required: true, validationRule: 'required', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-003', name: '病种', type: 'Dropdown', module: '肺癌研究基本信息', updatedAt: '2026-04-27', status: '启用', options: ['NSCLC', 'SCLC', '其他'], required: true, validationRule: 'required', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-004', name: '分期', type: 'Dropdown', module: '肺癌研究基本信息', updatedAt: '2026-04-27', status: '启用', options: ['I期', 'II期', 'III期', 'IV期'], required: true, validationRule: 'required', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-005', name: 'TNM分期', type: 'Text', module: '肺癌研究基本信息', updatedAt: '2026-04-27', status: '启用', options: [], required: false, validationRule: 'TNM text', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-006', name: 'ECOG评分', type: 'Number', module: '肺癌治疗与耐药评估', updatedAt: '2026-04-27', status: '启用', options: [], required: true, validationRule: 'integer 0-5', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-007', name: '治疗线数', type: 'Number', module: '肺癌治疗与耐药评估', updatedAt: '2026-04-27', status: '启用', options: [], required: true, validationRule: 'integer >= 1', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-008', name: '当前治疗方案', type: 'Text', module: '肺癌治疗与耐药评估', updatedAt: '2026-04-27', status: '启用', options: [], required: true, validationRule: 'required', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-009', name: '驱动基因突变', type: 'Dropdown', module: '肺癌治疗与耐药评估', updatedAt: '2026-04-27', status: '启用', options: ['EGFR', 'ALK', 'ROS1', 'MET', 'RET', '其他'], required: true, validationRule: 'required', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-010', name: '耐药机制', type: 'Dropdown', module: '肺癌治疗与耐药评估', updatedAt: '2026-04-27', status: '启用', options: ['T790M', 'C797S', 'MET扩增', '组织学转化', '未知'], required: true, validationRule: 'required', conditionalLogic: '驱动基因突变 is not empty' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-011', name: 'RECIST评估', type: 'Dropdown', module: '肺癌治疗与耐药评估', updatedAt: '2026-04-27', status: '启用', options: ['CR', 'PR', 'SD', 'PD'], required: false, validationRule: '', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-012', name: 'ctDNA突变丰度', type: 'Number', module: '肺癌组学与疗效终点', updatedAt: '2026-04-27', status: '启用', options: [], required: false, validationRule: 'percentage 0-100', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-013', name: 'PFS（月）', type: 'Number', module: '肺癌组学与疗效终点', updatedAt: '2026-04-27', status: '启用', options: [], required: false, validationRule: 'number >= 0', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-014', name: 'ORR评估', type: 'Dropdown', module: '肺癌组学与疗效终点', updatedAt: '2026-04-27', status: '启用', options: ['CR', 'PR', 'SD', 'PD', 'NE'], required: false, validationRule: '', conditionalLogic: '' },
+  { studyId: 'LZXK-01', id: 'LUNG-RESIST-015', name: '检测项目', type: 'Dropdown', module: '肺癌组学与疗效终点', updatedAt: '2026-04-27', status: '启用', options: ['NGS panel', 'ctDNA', 'RNA-seq', '病理复核'], required: false, validationRule: '', conditionalLogic: '' }
 ];
 
 const systemFields: SystemField[] = [
@@ -2649,7 +3017,6 @@ const permissionRows: PermissionRow[] = [
   { action: '访视计划配置 / Study Visit Plan Config', values: { LZ_ADMIN: true, LZ_CRF_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
   { action: 'CRF 版本发布 / Publish CRF Version', values: { LZ_ADMIN: true, LZ_CRF_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
   { action: 'Query 与质控 / Query & QC', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_DATA_MANAGER: true, STUDY_DATA_MANAGER: true } },
-  { action: '数据冻结与锁定 / Freeze & Lock', values: { LZ_ADMIN: true, LZ_DATA_MANAGER: true, STUDY_DATA_MANAGER: true } },
   { action: '导出与分析 / Export & Analytics', values: { LZ_ADMIN: true, LZ_DATA_MANAGER: true, STUDY_PI: true, STUDY_DATA_MANAGER: true } },
   { action: '审计日志 / Audit Logs', values: { LZ_ADMIN: true, LZ_AUDITOR: true, LZ_DATA_MANAGER: true, STUDY_CONFIG_ADMIN: true, STUDY_DATA_MANAGER: true } }
 ];
@@ -2738,6 +3105,24 @@ function nextCrfDraftVersion(versions: StudyCrfVersionRecord[]) {
 
 const systemStudyOptions = ['LGL-1111', 'RWD-NMO-2026', 'LZXK-01'];
 
+function formatAuditValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '-';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function approvalTypeLabel(type: ApiApprovalRequest['approval_type']) {
+  if (type === 'econsent_withdrawal') return 'eConsent 撤回';
+  if (type === 'econsent_resign') return 'eConsent 重签';
+  if (type === 'crf_publish') return 'CRF 发布';
+  if (type === 'deidentified_export') return '脱敏导出';
+  return '导出';
+}
+
 export function SystemManagementPage({ currentUser }: { currentUser?: AuthenticatedUser | null } = {}) {
   const { t } = useI18n();
   const lockedStudyId = getCurrentScopedStudyId();
@@ -2763,6 +3148,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [siteRows, setSiteRows] = useState<ApiStudySite[]>([]);
   const [siteUserRows, setSiteUserRows] = useState<ApiSiteUser[]>([]);
   const [queryRows, setQueryRows] = useState<ApiDataQuery[]>([]);
+  const [auditRows, setAuditRows] = useState<ApiAuditLog[]>([]);
   const [systemActionStatus, setSystemActionStatus] = useState('等待系统管理操作');
   const normalizedQuery = systemQuery.trim().toLowerCase();
   const visibleAccounts = useMemo(() => {
@@ -2811,6 +3197,14 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     () => approvalRows.filter((approval) => !scopedStudyId || approval.study_id === scopedStudyId).slice(0, 4),
     [approvalRows, scopedStudyId]
   );
+  const approvalCounts = useMemo(() => {
+    const scopedApprovals = approvalRows.filter((approval) => !scopedStudyId || approval.study_id === scopedStudyId);
+    return {
+      submitted: scopedApprovals.filter((approval) => approval.status === 'submitted').length,
+      approved: scopedApprovals.filter((approval) => approval.status === 'approved').length,
+      econsent: scopedApprovals.filter((approval) => approval.approval_type.startsWith('econsent_')).length
+    };
+  }, [approvalRows, scopedStudyId]);
   const visibleSites = useMemo(() => {
     const scopedSites = scopedStudyId ? siteRows.filter((site) => site.study_id === scopedStudyId) : siteRows;
     if (!normalizedQuery) return scopedSites;
@@ -2829,6 +3223,18 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       )
       .slice(0, 6);
   }, [normalizedQuery, queryRows, scopedStudyId]);
+  const queryCounts = useMemo(() => {
+    const scopedQueries = scopedStudyId ? queryRows.filter((query) => query.study_id === scopedStudyId) : queryRows;
+    return {
+      open: scopedQueries.filter((query) => query.status === 'open').length,
+      answered: scopedQueries.filter((query) => query.status === 'answered').length,
+      closed: scopedQueries.filter((query) => query.status === 'closed').length
+    };
+  }, [queryRows, scopedStudyId]);
+  const visibleAuditLogs = useMemo(
+    () => auditRows.filter((entry) => !scopedStudyId || entry.study_id === scopedStudyId).filter((entry) => entry.diff?.length).slice(0, 4),
+    [auditRows, scopedStudyId]
+  );
 
   useEffect(() => {
     if (!availableSystemStudies.includes(selectedSystemStudyId)) {
@@ -2861,9 +3267,10 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       fetchStudyCrfMigrations(scopedStudyId),
       fetchApprovalRequests(scopedStudyId),
       fetchStudySites(scopedStudyId),
-      fetchDataQueries(scopedStudyId)
+      fetchDataQueries(scopedStudyId),
+      fetchAuditLogs(scopedStudyId)
     ])
-      .then(([visitPlanResult, memberResult, crfFieldResult, crfVersionResult, crfMigrationResult, approvalResult, siteResult, queryResult]) => {
+      .then(([visitPlanResult, memberResult, crfFieldResult, crfVersionResult, crfMigrationResult, approvalResult, siteResult, queryResult, auditResult]) => {
         if (ignore) return;
         if (visitPlanResult.status === 'fulfilled' && visitPlanResult.value.length) {
           setVisitPlanRows((rows) => [
@@ -2909,6 +3316,12 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
           setQueryRows((rows) => [
             ...rows.filter((query) => query.study_id !== scopedStudyId),
             ...queryResult.value
+          ]);
+        }
+        if (auditResult.status === 'fulfilled') {
+          setAuditRows((rows) => [
+            ...rows.filter((entry) => entry.study_id !== scopedStudyId),
+            ...auditResult.value
           ]);
         }
       })
@@ -3011,6 +3424,13 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     try {
       const created = await createStudyCrfField(nextField);
       setFieldRows((rows) => rows.map((field) => (field.id === nextField.id && field.studyId === nextField.studyId ? created : field)));
+      const audits = await fetchAuditLogs(created.studyId).catch(() => []);
+      if (audits.length) {
+        setAuditRows((rows) => [
+          ...rows.filter((entry) => entry.study_id !== created.studyId),
+          ...audits
+        ]);
+      }
       setSystemActionStatus(`CRF 字段已同步后端：${created.id}`);
     } catch {
       setSystemActionStatus('后端不可用或当前角色无 CRF 配置写入权限，字段已保存在本页');
@@ -3055,6 +3475,13 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     try {
       const saved = await updateStudyCrfField(nextField);
       setFieldRows((rows) => rows.map((row) => (row.id === saved.id && row.studyId === saved.studyId ? saved : row)));
+      const audits = await fetchAuditLogs(saved.studyId).catch(() => []);
+      if (audits.length) {
+        setAuditRows((rows) => [
+          ...rows.filter((entry) => entry.study_id !== saved.studyId),
+          ...audits
+        ]);
+      }
       setFieldEditor(null);
       setSystemActionStatus(`CRF 字段 ${saved.id} 已保存：${saved.name} / ${saved.type} / ${saved.module} / ${saved.status}`);
     } catch {
@@ -3173,6 +3600,33 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       setSystemActionStatus(`审批已批准：${approved.id}`);
     } catch {
       setSystemActionStatus('后端不可用、当前角色无审批权限，或提交人不能自批');
+    }
+  }
+
+  async function completeGenericApproval(approval: ApiApprovalRequest) {
+    setSystemActionStatus(`审批 ${approval.id} 正在完成并应用业务状态...`);
+    try {
+      const completed = await completeApprovalRequest(approval.id, 'Completed from System Management approval center.');
+      setApprovalRows((rows) => [completed, ...rows.filter((row) => row.id !== completed.id)]);
+      const [nextApprovals, nextAudits] = await Promise.allSettled([
+        fetchApprovalRequests(completed.study_id),
+        fetchAuditLogs(completed.study_id)
+      ]);
+      if (nextApprovals.status === 'fulfilled') {
+        setApprovalRows((rows) => [
+          ...rows.filter((row) => row.study_id !== completed.study_id),
+          ...nextApprovals.value
+        ]);
+      }
+      if (nextAudits.status === 'fulfilled') {
+        setAuditRows((rows) => [
+          ...rows.filter((row) => row.study_id !== completed.study_id),
+          ...nextAudits.value
+        ]);
+      }
+      setSystemActionStatus(`审批已完成：${completed.id}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无审批完成权限');
     }
   }
 
@@ -3306,7 +3760,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         patient_id: patient.id,
         visit_id: dataset.visits.find((visit) => visit.studyId === studyId && visit.patientId === patient.id)?.id ?? null,
         form_id: 'clinical_capture',
-        field_name: 'data_completeness',
+        field_name: studyId === 'LZXK-01' ? 'ECOG评分' : 'SLEDAI评分',
         title: `${t('数据核查 Query')} ${queryRows.filter((query) => query.study_id === studyId).length + 1}`,
         description: 'Please verify the source record and reply with correction status.',
         assigned_to: currentUser?.id ?? null
@@ -3576,17 +4030,23 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
             <div className="system-crf-approval-panel">
               <div>
                 <strong>{t('Approval Center')}</strong>
-                <span>{t('Export, de-identified export, and CRF publish approvals')}</span>
+                <span>{t('导出、CRF 发布、eConsent 撤回/重签审批')}</span>
+                <span className="status-pill status-pill--warning">{t('待审批')}: {approvalCounts.submitted}</span>
+                <span className="status-pill status-pill--info">{t('已批准待完成')}: {approvalCounts.approved}</span>
+                <span className="status-pill status-pill--success">eConsent: {approvalCounts.econsent}</span>
               </div>
               <div className="system-crf-approval-list">
                 {visibleApprovals.length ? visibleApprovals.map((approval) => (
                   <div key={approval.id} className="system-crf-approval-row">
+                    <span><strong>{t('Study ID')}</strong> {approval.study_id}</span>
                     <span>{approval.id}</span>
-                    <strong>{t(approval.approval_type)} · {approval.entity_id || '-'}</strong>
+                    <strong>{t(approvalTypeLabel(approval.approval_type))} · {approval.entity_id || '-'}</strong>
                     <span className={`status-pill status-pill--${approval.status === 'completed' || approval.status === 'approved' ? 'success' : approval.status === 'rejected' || approval.status === 'cancelled' ? 'danger' : 'warning'}`}>
                       {t(approval.status)}
                     </span>
                     <span>{t(approval.comment || 'No approval comment')}</span>
+                    {approval.payload?.patient_id ? <span>{t('患者编号')}: {String(approval.payload.patient_id)}</span> : null}
+                    {approval.payload?.requested_status ? <span>{t('目标状态')}: {String(approval.payload.requested_status)}</span> : null}
                     <span>{t('Actions')}: {approval.actions?.length ?? 0}</span>
                     <div className="module-table-actions">
                       <button
@@ -3606,10 +4066,47 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                       >
                         {t('Reject')}
                       </button>
+                      <button
+                        className="module-link-button module-link-button--primary"
+                        type="button"
+                        disabled={approval.status !== 'approved'}
+                        onClick={() => void completeGenericApproval(approval)}
+                      >
+                        {t('完成')}
+                      </button>
                     </div>
                   </div>
                 )) : (
                   <span>{t('No approvals yet')}</span>
+                )}
+              </div>
+            </div>
+            <div className="system-crf-approval-panel">
+              <div>
+                <strong>{t('Audit Diff | 审计变更明细')}</strong>
+                <span>{t('展示字段路径、修改前值和修改后值')}</span>
+              </div>
+              <div className="system-crf-approval-list">
+                {visibleAuditLogs.length ? visibleAuditLogs.map((entry) => (
+                  <div key={entry.id} className="system-audit-diff-row">
+                    <div>
+                      <strong>{entry.action} · {entry.entity_type}</strong>
+                      <span>{entry.entity_id} / {entry.actor_role ?? '-'}</span>
+                      <time>{entry.created_at.slice(0, 16).replace('T', ' ')}</time>
+                    </div>
+                    <ul>
+                      {entry.diff.slice(0, 3).map((change, index) => (
+                        <li key={`${entry.id}-${change.field}-${index}`}>
+                          <span>{change.field}</span>
+                          <small>{formatAuditValue(change.before)}</small>
+                          <strong>→</strong>
+                          <small>{formatAuditValue(change.after)}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )) : (
+                  <span>{t('暂无审计 diff')}</span>
                 )}
               </div>
             </div>
@@ -3817,10 +4314,17 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                 <Icon name="filePlus" />{t('新增 Query')}
               </button>
             </header>
+            <div className="system-query-summary">
+              <span className="status-pill status-pill--warning">{t('Open')}: {queryCounts.open}</span>
+              <span className="status-pill status-pill--info">{t('Answered')}: {queryCounts.answered}</span>
+              <span className="status-pill status-pill--success">{t('Closed')}: {queryCounts.closed}</span>
+              <small>{t('字段名由当前 Study CRF 校验，跨 Study 患者/访视会被后端拒绝。')}</small>
+            </div>
             <div className="module-table-wrap">
               <table className="module-table system-query-table">
                 <thead>
                   <tr>
+                    <th>Study</th>
                     <th>Query</th>
                     <th>Subject</th>
                     <th>Form / Field</th>
@@ -3834,8 +4338,13 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                   {visibleQueries.length ? visibleQueries.map((query) => (
                     <tr key={query.id}>
                       <td>
+                        <span className="status-pill status-pill--info">{query.study_id}</span>
+                      </td>
+                      <td>
                         <strong>{query.id}</strong>
                         <span>{t(query.title)}</span>
+                        {query.description ? <small>{t(query.description)}</small> : null}
+                        {query.response ? <small className="system-query-response">{t('回复')}: {t(query.response)}</small> : null}
                       </td>
                       <td>{query.patient_id}</td>
                       <td>{query.form_id || '-'} / {query.field_name || '-'}</td>
@@ -3851,7 +4360,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={7}>{t('暂无 Query')}</td>
+                      <td colSpan={8}>{t('暂无 Query')}</td>
                     </tr>
                   )}
                 </tbody>
@@ -3931,24 +4440,68 @@ function canRunQualityValidation(user?: { role: UserRole } | null) {
   return Boolean(user && qualityWriteRoles.has(user.role));
 }
 
-export function ReportsPage({ currentUser }: { currentUser?: { role: UserRole } | null } = {}) {
+function exportStudyOptionsForUser(user?: AuthenticatedUser | null) {
+  if (user?.studyScope?.scopeType === 'all_studies') return systemStudyOptions;
+  return user?.studyScope?.studyIds?.length ? user.studyScope.studyIds : [getCurrentScopedStudyId() ?? 'LGL-1111'];
+}
+
+export function ReportsPage({ currentUser }: { currentUser?: AuthenticatedUser | null } = {}) {
   const { t } = useI18n();
+  const exportStudyOptions = useMemo(() => exportStudyOptionsForUser(currentUser), [currentUser]);
+  const [selectedStudyId, setSelectedStudyId] = useState(exportStudyOptions[0] ?? 'LGL-1111');
   const [exportStatus, setExportStatus] = useState('等待导出任务');
   const [qualityStatus, setQualityStatus] = useState('等待数据校验');
   const [exportJobs, setExportJobs] = useState<Record<string, ApiExportJob>>({});
+  const [qualityIssues, setQualityIssues] = useState<ApiQualityIssue[]>([]);
+  const [qualityQueryMap, setQualityQueryMap] = useState<Record<string, ApiDataQuery>>({});
   const exportEnabled = canCreateExports(currentUser);
   const qualityEnabled = canRunQualityValidation(currentUser);
+  const visitWindowIssues = useMemo(
+    () => qualityIssues.filter((issue) => issue.source_table === 'visits' && issue.field_name === 'visit_date'),
+    [qualityIssues]
+  );
+  const openCriticalIssues = useMemo(
+    () => qualityIssues.filter((issue) => issue.status === 'open' && issue.severity === 'critical').length,
+    [qualityIssues]
+  );
+  const displayedQualityIssues = useMemo(
+    () => [
+      ...visitWindowIssues,
+      ...qualityIssues.filter((issue) => !(issue.source_table === 'visits' && issue.field_name === 'visit_date'))
+    ].slice(0, 5),
+    [qualityIssues, visitWindowIssues]
+  );
+
+  useEffect(() => {
+    if (!exportStudyOptions.includes(selectedStudyId)) {
+      setSelectedStudyId(exportStudyOptions[0] ?? 'LGL-1111');
+    }
+  }, [exportStudyOptions, selectedStudyId]);
+
+  useEffect(() => {
+    let ignore = false;
+    void fetchQualityIssues(selectedStudyId)
+      .then((issues) => {
+        if (!ignore) setQualityIssues(issues);
+      })
+      .catch(() => {
+        if (!ignore) setQualityIssues([]);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [selectedStudyId]);
 
   async function handleCreateExport(record: ReportRecord) {
     if (!exportEnabled) {
       setExportStatus('当前角色没有导出写入权限，请切换到数据管理员或 CRC');
       return;
     }
-    setExportStatus(`${record.name} 生成中...`);
+    setExportStatus(`${record.name} / ${selectedStudyId} 生成中...`);
     try {
-      const job = await createExportJob(record.type.toLowerCase());
+      const job = await createExportJob(record.type.toLowerCase(), selectedStudyId);
       setExportJobs((jobs) => ({ ...jobs, [record.id]: job }));
-      setExportStatus(`${record.name} 已生成：${job.id}`);
+      setExportStatus(`${record.name} 已生成：${job.study_id} / ${job.id}`);
     } catch {
       setExportStatus('导出失败：请确认已登录且当前角色具备导出权限');
     }
@@ -3973,10 +4526,36 @@ export function ReportsPage({ currentUser }: { currentUser?: { role: UserRole } 
     }
     setQualityStatus('数据校验运行中...');
     try {
-      const result = await runQualityChecks();
-      setQualityStatus(`校验完成：发现 ${result.created} 条待处理问题`);
+      const result = await runQualityChecks(selectedStudyId);
+      setQualityStatus(`校验完成：${selectedStudyId} 发现 ${result.created} 条待处理问题`);
+      const issues = await fetchQualityIssues(selectedStudyId);
+      setQualityIssues(issues);
     } catch {
       setQualityStatus('校验失败：请确认当前角色具备质控权限');
+    }
+  }
+
+  async function handleCreateQueryFromIssue(issue: ApiQualityIssue) {
+    if (!qualityEnabled) {
+      setQualityStatus('当前角色没有 Query 创建权限，请切换到数据管理员或 CRC');
+      return;
+    }
+    setQualityStatus(`正在从质控问题创建 Query：${issue.patient_id} / ${issue.field_name}`);
+    try {
+      const created = await createDataQuery({
+        study_id: issue.study_id,
+        patient_id: issue.patient_id,
+        visit_id: issue.source_table === 'visits' ? issue.source_id : null,
+        form_id: issue.source_table,
+        field_name: issue.field_name.replace(/^clinical_data\./, ''),
+        title: `质控 Query：${issue.field_name}`,
+        description: issue.message,
+        assigned_to: currentUser?.id ?? null
+      });
+      setQualityQueryMap((rows) => ({ ...rows, [issue.id]: created }));
+      setQualityStatus(`Query 已创建：${created.id} / ${created.patient_id} / ${created.field_name}`);
+    } catch {
+      setQualityStatus('Query 创建失败：字段不属于当前 CRF、跨 Study，或当前角色无权限');
     }
   }
 
@@ -3995,6 +4574,7 @@ export function ReportsPage({ currentUser }: { currentUser?: { role: UserRole } 
             record={record}
             exportJob={exportJobs[record.id]}
             exportEnabled={exportEnabled}
+            selectedStudyId={selectedStudyId}
             key={record.id}
             onDownload={handleDownloadExport}
             onExport={handleCreateExport}
@@ -4008,13 +4588,21 @@ export function ReportsPage({ currentUser }: { currentUser?: { role: UserRole } 
             <h2>{t('数据导出流水线')}</h2>
             <span>{t('用于 Demo 后端 API 联调')}</span>
           </div>
-          <button
-            className="module-link-button module-link-button--primary"
-            type="button"
-            disabled={!qualityEnabled}
-            title={qualityEnabled ? undefined : t('当前角色没有数据校验写入权限')}
-            onClick={handleRunQualityChecks}
-          ><Icon name="check" />{t('运行校验')}</button>
+          <div className="module-header-actions">
+            <label className="module-select-inline">
+              <span>{t('Study ID')}</span>
+              <select value={selectedStudyId} onChange={(event) => setSelectedStudyId(event.target.value)}>
+                {exportStudyOptions.map((studyId) => <option value={studyId} key={studyId}>{studyId}</option>)}
+              </select>
+            </label>
+            <button
+              className="module-link-button module-link-button--primary"
+              type="button"
+              disabled={!qualityEnabled}
+              title={qualityEnabled ? undefined : t('当前角色没有数据校验写入权限')}
+              onClick={handleRunQualityChecks}
+            ><Icon name="check" />{t('运行校验')}</button>
+          </div>
         </header>
         <div className="module-upload-status">
           <Icon name="reports" />
@@ -4023,6 +4611,42 @@ export function ReportsPage({ currentUser }: { currentUser?: { role: UserRole } 
         <div className="module-upload-status">
           <Icon name="shield" />
           <span>{t(qualityStatus)}</span>
+        </div>
+        <div className="quality-insight-grid">
+          <div className="quality-insight-card">
+            <span>{t('开放问题')}</span>
+            <strong>{qualityIssues.filter((issue) => issue.status === 'open').length}</strong>
+            <small>{t('来自 data_quality_issues')}</small>
+          </div>
+          <div className="quality-insight-card quality-insight-card--warning">
+            <span>{t('访视窗口预警')}</span>
+            <strong>{visitWindowIssues.length}</strong>
+            <small>{t('基于 Study visit plan')}</small>
+          </div>
+          <div className="quality-insight-card quality-insight-card--danger">
+            <span>{t('严重问题')}</span>
+            <strong>{openCriticalIssues}</strong>
+            <small>{t('需优先处理')}</small>
+          </div>
+        </div>
+        <div className="quality-issue-list">
+          {displayedQualityIssues.map((issue) => (
+            <div className="quality-issue-row" key={issue.id}>
+              <span className={`status-pill status-pill--${issue.severity === 'critical' ? 'danger' : issue.severity === 'warning' ? 'warning' : 'info'}`}>{t(issue.severity)}</span>
+              <strong>{issue.patient_id}</strong>
+              <span>{issue.source_table}.{issue.field_name}</span>
+              <small>{t(issue.message)}</small>
+              <button
+                className="module-link-button module-link-button--primary"
+                type="button"
+                disabled={Boolean(qualityQueryMap[issue.id])}
+                onClick={() => void handleCreateQueryFromIssue(issue)}
+              >
+                {qualityQueryMap[issue.id] ? `${t('已创建')} ${qualityQueryMap[issue.id].id}` : t('创建 Query')}
+              </button>
+            </div>
+          ))}
+          {!qualityIssues.length ? <span className="module-empty-note">{t('暂无质控问题；可点击运行校验刷新。')}</span> : null}
         </div>
         <div className="pipeline-grid">
           {['患者主数据', '临床 CRF', '样本台账', '多组学结果', '知情同意审计', '数据包归档'].map((item, index) => (
@@ -4042,12 +4666,14 @@ function ReportCard({
   record,
   exportJob,
   exportEnabled,
+  selectedStudyId,
   onDownload,
   onExport
 }: {
   record: ReportRecord;
   exportJob?: ApiExportJob;
   exportEnabled: boolean;
+  selectedStudyId: string;
   onDownload: (record: ReportRecord) => void;
   onExport: (record: ReportRecord) => void;
 }) {
@@ -4059,7 +4685,7 @@ function ReportCard({
         <strong>{t(record.name)}</strong>
         <p>{t(record.scope)}</p>
       </div>
-      <DetailList rows={[[t('格式'), record.type], [t('状态'), t(record.status)], [t('更新时间'), record.updatedAt]]} />
+      <DetailList rows={[[t('Study ID'), exportJob?.study_id ?? selectedStudyId], [t('格式'), record.type], [t('状态'), t(exportJob?.status ?? record.status)], [t('更新时间'), record.updatedAt]]} />
       <div className="module-header-actions">
         <button
           className="module-primary-button"

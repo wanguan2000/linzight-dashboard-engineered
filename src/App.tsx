@@ -145,7 +145,7 @@ function getTopbarCopy(activeModule: string) {
 function canAccessModule(user: AuthenticatedUser | null, label: string) {
   if (!user || user.role === 'LZ_ADMIN') return true;
   if (label === '系统管理') return ['LZ_CRF_ADMIN', 'STUDY_CONFIG_ADMIN', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_DATA_MANAGER'].includes(user.role);
-  if (label === '数据分析') return ['LZ_CRC', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_PI', 'STUDY_DATA_MANAGER'].includes(user.role);
+  if (label === '数据分析') return ['LZ_CRC', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_PI', 'STUDY_CRC', 'STUDY_DATA_MANAGER'].includes(user.role);
   if (label === '临床数据采集') return !['LZ_AUDITOR'].includes(user.role);
   if (label === '样本及检测') return !['LZ_CRF_ADMIN', 'LZ_AUDITOR', 'STUDY_CONFIG_ADMIN'].includes(user.role);
   if (label === '知情同意') return !['LZ_CRF_ADMIN', 'LZ_AUDITOR', 'STUDY_CONFIG_ADMIN'].includes(user.role);
@@ -245,7 +245,7 @@ export default function App() {
     if (activeModule === '患者队列管理') {
       return <PatientCohortPage currentUser={currentUser} onCreatePatient={createPatient} onEditPatient={openClinicalData} onViewPatient={openPatientJourney} />;
     }
-    if (activeModule === '知情同意') return <ConsentManagementPage />;
+    if (activeModule === '知情同意') return <ConsentManagementPage currentUser={currentUser} />;
     if (activeModule === '临床数据采集') {
       return <ClinicalDataCapturePage selectedPatient={selectedPatient} onOpenPatientJourney={openPatientJourney} onPatientChange={setSelectedPatient} />;
     }

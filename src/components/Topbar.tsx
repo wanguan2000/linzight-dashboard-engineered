@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { userProfile } from '../data/dashboard';
 import { visibleStudyLabel, type AuthenticatedUser } from '../data/auth';
 import { AiCommandBar } from './AiCommandBar';
@@ -23,6 +24,7 @@ export function Topbar({
   onLogout
 }: TopbarProps) {
   const { t } = useI18n();
+  const [notificationStatus, setNotificationStatus] = useState('');
   const profile = currentUser ?? userProfile;
   const roleLabel = currentUser ? currentUser.roleLabel : userProfile.role;
   const studyLabel = visibleStudyLabel(currentUser);
@@ -45,7 +47,13 @@ export function Topbar({
             <span>{t('当前角色')}</span>
             <strong>{t(roleLabel)}</strong>
           </div>
-          <button className="icon-button" type="button" aria-label={t('通知')} disabled title={t('通知功能将在生产环境接入')}>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label={t('通知')}
+            title={t('暂无通知')}
+            onClick={() => setNotificationStatus('暂无通知')}
+          >
             <Icon name="bell" />
           </button>
           {onLogout ? (
@@ -58,6 +66,7 @@ export function Topbar({
           </div>
         </div>
       </div>
+      {notificationStatus ? <p className="ai-bar__status">{t(notificationStatus)}</p> : null}
       <AiCommandBar placeholder={aiPlaceholder} showPrompts={showAiPrompts} />
     </header>
   );

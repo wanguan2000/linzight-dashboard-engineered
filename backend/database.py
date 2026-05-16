@@ -315,6 +315,7 @@ def initialize_schema() -> None:
               entity_id TEXT NOT NULL,
               before_json TEXT,
               after_json TEXT,
+              diff_json TEXT,
               ip_address TEXT,
               created_at TEXT NOT NULL,
               FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL
@@ -620,6 +621,7 @@ def migrate_json_storage(conn: sqlite3.Connection) -> None:
             ("retention_until", "TEXT"),
         ],
     )
+    ensure_columns(conn, "audit_logs", [("diff_json", "TEXT")])
 
     if sqlite_supports_jsonb(conn):
         conn.execute(
@@ -939,6 +941,7 @@ def row_to_audit_log(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
     item["before"] = decode_json(item.pop("before_json"), None)
     item["after"] = decode_json(item.pop("after_json"), None)
+    item["diff"] = decode_json(item.pop("diff_json", None), [])
     return item
 
 

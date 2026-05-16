@@ -15,6 +15,7 @@ import { patientRecords, type OmicsStatus, type PatientRecord, type SampleCollec
 import type {
   ApiAnalysisSummary,
   ApiApprovalRequest,
+  ApiAuditLog,
   ApiConsent,
   ApiCrfEntry,
   ApiCrfMigrationApproval,
@@ -26,6 +27,7 @@ import type {
   ApiOmics,
   ApiPanorama,
   ApiPatient,
+  ApiQualityIssue,
   ApiSample,
   ApiCrfMigrationPreview,
   ApiSiteUser,
@@ -252,9 +254,8 @@ export async function uploadFileToBackend(
   });
 }
 
-export async function createExportJob(exportType = 'cohort_csv'): Promise<ApiExportJob> {
+export async function createExportJob(exportType = 'cohort_csv', studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiExportJob> {
   const token = window.localStorage.getItem(authTokenStorageKey);
-  const studyId = getCurrentScopedStudyId() ?? 'LGL-1111';
   return postJson<ApiExportJob>(
     '/exports',
     {
@@ -288,6 +289,18 @@ export async function approveApprovalRequest(approvalId: string, comment = ''): 
 
 export async function rejectApprovalRequest(approvalId: string, comment = ''): Promise<ApiApprovalRequest> {
   return postJson<ApiApprovalRequest>(`/approvals/${encodeURIComponent(approvalId)}/reject`, { comment });
+}
+
+export async function completeApprovalRequest(approvalId: string, comment = ''): Promise<ApiApprovalRequest> {
+  return postJson<ApiApprovalRequest>(`/approvals/${encodeURIComponent(approvalId)}/complete`, { comment });
+}
+
+export async function requestConsentWithdrawal(consentId: string, comment = ''): Promise<ApiApprovalRequest> {
+  return postJson<ApiApprovalRequest>(`/consents/${encodeURIComponent(consentId)}/withdrawal-request`, { comment });
+}
+
+export async function requestConsentResign(consentId: string, comment = ''): Promise<ApiApprovalRequest> {
+  return postJson<ApiApprovalRequest>(`/consents/${encodeURIComponent(consentId)}/resign-request`, { comment });
 }
 
 export async function downloadExportJob(job: ApiExportJob): Promise<void> {
@@ -429,6 +442,14 @@ export async function assignStudySiteUser(
 
 export async function fetchDataQueries(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiDataQuery[]> {
   return getJson<ApiDataQuery[]>(`/queries?study_id=${encodeURIComponent(studyId)}`);
+}
+
+export async function fetchQualityIssues(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiQualityIssue[]> {
+  return getJson<ApiQualityIssue[]>(`/quality/issues?study_id=${encodeURIComponent(studyId)}`);
+}
+
+export async function fetchAuditLogs(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiAuditLog[]> {
+  return getJson<ApiAuditLog[]>(`/audit-logs?study_id=${encodeURIComponent(studyId)}`);
 }
 
 export async function createDataQuery(payload: {
@@ -582,9 +603,10 @@ export async function updateStudyCrfField(field: StudyCrfFieldRecord): Promise<S
   return toStudyCrfFieldRecord(response);
 }
 
-export async function runQualityChecks(): Promise<{ status: string; created: number }> {
+export async function runQualityChecks(studyId = getCurrentScopedStudyId()): Promise<{ status: string; created: number }> {
   const token = window.localStorage.getItem(authTokenStorageKey);
-  return postJson<{ status: string; created: number }>(withCurrentStudyQuery('/quality/run'), {}, token ? { Authorization: `Bearer ${token}` } : undefined);
+  const path = studyId ? `/quality/run?study_id=${encodeURIComponent(studyId)}` : withCurrentStudyQuery('/quality/run');
+  return postJson<{ status: string; created: number }>(path, {}, token ? { Authorization: `Bearer ${token}` } : undefined);
 }
 
 export async function fetchAnalyticsSummary(): Promise<ApiAnalysisSummary> {
@@ -833,6 +855,15 @@ function toOmicsRecord(record: ApiOmics): OmicsRecord {
 }
 
 function toVisitRecord(record: ApiVisit): VisitRecord {
+  const lungMetric =
+    record.study_id === 'LZXK-01'
+      ? record.visit_plan_code === 'V1'
+        ? 'ECOG 1 / 基线'
+        : record.visit_plan_code === 'V2'
+          ? 'ECOG 1 / ctDNA复核'
+          : 'ECOG 1 / RECIST SD'
+      : record.sle_dai;
+
   return {
     id: record.id,
     studyId: record.study_id,
@@ -846,7 +877,7 @@ function toVisitRecord(record: ApiVisit): VisitRecord {
     visit: record.visit,
     visitDate: record.visit_date,
     visitType: record.visit_type,
-    sleDai: record.sle_dai,
+    sleDai: lungMetric,
     medication: record.medication,
     sampleCollection: record.sample_collection,
     completeness: record.completeness,
@@ -923,6 +954,16 @@ export function filterRecordsByCurrentStudyScope<T extends { studyId?: string }>
   return records.filter((record) => Boolean(record.studyId && userCanAccessStudy(user, record.studyId)));
 }
 
+function fallbackDemoDataset(): DemoDataset {
+  return filterDatasetByStudyScope({
+    patients: patientRecords,
+    samples,
+    omics: omicsRecords,
+    visits,
+    followUps: followUpRecords
+  });
+}
+
 function filterDatasetByStudyScope(dataset: DemoDataset): DemoDataset {
   const user = getStoredUser();
   if (!user || !user.studyScope?.scopeType || user.studyScope.scopeType === 'all_studies') return dataset;
@@ -961,6 +1002,10 @@ export async function fetchDemoDataset(): Promise<DemoDataset> {
       getJson<ApiFollowUpRecord[]>(withCurrentStudyQuery('/follow-up-records'))
     ]);
 
+    if (!apiPatients.length) {
+      return fallbackDemoDataset();
+    }
+
     return filterDatasetByStudyScope({
       patients: apiPatients.map((patient) => toPatientRecord(patient, apiSamples, apiOmics)),
       samples: apiSamples.map(toSampleRecord),
@@ -969,13 +1014,7 @@ export async function fetchDemoDataset(): Promise<DemoDataset> {
       followUps: apiFollowUps.map(toFollowUpRecord)
     });
   } catch {
-    return filterDatasetByStudyScope({
-      patients: patientRecords,
-      samples,
-      omics: omicsRecords,
-      visits,
-      followUps: followUpRecords
-    });
+    return fallbackDemoDataset();
   }
 }
 
@@ -1021,8 +1060,10 @@ function followUpMethodFromVisitType(visitType: string): FollowUpRecord['followU
 
 function visitRecordToFollowUpPayload(record: VisitRecord, patient: PatientRecord) {
   const method = followUpMethodFromVisitType(record.visitType);
+  const studyId = record.studyId ?? patient.studyId ?? getCurrentScopedStudyId() ?? 'LGL-1111';
+  const isLungStudy = studyId === 'LZXK-01';
   return {
-    study_id: record.studyId ?? patient.studyId ?? getCurrentScopedStudyId() ?? 'LGL-1111',
+    study_id: studyId,
     patient_id: record.patientId ?? patient.id,
     visit_id: record.id.startsWith('V-NEW-') || record.id.startsWith('FUP-') ? null : record.id,
     follow_up_date: record.visitDate,
@@ -1030,7 +1071,7 @@ function visitRecordToFollowUpPayload(record: VisitRecord, patient: PatientRecor
     followed_by: 'LinZight Demo',
     survival_status: '存活',
     disease_status: record.status,
-    symptoms_signs: `SLEDAI ${record.sleDai}`,
+    symptoms_signs: isLungStudy ? `ECOG/疗效 ${record.sleDai}` : `SLEDAI ${record.sleDai}`,
     imaging_lab_summary: record.sampleCollection,
     efficacy_assessment: record.completeness ? `完整度 ${record.completeness}%` : '未评估',
     metastasis_status: '-',

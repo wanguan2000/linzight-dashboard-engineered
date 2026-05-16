@@ -316,7 +316,7 @@ export type ApiExportJob = {
 export type ApiApprovalRequest = {
   id: string;
   study_id: string;
-  approval_type: 'export' | 'deidentified_export' | 'crf_publish';
+  approval_type: 'export' | 'deidentified_export' | 'crf_publish' | 'econsent_withdrawal' | 'econsent_resign';
   status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'cancelled' | 'completed';
   entity_type: string;
   entity_id: string;
@@ -379,6 +379,41 @@ export type ApiDataQuery = {
   created_at: string;
   updated_at: string;
   closed_at: string | null;
+};
+
+export type ApiQualityIssue = {
+  id: string;
+  study_id: string;
+  patient_id: string;
+  source_table: string;
+  source_id: string;
+  field_name: string;
+  severity: 'info' | 'warning' | 'critical' | string;
+  message: string;
+  status: 'open' | 'resolved' | string;
+  created_at: string;
+  resolved_at: string | null;
+};
+
+export type ApiAuditDiff = {
+  field: string;
+  before: unknown;
+  after: unknown;
+};
+
+export type ApiAuditLog = {
+  id: string;
+  study_id: string;
+  actor_id: string | null;
+  actor_role: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  before: unknown;
+  after: unknown;
+  diff: ApiAuditDiff[];
+  ip_address: string | null;
+  created_at: string;
 };
 
 export type ApiAnalysisSummary = {

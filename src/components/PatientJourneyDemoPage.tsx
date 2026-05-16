@@ -58,6 +58,14 @@ const chartLegendWidths: Record<MetricKey, number> = {
   igg: 70
 };
 
+const lungMetricLabels: Record<MetricKey, string> = {
+  sledai: 'ECOG',
+  c3: 'ctDNA丰度',
+  esr: 'PFS（月）',
+  protein24h: '靶病灶变化',
+  igg: 'ORR'
+};
+
 const chartLayout = {
   minWidth: 820,
   labelColumn: 118,
@@ -162,8 +170,10 @@ function buildPatientJourneyEvents(
 ): JourneyDemoEvent[] {
   const firstVisitDate = patientVisits[0]?.visitDate ?? '2024-05-01';
   const lastVisitDate = patientVisits[patientVisits.length - 1]?.visitDate ?? firstVisitDate;
+  const isLungStudy = patient.studyId === 'LZXK-01';
   const baselineSledai = Number(patientVisits[0]?.sleDai ?? patient.clinicalData['SLEDAI评分'] ?? 0);
-  const diseaseTitle = patient.diseaseType === 'HC' ? '健康对照入组' : `明确${patient.diseaseType}`;
+  const baselineEcog = Number(patient.clinicalData['ECOG评分'] ?? 0);
+  const diseaseTitle = patient.diseaseType === 'HC' ? '健康对照入组' : isLungStudy ? `明确${patient.diseaseType} / 肺癌耐药队列` : `明确${patient.diseaseType}`;
   const events: JourneyDemoEvent[] = [
     {
       id: `${patient.id}-screening`,
@@ -187,7 +197,7 @@ function buildPatientJourneyEvents(
       title: diseaseTitle,
       tag: '诊断',
       date: shiftDate(firstVisitDate, -14),
-      subtitle: baselineSledai ? `基线 SLEDAI ${baselineSledai}` : patient.diseaseType,
+      subtitle: isLungStudy ? `基线 ECOG ${Number.isFinite(baselineEcog) ? baselineEcog : 0}` : baselineSledai ? `基线 SLEDAI ${baselineSledai}` : patient.diseaseType,
       description: `${patient.name} 诊断/分组为 ${patient.diseaseType}，住院号 ${patient.hospitalNo}。`,
       ...styleFor('disease')
     }
@@ -202,12 +212,14 @@ function buildPatientJourneyEvents(
         category: 'admission',
         track: '住院/急性事件',
         laneIndex: 1,
-        title: baselineSledai >= 10 ? '活动评估住院' : '基线评估住院',
+        title: isLungStudy ? '肺癌耐药基线评估' : baselineSledai >= 10 ? '活动评估住院' : '基线评估住院',
         tag: '住院',
         date: shiftDate(firstVisitDate, -5),
         endDate: shiftDate(firstVisitDate, 2),
         subtitle: `${patient.diseaseType} · ${patient.organs.join('、')}`,
-        description: `${patient.name} 完成 ${patient.diseaseType} 基线评估，记录 SLEDAI、用药和样本采集计划。`,
+        description: isLungStudy
+          ? `${patient.name} 完成 ${patient.diseaseType} 基线评估，记录 ECOG、TNM、治疗线数、ctDNA/NGS 和样本采集计划。`
+          : `${patient.name} 完成 ${patient.diseaseType} 基线评估，记录 SLEDAI、用药和样本采集计划。`,
         ...styleFor('admission')
       },
       {
@@ -237,7 +249,7 @@ function buildPatientJourneyEvents(
       title: visit.visit,
       tag: '随访',
       date: visit.visitDate,
-      subtitle: `SLEDAI ${visit.sleDai} · 完整度 ${visit.completeness}%`,
+      subtitle: isLungStudy ? `ECOG/疗效 ${visit.sleDai} · 完整度 ${visit.completeness}%` : `SLEDAI ${visit.sleDai} · 完整度 ${visit.completeness}%`,
       description: `${patient.name} ${visit.visitType}，用药 ${visit.medication}，样本采集 ${visit.sampleCollection}。`,
       ...styleFor('visit')
     });
@@ -320,9 +332,24 @@ function buildPatientBiomarkerPoints(patient: PatientRecord, patientVisits: Visi
   const esrBase = numericClinicalValue(patient, 'ESR(mm)', patient.diseaseType === 'HC' ? 12 : 50);
   const proteinBase = numericClinicalValue(patient, '24小时尿蛋白 g/24h', patient.organs.includes('肾') ? 0.8 : 0.18);
   const iggBase = numericClinicalValue(patient, 'IgG(g/l)', patient.diseaseType === 'HC' ? 9 : 12);
+  const isLungStudy = patient.studyId === 'LZXK-01';
+  const ecogBase = numericClinicalValue(patient, 'ECOG评分', 1);
+  const pfsBase = numericClinicalValue(patient, 'PFS（月）', 8);
+  const ctdnaBase = Number(String(patient.clinicalData['ctDNA突变丰度'] ?? '2.4').replace('%', '')) || 2.4;
+  const orrScore = patient.clinicalData['ORR评估'] === 'PR' ? 65 : patient.clinicalData['ORR评估'] === 'SD' ? 45 : 28;
 
   return orderedVisits.map((visit, index) => {
     const sledai = Number(visit.sleDai);
+    if (isLungStudy) {
+      return {
+        date: visit.visitDate,
+        sledai: Number(clampNumber(ecogBase + (index > 1 ? 0.5 : 0), 0, 5).toFixed(1)),
+        c3: Number(clampNumber(ctdnaBase - index * 0.35, 0.1, 12).toFixed(2)),
+        esr: Number(clampNumber(pfsBase + index * 1.2, 0, 24).toFixed(1)),
+        protein24h: Number(clampNumber(0.72 - index * 0.08, 0.05, 1.2).toFixed(2)),
+        igg: Math.round(clampNumber(orrScore + index * 4, 0, 100))
+      };
+    }
     return {
       date: visit.visitDate,
       sledai: Number.isFinite(sledai) ? sledai : 0,
@@ -496,6 +523,14 @@ function getChartPlotTop(frame: ChartFrame) {
 
 function getChartPlotBottom(frame: ChartFrame) {
   return getMetricLaneY(metricLines.length - 1, frame) + 14;
+}
+
+function getMetricDisplayLabel(metric: (typeof metricLines)[number], studyId?: string) {
+  return studyId === 'LZXK-01' ? lungMetricLabels[metric.key] : metric.label;
+}
+
+function getMetricDisplaySuffix(metric: (typeof metricLines)[number], studyId?: string) {
+  return studyId === 'LZXK-01' ? '' : metric.suffix;
 }
 
 function getTrendPoint(
@@ -810,7 +845,7 @@ export function PatientJourneyDemoPage({
           <div>
             <h2>{t('临床 Patient Journey')}</h2>
             <p>
-              {t(`${patient.studyId} / ${patient.name} · ${patient.sex} · ${patient.age}岁 · ${patient.diseaseType}`)}
+              {t('Study ID')}: {patient.studyId} / {t(`${patient.name} · ${patient.sex} · ${patient.age}岁 · ${patient.diseaseType}`)}
             </p>
           </div>
         </div>
@@ -894,6 +929,7 @@ export function PatientJourneyDemoPage({
             onZoomChange={setZoomRange}
             points={biomarkerPoints}
             selectedDate={selectedDate}
+            studyId={patient.studyId}
             timelineDomain={timelineDomain}
             zoomRange={zoomRange}
           />
@@ -1093,6 +1129,7 @@ function JourneyBiomarkers({
   onZoomChange,
   points,
   selectedDate,
+  studyId,
   timelineDomain,
   zoomRange
 }: {
@@ -1101,6 +1138,7 @@ function JourneyBiomarkers({
   onZoomChange: (range: TimelineZoomRange) => void;
   points: JourneyBiomarkerPoint[];
   selectedDate: string;
+  studyId?: string;
   timelineDomain: TimelineDomain;
   zoomRange: TimelineZoomRange;
 }) {
@@ -1155,10 +1193,10 @@ function JourneyBiomarkers({
                   key={metric.key}
                   style={{ '--metric-color': metric.color } as CSSProperties}
                 >
-                  <span>{t(metric.label)}</span>
+                  <span>{t(getMetricDisplayLabel(metric, studyId))}</span>
                   <strong>
                     {getMetricValue(currentPoint, metric.key)}
-                    {metric.suffix ? <small>{metric.suffix}</small> : null}
+                    {getMetricDisplaySuffix(metric, studyId) ? <small>{getMetricDisplaySuffix(metric, studyId)}</small> : null}
                   </strong>
                 </div>
               ))}
@@ -1203,7 +1241,7 @@ function JourneyBiomarkers({
                 <line stroke={metric.color} strokeDasharray={metric.dash} strokeWidth="2.4" x1="0" x2="30" y1="0" y2="0" />
                 <circle cx="15" cy="0" fill="#ffffff" r="3.5" stroke={metric.color} strokeWidth="2" />
                 <text x="38" y="4">
-                  {t(metric.label)}
+                  {t(getMetricDisplayLabel(metric, studyId))}
                 </text>
               </g>
             ))}
@@ -1284,7 +1322,7 @@ function JourneyBiomarkers({
                     x={labelPoint.x > chartFrame.right - 92 ? chartFrame.right - 8 : labelPoint.x + 10}
                     y={labelPoint.y + 4}
                   >
-                    {t(metric.label)}
+                    {t(getMetricDisplayLabel(metric, studyId))}
                   </text>
                 ) : null}
               </g>

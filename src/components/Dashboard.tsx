@@ -76,7 +76,7 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
         { label: 'CRF 录入', icon: 'crf', count: '—', percent: 0, status: 'empty' },
         { label: '样本采集', icon: 'samples', count: '—', percent: 0, status: 'empty' },
         { label: '组学归档', icon: 'activity', count: '—', percent: 0, status: 'empty' },
-        { label: '数据锁库', icon: 'shield', count: '—', percent: 0, status: 'empty' }
+        { label: '导出审计', icon: 'shield', count: '—', percent: 0, status: 'empty' }
       ],
       workflowOverall: 0,
       omics: [
@@ -141,7 +141,7 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
       { label: 'CRF 录入', icon: 'crf', count: `${formatCount(crfCount)} / ${formatCount(visitCount)}`, percent: percent(crfCount, visitCount), status: 'normal' },
       { label: '样本采集', icon: 'samples', count: `${formatCount(samplePatientCount)} / ${formatCount(patientCount)}`, percent: samplePercent, status: samplePercent < 80 ? 'low' : 'normal' },
       { label: '组学归档', icon: 'activity', count: `${formatCount(summary.completed_omics_count)} / ${formatCount(summary.omics_count)}`, percent: completedOmicsPercent, status: completedOmicsPercent < 80 ? 'low' : 'normal' },
-      { label: '数据锁库', icon: 'shield', count: '0 / 1', percent: 0, status: 'empty' }
+      { label: '导出审计', icon: 'shield', count: `${formatCount(summary.completed_omics_count)} / ${formatCount(summary.omics_count)}`, percent: completedOmicsPercent, status: completedOmicsPercent < 80 ? 'low' : 'normal' }
     ],
     workflowOverall: overall,
     omics: [

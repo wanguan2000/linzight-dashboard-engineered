@@ -58,6 +58,7 @@ type CompletenessTrend = {
 type PatientEditorMode = 'create' | 'edit';
 
 const patientWriteRoles = new Set(['LZ_ADMIN', 'LZ_CRC', 'STUDY_CRC']);
+const defaultStudyOptions = ['LGL-1111', 'RWD-NMO-2026', 'LZXK-01'];
 
 function canWritePatients(user?: AuthenticatedUser | null) {
   return Boolean(user && patientWriteRoles.has(user.role));
@@ -120,6 +121,17 @@ function completenessClass(value: number) {
 
 function formatCount(value: number) {
   return new Intl.NumberFormat('en-US').format(value);
+}
+
+function uniqueStudyIds(records: PatientRecord[]) {
+  return Array.from(new Set(records.map((record) => record.studyId).filter(Boolean) as string[])).sort();
+}
+
+function studyOptionsForUser(user?: AuthenticatedUser | null, records: PatientRecord[] = []) {
+  const scopedStudies = user?.studyScope?.scopeType === 'all_studies'
+    ? defaultStudyOptions
+    : user?.studyScope?.studyIds ?? [];
+  return Array.from(new Set([...scopedStudies, ...uniqueStudyIds(records)])).sort();
 }
 
 function formatPercent(value: number, total: number) {
@@ -334,9 +346,10 @@ interface PatientTableProps {
   onViewPatient: (patient: PatientRecord) => void;
   activePatientName?: string;
   canEdit?: boolean;
+  showStudyId?: boolean;
 }
 
-function PatientTable({ patients, onEditPatient, onViewPatient, activePatientName, canEdit = true }: PatientTableProps) {
+function PatientTable({ patients, onEditPatient, onViewPatient, activePatientName, canEdit = true, showStudyId = false }: PatientTableProps) {
   const { t } = useI18n();
 
   return (
@@ -345,6 +358,7 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
         <thead>
           <tr>
             <th>{t('患者编号')}</th>
+            {showStudyId ? <th>{t('Study ID')}</th> : null}
             <th>{t('住院号')}</th>
             <th>{t('性别')}</th>
             <th>{t('年龄')}</th>
@@ -360,19 +374,20 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
         <tbody>
           {patients.map((patient) => {
             const completeness = calculateClinicalCompleteness(patient.clinicalData);
-            return (
+              return (
               <tr className={patient.name === activePatientName ? 'is-active' : undefined} key={`${patient.studyId}-${patient.name}`}>
-                <td>{patient.name}</td>
-                <td>{patient.hospitalNo}</td>
-                <td>{t(patient.sex)}</td>
-                <td>{patient.age}</td>
-                <td><span className={`disease-pill disease-pill--${patient.diseaseType.toLowerCase().replace('-', '')}`}>{t(patient.diseaseType)}</span></td>
-                <td>{t(patient.organs.join(' / '))}</td>
-                <td>{t(sampleText(patient))}</td>
-                <td><span className={`omics-pill ${statusClass(patient.omicsStatus)}`}>{t(patient.omicsStatus)}</span></td>
-                <td><span className={`complete-pill ${completenessClass(completeness)}`}>{completeness}%</span></td>
-                <td className="patient-note">{t(patient.note)}</td>
-                <td>
+                <td data-label={t('患者编号')}>{patient.name}</td>
+                {showStudyId ? <td data-label={t('Study ID')}><span className="status-pill status-pill--info">{patient.studyId}</span></td> : null}
+                <td data-label={t('住院号')}>{patient.hospitalNo}</td>
+                <td data-label={t('性别')}>{t(patient.sex)}</td>
+                <td data-label={t('年龄')}>{patient.age}</td>
+                <td data-label={t('疾病类型')}><span className={`disease-pill disease-pill--${patient.diseaseType.toLowerCase().replace('-', '')}`}>{t(patient.diseaseType)}</span></td>
+                <td data-label={t('受累脏器')}>{t(patient.organs.join(' / '))}</td>
+                <td data-label={t('样本采集')}>{t(sampleText(patient))}</td>
+                <td data-label={t('多组学检测')}><span className={`omics-pill ${statusClass(patient.omicsStatus)}`}>{t(patient.omicsStatus)}</span></td>
+                <td data-label={t('完整性')}><span className={`complete-pill ${completenessClass(completeness)}`}>{completeness}%</span></td>
+                <td data-label={t('注释')} className="patient-note">{t(patient.note)}</td>
+                <td data-label={t('操作')}>
 	                  <div className="patient-actions">
 	                    <button type="button" onClick={() => onViewPatient(patient)}>{t('查看')}</button>
 	                    <button
@@ -390,7 +405,7 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
           })}
           {!patients.length && (
             <tr>
-              <td colSpan={11}>{t('暂无匹配患者')}</td>
+              <td colSpan={showStudyId ? 12 : 11}>{t('暂无匹配患者')}</td>
             </tr>
           )}
         </tbody>
@@ -421,15 +436,19 @@ export function PatientListModule({
   const [sex, setSex] = useState('全部');
   const [ageRange, setAgeRange] = useState('全部');
   const [disease, setDisease] = useState<'全部' | DiseaseType>('全部');
+  const [studyFilter, setStudyFilter] = useState('全部 Study');
   const [sort, setSort] = useState('最近更新');
   const [currentPage, setCurrentPage] = useState(1);
+  const studyOptions = useMemo(() => uniqueStudyIds(patients), [patients]);
+  const showStudyId = studyOptions.length > 1;
   const diseaseOptions = useMemo<Array<'全部' | DiseaseType>>(
-    () => ['全部', ...Array.from(new Set(patients.map((patient) => patient.diseaseType)))],
-    [patients]
+    () => ['全部', ...Array.from(new Set(patients.filter((patient) => studyFilter === '全部 Study' || patient.studyId === studyFilter).map((patient) => patient.diseaseType)))],
+    [patients, studyFilter]
   );
 
   const filteredPatients = useMemo(() => {
     return patients
+      .filter((patient) => studyFilter === '全部 Study' || patient.studyId === studyFilter)
       .filter((patient) => {
         const query = search.trim().toLowerCase();
         if (!query) return true;
@@ -455,7 +474,7 @@ export function PatientListModule({
         if (sort === '年龄升序') return a.age - b.age;
         return a.name.localeCompare(b.name);
       });
-  }, [ageRange, disease, patients, search, sex, sort]);
+  }, [ageRange, disease, patients, search, sex, sort, studyFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPatients.length / patientPageSize));
   const visiblePage = Math.min(currentPage, totalPages);
@@ -466,7 +485,7 @@ export function PatientListModule({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [ageRange, disease, search, sex, sort]);
+  }, [ageRange, disease, search, sex, sort, studyFilter]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -497,6 +516,16 @@ export function PatientListModule({
             <Icon name="search" />
           </div>
         </label>
+
+        {showStudyId ? (
+          <label>
+            <span>{t('Study ID')}</span>
+            <select value={studyFilter} onChange={(event) => setStudyFilter(event.target.value)}>
+              <option value="全部 Study">{t('全部 Study')}</option>
+              {studyOptions.map((option) => <option value={option} key={option}>{option}</option>)}
+            </select>
+          </label>
+        ) : null}
 
         <label>
           <span>{t('性别')}</span>
@@ -539,6 +568,7 @@ export function PatientListModule({
         activePatientName={activePatientName}
         onEditPatient={onEditPatient}
         onViewPatient={onViewPatient}
+        showStudyId={showStudyId}
       />
 
       <footer className="patient-list-card__footer">
@@ -595,6 +625,7 @@ export function PatientCohortPage({
   const [sex, setSex] = useState('全部');
   const [ageRange, setAgeRange] = useState('全部');
   const [disease, setDisease] = useState<'全部' | DiseaseType>('全部');
+  const [studyFilter, setStudyFilter] = useState('全部 Study');
   const [sort, setSort] = useState('最近更新');
   const [currentPage, setCurrentPage] = useState(1);
   const [editorMode, setEditorMode] = useState<PatientEditorMode | null>(null);
@@ -603,17 +634,23 @@ export function PatientCohortPage({
   const [sampleCollectedOnly, setSampleCollectedOnly] = useState(false);
   const currentStudyId = getCurrentScopedStudyId();
   const canEditPatientRecords = canWritePatients(currentUser);
+  const availableStudyOptions = useMemo(() => studyOptionsForUser(currentUser, patients), [currentUser, patients]);
+  const showStudyId = true;
+  const studyScopedPatients = useMemo(
+    () => patients.filter((patient) => studyFilter === '全部 Study' || patient.studyId === studyFilter),
+    [patients, studyFilter]
+  );
   const diseaseOptions = useMemo<Array<'全部' | DiseaseType>>(
-    () => ['全部', ...Array.from(new Set(patients.map((patient) => patient.diseaseType)))],
-    [patients]
+    () => ['全部', ...Array.from(new Set(studyScopedPatients.map((patient) => patient.diseaseType)))],
+    [studyScopedPatients]
   );
   const editorDiseaseOptions = useMemo<DiseaseType[]>(() => {
     const options = Array.from(new Set([
-      ...patients.map((patient) => patient.diseaseType),
+      ...studyScopedPatients.map((patient) => patient.diseaseType),
       currentStudyDefaultDisease(currentStudyId)
     ]));
     return options.length ? options : [currentStudyDefaultDisease(currentStudyId)];
-  }, [currentStudyId, patients]);
+  }, [currentStudyId, studyScopedPatients]);
 
   useEffect(() => {
     let ignore = false;
@@ -632,7 +669,7 @@ export function PatientCohortPage({
   }, []);
 
   const filteredPatients = useMemo(() => {
-    return patients
+    return studyScopedPatients
       .filter((patient) => {
         const query = search.trim().toLowerCase();
         if (!query) return true;
@@ -659,7 +696,7 @@ export function PatientCohortPage({
 	        if (sort === '年龄升序') return a.age - b.age;
 	        return a.name.localeCompare(b.name);
 	      });
-	  }, [ageRange, disease, patients, sampleCollectedOnly, search, sex, sort]);
+	  }, [ageRange, disease, sampleCollectedOnly, search, sex, sort, studyScopedPatients]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPatients.length / patientPageSize));
   const pageStart = (currentPage - 1) * patientPageSize;
@@ -669,7 +706,13 @@ export function PatientCohortPage({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [ageRange, disease, sampleCollectedOnly, search, sex, sort]);
+  }, [ageRange, disease, sampleCollectedOnly, search, sex, sort, studyFilter]);
+
+  useEffect(() => {
+    if (studyFilter !== '全部 Study' && !availableStudyOptions.includes(studyFilter)) {
+      setStudyFilter('全部 Study');
+    }
+  }, [availableStudyOptions, studyFilter]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -689,7 +732,7 @@ export function PatientCohortPage({
       return;
     }
     setEditorMode('create');
-    setDraftPatient(makeDraftPatient(currentStudyId));
+    setDraftPatient(makeDraftPatient(studyFilter === '全部 Study' ? currentStudyId : studyFilter));
     setSaveStatus('正在新建当前 Study 患者');
   }
 
@@ -778,7 +821,7 @@ export function PatientCohortPage({
         </button>
       </section>
 
-      <PatientKpiGrid patients={patients} />
+      <PatientKpiGrid patients={studyScopedPatients} />
 
       <div className="patient-main-grid">
         <section className="patient-list-card">
@@ -811,6 +854,16 @@ export function PatientCohortPage({
                 <Icon name="search" />
               </div>
             </label>
+
+            {showStudyId ? (
+              <label>
+                <span>{t('Study ID')}</span>
+                <select value={studyFilter} onChange={(event) => setStudyFilter(event.target.value)}>
+                  <option value="全部 Study">{t('全部 Study')}</option>
+                  {availableStudyOptions.map((option) => <option value={option} key={option}>{option}</option>)}
+                </select>
+              </label>
+            ) : null}
 
             <label>
               <span>{t('性别')}</span>
@@ -862,6 +915,22 @@ export function PatientCohortPage({
               </header>
               <div className="patient-editor-grid">
                 <label>
+                  <span>{t('Study ID')}</span>
+                  {showStudyId ? (
+                    <select
+                      value={draftPatient.studyId || currentStudyId || 'LGL-1111'}
+                      onChange={(event) => patchDraftPatient({
+                        studyId: event.target.value,
+                        diseaseType: currentStudyDefaultDisease(event.target.value)
+                      })}
+                    >
+                      {availableStudyOptions.map((option) => <option value={option} key={option}>{option}</option>)}
+                    </select>
+                  ) : (
+                    <input value={draftPatient.studyId || currentStudyId || 'LGL-1111'} readOnly />
+                  )}
+                </label>
+                <label>
                   <span>{t('患者编号')}</span>
                   <input value={draftPatient.name} onChange={(event) => patchDraftPatient({ name: event.target.value })} />
                 </label>
@@ -903,7 +972,7 @@ export function PatientCohortPage({
             <span>{t(saveStatus)}</span>
           </div>
 
-          <PatientTable patients={paginatedPatients} canEdit={canEditPatientRecords} onEditPatient={openEditPatientEditor} onViewPatient={onViewPatient} />
+          <PatientTable patients={paginatedPatients} canEdit={canEditPatientRecords} onEditPatient={openEditPatientEditor} onViewPatient={onViewPatient} showStudyId={showStudyId} />
 
           <footer className="patient-list-card__footer">
             <span>{t(`显示 ${displayStart} 至 ${displayEnd} 条，共 ${filteredPatients.length} 条记录`)}</span>
@@ -941,9 +1010,9 @@ export function PatientCohortPage({
         </section>
 
         <aside className="patient-side-stack">
-          <CohortOverviewPanel patients={patients} />
-          <CompletenessTrendPanel patients={patients} />
-          <SampleSummaryPanel patients={patients} />
+          <CohortOverviewPanel patients={studyScopedPatients} />
+          <CompletenessTrendPanel patients={studyScopedPatients} />
+          <SampleSummaryPanel patients={studyScopedPatients} />
           <p className="patient-update-time">{t('数据源：数据库实时同步')}</p>
         </aside>
       </div>

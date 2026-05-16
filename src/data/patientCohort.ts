@@ -98,7 +98,7 @@ function numericValue(field: string, index: number, fallback: number) {
   return Number((base + ((index % 5) - 2) * 0.07).toFixed(2));
 }
 
-function lungResistanceClinicalData(index: number, disease: DiseaseType, organs: string[]): Record<string, string | number> {
+function lungResistanceClinicalData(index: number, disease: DiseaseType): Record<string, string | number> {
   if (!isLungResistanceDisease(disease)) return {};
   const driverGene: Record<string, string> = {
     NSCLC: 'EGFR exon19del',
@@ -125,19 +125,19 @@ function lungResistanceClinicalData(index: number, disease: DiseaseType, organs:
   return {
     研究编号: lzxkStudyId,
     研究名称: '真实世界肺癌耐药研究',
-    肿瘤类型: disease,
-    肿瘤分期: ['IIIB', 'IVA', 'IVB'][index % 3],
+    病种: disease,
+    分期: ['IIIB', 'IVA', 'IVB'][index % 3],
+    TNM分期: ['T2N2M0', 'T3N2M1a', 'T4N3M1b'][index % 3],
     ECOG评分: index % 3,
-    驱动基因: driverGene[disease],
-    初始治疗方案: treatment[disease],
+    治疗线数: 1 + (index % 4),
+    当前治疗方案: treatment[disease],
+    驱动基因突变: driverGene[disease],
     耐药机制: resistance[disease],
-    RECIST疗效: ['SD', 'PR', 'PD', 'NE'][index % 4],
+    RECIST评估: ['SD', 'PR', 'PD', 'NE'][index % 4],
     'PFS（月）': Number((6.5 + (index % 9) * 1.4).toFixed(1)),
     ctDNA突变丰度: `${Number((0.8 + (index % 7) * 1.3).toFixed(1))}%`,
-    转移部位: organs.filter((organ) => organ !== '肺').join('、') || '未见远处转移',
-    标本类型: index % 2 ? '血液、组织' : '血液、组织、胸水',
-    检测项目: 'NGS 520基因 panel + ctDNA 动态监测',
-    当前治疗线数: 1 + (index % 4)
+    ORR评估: ['SD', 'PR', 'PD', 'NE'][index % 4],
+    检测项目: 'NGS 520基因 panel + ctDNA 动态监测'
   };
 }
 
@@ -315,19 +315,26 @@ function createPatient(index: number): PatientRecord {
       ? '健康对照质控通过'
       : `${diseaseType} 队列随访中，完整度 ${completeness}%`;
 
-  const clinicalData = makeClinicalData(
-    completeness,
-    {
-      姓名: name,
-      性别: sex,
-      年龄: age,
-      住院号: hospitalNo,
-      出院诊断: diseaseType,
-      受累脏器: organs.join('、'),
-      ...lungResistanceClinicalData(index, diseaseType, organs)
-    },
-    { index, name, hospitalNo, sex, age, disease: diseaseType, organs }
-  );
+  const sharedClinicalSeed = {
+    姓名: name,
+    性别: sex,
+    年龄: age,
+    住院号: hospitalNo,
+    出院诊断: diseaseType,
+    受累脏器: organs.join('、')
+  };
+  const clinicalData = isLungResistanceDisease(diseaseType)
+    ? {
+        ...sharedClinicalSeed,
+        ...lungResistanceClinicalData(index, diseaseType),
+        CRF版本: crfVersion,
+        数据完整度: completeness
+      }
+    : makeClinicalData(
+        completeness,
+        sharedClinicalSeed,
+        { index, name, hospitalNo, sex, age, disease: diseaseType, organs }
+      );
   clinicalData.CRF版本 = crfVersion;
 
   return {

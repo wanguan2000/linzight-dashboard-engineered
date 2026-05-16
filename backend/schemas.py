@@ -28,7 +28,7 @@ ConsentStatus = Literal["已签署", "待签署", "已撤回"]
 CrfStatus = Literal["draft", "submitted", "locked"]
 FileCategory = Literal["consent", "clinical", "sample", "omics_result", "analysis_export", "other"]
 ExportStatus = Literal["queued", "running", "ready", "failed"]
-ApprovalType = Literal["export", "deidentified_export", "crf_publish"]
+ApprovalType = Literal["export", "deidentified_export", "crf_publish", "econsent_withdrawal", "econsent_resign"]
 ApprovalStatus = Literal["draft", "submitted", "approved", "rejected", "cancelled", "completed"]
 QualitySeverity = Literal["info", "warning", "critical"]
 QualityStatus = Literal["open", "resolved", "waived"]
@@ -227,6 +227,16 @@ class FollowUpRecordCreate(FollowUpRecordBase):
     id: str | None = None
 
 
+class VisitUpdate(BaseModel):
+    visit_date: str | None = None
+    visit_type: str | None = None
+    sle_dai: str | None = None
+    medication: str | None = None
+    sample_collection: str | None = None
+    completeness: int | None = Field(default=None, ge=0, le=100)
+    status: Literal["已完成", "进行中", "已预约"] | None = None
+
+
 class FollowUpRecordUpdate(BaseModel):
     study_id: str | None = None
     visit_id: str | None = None
@@ -356,6 +366,7 @@ class AuditLog(BaseModel):
     entity_id: str
     before: dict[str, Any] | None = None
     after: dict[str, Any] | None = None
+    diff: list[dict[str, Any]] = Field(default_factory=list)
     ip_address: str | None = None
     created_at: str
 
