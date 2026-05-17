@@ -51,7 +51,7 @@ type StudyScope = {
 ## 后端实现
 
 - `backend/permissions.py` 提供 `role_can()`、`get_user_study_scope()`、`can_access_study()` 和 Study 成员查询。
-- `backend/database.py` 增加 `studies`、`study_members`、`global_role_study_scope`、`study_visit_plans`、`crf_templates`、`study_crf_versions`。
+- `backend/database.py` 增加 `studies`、`study_members`、`global_role_study_scope`、`study_visit_plans`、`study_configurations`、`crf_templates`、`study_crf_versions`。
 - 患者、知情、访视、随访记录、CRF、样本、组学、文件、导出、质控和审计均包含 `study_id`。
 - `omics_records` 使用 `testing_project_id` 表示样本检测项目编号。
 - 所有核心列表和详情接口按授权 Study 自动过滤。
@@ -59,6 +59,7 @@ type StudyScope = {
 - 质量检查会基于 `study_visit_plans` 生成访视窗口超窗问题。
 - 审计日志包含 `before`、`after` 和结构化 `diff`，关键操作必须带 `study_id`。
 - CRF 数据绑定 `study_id`、`patient_id`、`crf_version_id`、`form_id`。
+- Study 配置总表 `study_configurations` 绑定病种语义、当前 published CRF、访视计划、知情同意模板和检测 profile；新建患者不得在缺少当前 Study published CRF 时回退默认 LGL。
 - 访视计划配置保存在 `study_visit_plans`，`visits.visit_plan_id` 关联配置；新建患者时按 Study active 访视计划自动生成患者访视与 CRF 草稿。
 - 随访事实记录保存在 `follow_up_records`，隶属于患者信息，绑定 `study_id + patient_id`，可选关联 `visit_id`；普通 CRC 可录入，PI/数据管理员可查看，配置管理员不默认编辑患者随访内容。
 

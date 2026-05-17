@@ -21,6 +21,7 @@ SQLite 版本支持 `jsonb()` 时，CRF payload 会以 JSONB（二进制 JSON）
 | `role_permissions` | 角色资源动作矩阵 | 权限体系 |
 | `patients` | 70 个模拟患者主档 | 患者列表、患者详情 |
 | `study_visit_plans` | 每个 Study 的访视计划配置 | 研究配置、自动生成访视 |
+| `study_configurations` | Study 配置总表 | 病种语义、当前 CRF、访视计划、知情同意模板、检测 profile |
 | `consents` | 知情同意状态 | 患者详情、Journey |
 | `visits` | 基线与随访访视 | Patient Journey、CRF |
 | `follow_up_records` | 出院后或门诊间隔随访事实记录 | Patient Journey、疗效和长期管理 |
@@ -60,6 +61,7 @@ SQLite 版本支持 `jsonb()` 时，CRF payload 会以 JSONB（二进制 JSON）
 - `study_id` 是 RWD EDC 核心隔离字段。`patients`、`samples`、`omics_records`、`consents`、`visits`、`follow_up_records`、`crf_entries`、`uploaded_files`、`export_jobs`、`data_quality_issues`、`audit_logs` 均包含该字段。
 - `patients` 是患者中心主表，`samples`、`omics_records`、`consents`、`visits`、`follow_up_records`、`crf_entries`、`uploaded_files`、`data_quality_issues` 均可按 `patient_id` 汇总成 Patient Journey。
 - `study_visit_plans.study_id` 关联 `studies.id`，保存该 Study 的访视编码、名称、访视类型、相对基线天数、访视窗口、必填 CRF 表单和样本要求。
+- `study_configurations.study_id` 是 Study 配置总表主键；`active_crf_version_id` 指向当前 published CRF，`visit_plan_json` 保存 active plan profile/codes，`consent_template` 绑定 Study 知情同意模板，`testing_profile_json` 保存样本/检测 profile。
 - `visits.visit_plan_id` 关联 `study_visit_plans.id`。`visits` 是患者实际访视记录；`study_visit_plans` 是配置模板。新建患者时后端按当前 Study 的 active 访视计划生成初始访视和 CRF 草稿。
 - 访视计划不放在 CRF 字段表内。CRF 版本定义表单结构，访视计划定义时间点和该时间点需要录入哪些表单。
 - `follow_up_records.patient_id` 关联 `patients.id`，可选 `visit_id` 关联 `visits.id`。它记录随访时间、方式、随访人、生存状态、疾病状态、疗效评估、转移、不良事件、生活质量和失访原因，不属于 CRF 版本配置表。
@@ -92,6 +94,7 @@ v1 先覆盖主链路查询：
 - `samples(patient_id)`：患者详情和 Journey 样本汇总。
 - `omics_records(patient_id)`：患者详情和 Journey 检测汇总。
 - `study_visit_plans(study_id)`：Study 配置页和新建患者时加载访视计划。
+- `study_configurations(active_crf_version_id)`：从 Study 配置反查当前 CRF 版本。
 - `visits(visit_plan_id)`：从患者访视反查配置。
 - `follow_up_records(patient_id)`、`follow_up_records(study_id)`：患者 Journey 与 Study 随访列表过滤。
 - `follow_up_records(study_id, patient_id, follow_up_date, follow_up_method)`：避免同一患者同一日期同一方式重复录入。

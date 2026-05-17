@@ -23,7 +23,10 @@
 | 用户 | `POST` | `/users` | 创建平台或研究级用户；研究级用户可同步加入指定 Study |
 | 用户 | `PATCH` | `/users/{user_id}/status` | `LZ_ADMIN` 启用或禁用账号；禁用账号不能登录 |
 | 字段权限 | `GET` | `/field-permissions` | 当前角色或管理员可见的字段级可见、可导出和脱敏规则 |
+| 权限矩阵 | `GET` | `/permissions/matrix` | 导出平台角色、Study 角色、模块、操作、资源动作和 endpoint 的正式权限矩阵 |
 | Study | `GET` | `/studies` | 当前用户可访问 Study |
+| Study 配置 | `GET` | `/study-configurations` | 当前用户可访问 Study 的配置总表，返回 disease area、当前 CRF、访视计划、知情同意模板和检测 profile |
+| Study 配置 | `GET` | `/studies/{study_id}/configuration` | 查询单个 Study 配置总表行 |
 | Study 成员 | `GET` | `/studies/{study_id}/members` | 查询 Study 成员 |
 | Study 成员 | `POST` | `/studies/{study_id}/members` | 分配或更新研究级角色，返回与列表一致的成员展示字段 |
 | Study 中心 | `GET` | `/studies/{study_id}/sites` | 查询 Study 下的 site/中心 |
@@ -73,14 +76,15 @@
 | 审批 | `POST` | `/approvals/{approval_id}/complete` | 将 approved 审批标记为 completed |
 | eConsent | `POST` | `/consents/{consent_id}/withdrawal-request` | 发起知情同意撤回审批，批准并 complete 后将 consent 标记为已撤回 |
 | eConsent | `POST` | `/consents/{consent_id}/resign-request` | 发起知情同意重签审批，批准并 complete 后将 consent 标记为待签署 |
-| Query | `GET` | `/queries` | 按 Study/患者查询数据 Query |
+| Query | `GET` | `/queries` | 按 Study、患者、状态、字段、责任人查询数据 Query |
 | Query | `POST` | `/queries` | 创建并指派 Query |
 | Query | `PUT` | `/queries/{query_id}` | 回复、关闭或取消 Query |
 | 审计 | `GET` | `/audit-logs` | 查询实体操作审计 |
 
 患者、样本、组学、访视、随访和知情同意等响应中的直接标识符会按 `field_permissions` 应用字段级权限。`LZ_DATA_MANAGER`、`STUDY_DATA_MANAGER` 和 `LZ_AUDITOR` 默认只能看到姓名、住院号等字段的脱敏值；导出时这些字段按 `can_export=false` 输出为空，确保前端表格、详情页和 CSV 下载使用同一套权限/脱敏逻辑。
-审批状态机统一使用 `draft / submitted / approved / rejected / cancelled / completed`。每次提交、批准、拒绝、取消和完成都会写入 `approval_actions` 与 `audit_logs`；System Management 的 Approval Center 会读取 `/approvals` 并调用 approve/reject 操作。`econsent_withdrawal` 与 `econsent_resign` 复用同一审批中心，后端禁止提交人自批，完成审批后再更新 `consents`。
+审批状态机统一使用 `draft / submitted / approved / rejected / cancelled / completed`。每次提交、批准、拒绝、取消和完成都会写入 `approval_actions` 与 `audit_logs`；System Management 的 Approval Center 会读取 `/approvals` 并调用 approve/reject 操作。`econsent_withdrawal` 与 `econsent_resign` 复用同一审批中心，后端禁止提交人自批，请求创建后 consent 进入 `撤回审批中` 或 `重签审批中`，完成审批后再更新为 `已撤回` 或 `已重签`。
 Query 创建会校验 `study_id / patient_id / visit_id` 一致性，且 `field_name` 必须属于该 Study 当前 CRF 字段字典；例如 `LZXK-01` 肺癌 CRF 不允许创建 `SLEDAI评分` 字段 Query。
+Study 配置总表使用 `study_configurations` 作为发布收口源，绑定 `study_id -> disease_area -> active_crf_version_id -> visit_plan -> consent_template -> testing_profile`。新建患者和自动 CRF 草稿必须使用当前 Study 的 published CRF；如果目标 Study 没有 published CRF，后端返回错误，不允许静默回退到 LGL。
 文件上传通过存储适配层写入 `uploaded_files`，记录 `study_id`、owner、MIME type、size、SHA-256、`storage_backend`、扫描状态和归档状态。默认本地存储；`LINZIGHT_STORAGE_BACKEND=object` 时返回 `object://bucket/prefix/...` 风格 URI。病毒扫描器同样可替换，mock/external adapter 均阻止 EICAR 测试签名；下载和归档动作均写入审计日志。
 审计响应包含 `before`、`after` 和结构化 `diff`，用于展示字段级路径、修改前值和修改后值。CRF 字段配置、访视修改、审批完成、文件下载/归档等关键动作都应保留 `study_id`。
 

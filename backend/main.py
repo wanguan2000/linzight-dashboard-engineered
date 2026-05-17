@@ -41,14 +41,16 @@ try:
         row_to_site,
         row_to_site_user,
         row_to_study,
+        row_to_study_configuration,
         row_to_study_member,
         row_to_study_visit_plan,
         row_to_user,
         row_to_visit,
         sqlite_json_storage,
+        sync_study_configurations,
         utc_now,
     )
-    from .permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
+    from .permissions import can_access_study, first_accessible_study_id, get_user_study_scope, permission_matrix, role_can, user_role
     from .security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
     from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, VisitUpdate
     from .seed import seed_database
@@ -79,14 +81,16 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         row_to_site,
         row_to_site_user,
         row_to_study,
+        row_to_study_configuration,
         row_to_study_member,
         row_to_study_visit_plan,
         row_to_user,
         row_to_visit,
         sqlite_json_storage,
+        sync_study_configurations,
         utc_now,
     )
-    from permissions import can_access_study, first_accessible_study_id, get_user_study_scope, role_can, user_role
+    from permissions import can_access_study, first_accessible_study_id, get_user_study_scope, permission_matrix, role_can, user_role
     from security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
     from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, VisitUpdate
     from seed import seed_database
@@ -509,7 +513,7 @@ def latest_published_crf_version_id(conn: Any, study_id: str) -> str:
     ).fetchone()
     if row:
         return row["id"]
-    return "CRFV-LGL-1111-V0.1"
+    raise HTTPException(status_code=400, detail=f"Study {study_id} has no published CRF version")
 
 
 def ui_crf_field_type(schema_type: str | None) -> str:
@@ -1048,6 +1052,13 @@ def list_field_permissions(resource: str = "patients", authorization: str | None
         ]
 
 
+@app.get("/permissions/matrix")
+def get_permission_matrix(authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    with connect() as conn:
+        authorize(authorization, "studies", "read", conn=conn)
+        return permission_matrix()
+
+
 @app.get("/studies")
 def list_studies(authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
     with connect() as conn:
@@ -1060,6 +1071,30 @@ def list_studies(authorization: str | None = Header(default=None)) -> list[dict[
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY id"
         return [row_to_study(row) for row in conn.execute(sql, params).fetchall()]
+
+
+@app.get("/study-configurations")
+def list_study_configurations(
+    study_id: str | None = None,
+    authorization: str | None = Header(default=None),
+) -> list[dict[str, Any]]:
+    with connect() as conn:
+        user = authorize(authorization, "studies", "read", study_id=study_id, conn=conn)
+        sql = "SELECT * FROM study_configurations"
+        params: list[Any] = []
+        where: list[str] = []
+        append_study_filter(conn, user, where, params, "study_id", study_id)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY study_id"
+        return [row_to_study_configuration(row) for row in conn.execute(sql, params).fetchall()]
+
+
+@app.get("/studies/{study_id}/configuration")
+def get_study_configuration(study_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with connect() as conn:
+        authorize(authorization, "studies", "read", study_id=study_id, conn=conn)
+        return row_to_study_configuration(fetch_one(conn, "SELECT * FROM study_configurations WHERE study_id = ?", (study_id,)))
 
 
 @app.get("/studies/{study_id}/members")
@@ -1194,6 +1229,7 @@ def upsert_study_visit_plan(study_id: str, payload: StudyVisitPlanCreate, author
         )
         plan = row_to_study_visit_plan(fetch_one(conn, "SELECT * FROM study_visit_plans WHERE study_id = ? AND code = ?", (study_id, data["code"])))
         insert_audit(conn, user, "upsert_visit_plan", "study_visit_plans", plan["id"], after=plan, study_id=study_id)
+        sync_study_configurations(conn)
         return plan
 
 
@@ -1225,6 +1261,7 @@ def update_study_visit_plan(study_id: str, plan_id: str, payload: StudyVisitPlan
             raise not_found()
         after = row_to_study_visit_plan(fetch_one(conn, "SELECT * FROM study_visit_plans WHERE id = ? AND study_id = ?", (plan_id, study_id)))
         insert_audit(conn, user, "update_visit_plan", "study_visit_plans", plan_id, before=before, after=after, study_id=study_id)
+        sync_study_configurations(conn)
         return after
 
 
@@ -1277,6 +1314,8 @@ def create_study_crf_version(study_id: str, payload: StudyCrfVersionCreate, auth
         )
         version = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ?", (version_id,)))
         insert_audit(conn, user, "create_crf_version", "study_crf_versions", version_id, after=version, study_id=study_id)
+        if payload.status == "published":
+            sync_study_configurations(conn)
         return version
 
 
@@ -1468,6 +1507,7 @@ def apply_study_crf_migration(study_id: str, migration_id: str, payload: StudyCr
         insert_crf_migration_log(conn, user, migration_id, study_id, "apply", "applied", f"Target CRF version {published['version']} published")
         after = crf_migration_approval_with_logs(conn, after)
         insert_audit(conn, user, "apply_crf_migration", "crf_migration_approvals", migration_id, before=before, after={**after, "published_version": published}, study_id=study_id)
+        sync_study_configurations(conn)
         return after
 
 
@@ -1505,6 +1545,8 @@ def update_study_crf_version(study_id: str, version_id: str, payload: StudyCrfVe
             raise not_found()
         after = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ? AND study_id = ?", (version_id, study_id)))
         insert_audit(conn, user, "update_crf_version", "study_crf_versions", version_id, before=before, after=after, study_id=study_id)
+        if after["status"] == "published":
+            sync_study_configurations(conn)
         return after
 
 
@@ -2300,10 +2342,15 @@ def create_econsent_approval(consent_id: str, approval_type: str, comment: str, 
     with connect() as conn:
         consent = row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
         actor = authorize(authorization, "consents", "write", study_id=consent["study_id"], conn=conn)
+        if consent["status"] in {"撤回审批中", "重签审批中"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="eConsent approval already pending")
+        pending_status = "撤回审批中" if approval_type == "econsent_withdrawal" else "重签审批中"
+        requested_status = "已撤回" if approval_type == "econsent_withdrawal" else "已重签"
         payload = {
             "consent_id": consent_id,
             "patient_id": consent["patient_id"],
-            "requested_status": "已撤回" if approval_type == "econsent_withdrawal" else "待签署",
+            "requested_status": requested_status,
+            "pending_status": pending_status,
             "current_status": consent["status"],
         }
         conn.execute(
@@ -2314,9 +2361,12 @@ def create_econsent_approval(consent_id: str, approval_type: str, comment: str, 
             """,
             (approval_id, consent["study_id"], approval_type, consent_id, encode_json(payload), actor["id"], now, comment, now, now),
         )
+        conn.execute("UPDATE consents SET status = ? WHERE id = ?", (pending_status, consent_id))
+        pending_consent = row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
         approval = approval_with_actions(conn, approval_id)
         record_approval_action(conn, approval, actor, "submit", "submitted", comment)
         approval = approval_with_actions(conn, approval_id)
+        insert_audit(conn, actor, "request_econsent_status_change", "consents", consent_id, before=consent, after=pending_consent, study_id=consent["study_id"])
         insert_audit(conn, actor, "request_econsent_approval", "approval_requests", approval_id, after=approval, study_id=consent["study_id"])
         return approval
 
@@ -2645,7 +2695,14 @@ def assign_site_user(study_id: str, site_id: str, payload: SiteUserAssign, autho
 
 
 @app.get("/queries")
-def list_data_queries(study_id: str | None = None, patient_id: str | None = None, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+def list_data_queries(
+    study_id: str | None = None,
+    patient_id: str | None = None,
+    status_filter: str | None = Query(default=None, alias="status"),
+    field_name: str | None = None,
+    assigned_to: str | None = None,
+    authorization: str | None = Header(default=None),
+) -> list[dict[str, Any]]:
     sql = "SELECT * FROM data_queries"
     where: list[str] = []
     params: list[Any] = []
@@ -2658,6 +2715,15 @@ def list_data_queries(study_id: str | None = None, patient_id: str | None = None
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="study access denied")
             where.append("patient_id = ?")
             params.append(patient_id)
+        if status_filter:
+            where.append("status = ?")
+            params.append(status_filter)
+        if field_name:
+            where.append("field_name = ?")
+            params.append(field_name)
+        if assigned_to:
+            where.append("assigned_to = ?")
+            params.append(assigned_to)
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY updated_at DESC"
@@ -2705,6 +2771,9 @@ def update_data_query(query_id: str, payload: DataQueryUpdate, authorization: st
         if data.get("status") == "closed":
             columns.append("closed_at = ?")
             values.append(utc_now())
+        elif data.get("status") in {"open", "answered"}:
+            columns.append("closed_at = ?")
+            values.append(None)
         columns.append("updated_at = ?")
         values.extend([utc_now(), query_id])
         conn.execute(f"UPDATE data_queries SET {', '.join(columns)} WHERE id = ?", values)
@@ -3161,10 +3230,12 @@ def complete_approval(approval_id: str, payload: ApprovalActionCreate, authoriza
         if approval["approval_type"] in {"econsent_withdrawal", "econsent_resign"}:
             consent_id = approval["entity_id"]
             before_consent = row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
-            next_status = "已撤回" if approval["approval_type"] == "econsent_withdrawal" else "待签署"
+            next_status = "已撤回" if approval["approval_type"] == "econsent_withdrawal" else "已重签"
+            signed_at = "-" if approval["approval_type"] == "econsent_withdrawal" else utc_now()
+            method = "-" if approval["approval_type"] == "econsent_withdrawal" else "电子"
             conn.execute(
-                "UPDATE consents SET status = ?, signed_at = '-', method = '-' WHERE id = ?",
-                (next_status, consent_id),
+                "UPDATE consents SET status = ?, signed_at = ?, method = ? WHERE id = ?",
+                (next_status, signed_at, method, consent_id),
             )
             after_consent = row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
             insert_audit(conn, actor, "apply_econsent_approval", "consents", consent_id, before=before_consent, after=after_consent, study_id=approval["study_id"])

@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .database import ROLE_VALUES, connect, encode_json, initialize_schema, sqlite_json_storage, utc_now
+    from .database import ROLE_VALUES, connect, encode_json, initialize_schema, sqlite_json_storage, sync_study_configurations, utc_now
     from .permissions import role_can
     from .security import DEFAULT_DEMO_PASSWORD, hash_password
 except ImportError:  # Allows `cd backend && python seed.py`.
-    from database import ROLE_VALUES, connect, encode_json, initialize_schema, sqlite_json_storage, utc_now
+    from database import ROLE_VALUES, connect, encode_json, initialize_schema, sqlite_json_storage, sync_study_configurations, utc_now
     from permissions import role_can
     from security import DEFAULT_DEMO_PASSWORD, hash_password
 
@@ -704,6 +704,7 @@ def seed_database() -> None:
             DELETE FROM field_permissions;
             DELETE FROM global_role_study_scope;
             DELETE FROM study_members;
+            DELETE FROM study_configurations;
             DELETE FROM study_crf_versions;
             DELETE FROM crf_templates;
             DELETE FROM users;
@@ -885,6 +886,7 @@ def seed_database() -> None:
                 ),
             ],
         )
+        sync_study_configurations(conn)
         patient_insert_rows = []
         for patient in rows["patients"]:
             clinical_payload = patient[-1]

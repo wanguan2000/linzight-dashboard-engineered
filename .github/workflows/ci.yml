@@ -57,11 +57,17 @@ jobs:
       - name: Run UI smoke
         run: npm run smoke:ui
 
+      - name: Run static export runtime smoke
+        run: npm run smoke:static-runtime
+
       - name: Run role and viewport browser matrix
         run: npm run browser:matrix
 
       - name: Run customer demo E2E
         run: npm run demo:e2e
+
+      - name: Run performance smoke
+        run: npm run smoke:performance
 
       - name: Run release checklist gate
         run: npm run release:check

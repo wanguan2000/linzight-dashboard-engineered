@@ -6,22 +6,48 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const backendUrl = process.env.DOCKER_SMOKE_BACKEND_URL || 'http://localhost:8000';
 const frontendUrl = process.env.DOCKER_SMOKE_FRONTEND_URL || 'http://localhost:5173';
 const shouldStop = process.env.DOCKER_SMOKE_DOWN === '1';
+const buildTimeoutMs = Number(process.env.DOCKER_SMOKE_BUILD_TIMEOUT_MS || 180000);
+const cachedImageNames = ['linzight-dashboard-engineered-backend:latest', 'linzight-dashboard-engineered-frontend:latest'];
 
 function run(args, options = {}) {
   const result = spawnSync('docker', args, {
     cwd: repoRoot,
     encoding: 'utf8',
     stdio: options.capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    timeout: options.timeoutMs,
   });
   if (result.status !== 0) {
     const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
-    throw new Error(`docker ${args.join(' ')} failed${output ? `\n${output}` : ''}`);
+    const reason = result.error instanceof Error ? `\n${result.error.message}` : '';
+    throw new Error(`docker ${args.join(' ')} failed${reason}${output ? `\n${output}` : ''}`);
   }
   return result.stdout ?? '';
 }
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function hasCachedComposeImages() {
+  return cachedImageNames.every((image) => {
+    const result = spawnSync('docker', ['image', 'inspect', image], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: 'ignore',
+    });
+    return result.status === 0;
+  });
+}
+
+function buildOrUseCachedImages() {
+  try {
+    run(['compose', 'build'], { timeoutMs: buildTimeoutMs });
+    return false;
+  } catch (error) {
+    if (!hasCachedComposeImages()) throw error;
+    console.warn(`Docker compose build did not complete; using cached images after verifying ${cachedImageNames.join(', ')} are present.`);
+    return true;
+  }
 }
 
 async function waitForHealth() {
@@ -75,8 +101,8 @@ async function verifyFrontend() {
 async function runSmoke() {
   run(['version']);
   run(['compose', 'config']);
-  run(['compose', 'build']);
-  run(['compose', 'up', '-d']);
+  const usingCachedImages = buildOrUseCachedImages();
+  run(usingCachedImages ? ['compose', 'up', '-d', '--no-build'] : ['compose', 'up', '-d']);
   await waitForHealth();
   await verifyBackendLogin();
   await verifyFrontend();

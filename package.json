@@ -11,6 +11,8 @@
     "smoke:api": "node scripts/api-smoke.mjs",
     "smoke:crf-semantics": "node scripts/crf-semantics-smoke.mjs",
     "smoke:ui": "node scripts/ui-smoke.mjs",
+    "smoke:static-runtime": "node scripts/static-export-runtime-smoke.mjs",
+    "smoke:performance": "node scripts/performance-smoke.mjs",
     "smoke:docker": "node scripts/docker-smoke.mjs",
     "regression:browser": "node scripts/playwright-regression.mjs",
     "browser:matrix": "node scripts/browser-matrix.mjs",
@@ -19,7 +21,8 @@
     "backup:sqlite": "node scripts/backup-sqlite.mjs",
     "restore:sqlite": "node scripts/restore-sqlite.mjs",
     "export:postgres-migration": "node scripts/sqlite-to-postgres-export.mjs",
-    "test": "npm run smoke:api && npm run smoke:crf-semantics && npm run export:openapi && npm run export:html && npm run smoke:ui && npm run release:check",
+    "deploy:staging": "node scripts/staging-deploy.mjs",
+    "test": "npm run smoke:api && npm run smoke:crf-semantics && npm run export:openapi && npm run export:html && npm run smoke:ui && npm run smoke:static-runtime && npm run release:check",
     "preview": "vite preview --host 0.0.0.0",
     "lint": "eslint src scripts --report-unused-disable-directives --max-warnings 0",
     "check": "npm run lint && npm run build"

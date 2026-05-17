@@ -6,7 +6,16 @@ This demo still runs on FastAPI + SQLite by default, but the production-facing a
 
 ## PostgreSQL Migration
 
-Use the export package as a staging migration artifact:
+Use the formal RC migration split for an empty staging database:
+
+```bash
+psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/001_schema.sql
+psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/002_indexes.sql
+psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/003_constraints.sql
+psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/004_seed_demo.sql
+```
+
+Use the export package for full demo-data import rehearsal:
 
 ```bash
 npm run export:postgres-migration
@@ -18,7 +27,7 @@ The command writes `exports/postgres-migration/manifest.json`, one CSV and one J
 - `load-postgres.sql`: `psql` `\copy` commands for staging imports.
 - `README.md`: migration run notes.
 
-Production cutover should be:
+Staging cutover rehearsal should be:
 
 1. Seed or migrate into a staging PostgreSQL database.
 2. Review JSON payload columns and convert clinical payload columns to `jsonb` where required.
@@ -59,6 +68,33 @@ LINZIGHT_VIRUS_SCAN_ENDPOINT=tcp://clamav:3310
 ```
 
 The external scanner adapter is deterministic in the demo and still blocks EICAR test files. A real deployment should replace the adapter body with ClamAV, OSS/S3 malware scanning, or a vendor gateway, and keep the `scan_status` / `scan_message` contract unchanged.
+
+Failure strategy for RC:
+
+- `infected`: block upload, return 400, do not create downloadable file metadata.
+- `scanner unavailable`: treat as blocked in staging, retry only after scanner health is restored.
+- `pending`: never allow download until scan status is `clean`.
+- `archive/download`: always re-check Study permission, archive status, and scan status.
+
+## Staging Deployment Plan
+
+Generate the operator-reviewed staging plan:
+
+```bash
+npm run deploy:staging
+```
+
+The script writes `reports/staging-deploy-plan.json` with frontend, backend, PostgreSQL, object storage, scanner, validation, and rollback steps.
+
+## Performance Smoke
+
+Run:
+
+```bash
+npm run smoke:performance
+```
+
+The smoke starts a temporary seeded backend, verifies the 70-patient list response, creates an export task, and downloads the generated file within RC thresholds.
 
 ## Browser Permission Matrix
 

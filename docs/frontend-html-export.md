@@ -60,3 +60,4 @@ npm run export:html
 - 静态服务器：将整个 `exports/html/` 目录作为站点根目录部署。
 - 后端可选：后端 API 不可用时，页面自动使用本地 70 名患者、三 Study Demo 数据；后端可用时，患者、访视、随访记录、样本、组学和患者全景页优先读取接口。
 - 登录后的静态页面会按 Demo 用户的 Study scope 过滤本地 fallback 数据；`LZXK-01` 肺癌耐药研究账号只显示本 Study 的 20 名患者和 40 条随访记录；系统管理页包含 Study 权限矩阵、CRF 版本语义和 Study 访视计划配置展示。
+- `npm run smoke:static-runtime` 会启动 `exports/html` 静态服务器，登录 `LZXK-01` 肺癌 CRC，并在 390px 视口检查临床数据采集页可见内容包含肺癌字段且不漏 SLE/免疫病字段。

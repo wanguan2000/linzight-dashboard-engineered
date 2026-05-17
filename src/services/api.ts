@@ -31,6 +31,7 @@ import type {
   ApiSample,
   ApiCrfMigrationPreview,
   ApiSiteUser,
+  ApiStudyConfiguration,
   ApiStudyCrfField,
   ApiStudyCrfVersion,
   ApiStudyMember,
@@ -390,6 +391,15 @@ function toCrfMigrationApprovalRecord(record: ApiCrfMigrationApproval): CrfMigra
 
 export async function fetchStudyVisitPlans(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<StudyVisitPlanRecord[]> {
   return (await getJson<ApiStudyVisitPlan[]>(`/studies/${encodeURIComponent(studyId)}/visit-plans`)).map(toStudyVisitPlanRecord);
+}
+
+export async function fetchStudyConfiguration(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiStudyConfiguration> {
+  return getJson<ApiStudyConfiguration>(`/studies/${encodeURIComponent(studyId)}/configuration`);
+}
+
+export async function fetchStudyConfigurations(studyId?: string): Promise<ApiStudyConfiguration[]> {
+  const query = studyId ? `?study_id=${encodeURIComponent(studyId)}` : '';
+  return getJson<ApiStudyConfiguration[]>(`/study-configurations${query}`);
 }
 
 export async function createStudyVisitPlan(plan: StudyVisitPlanRecord): Promise<StudyVisitPlanRecord> {

@@ -212,6 +212,18 @@ async function runSmoke() {
   await request('/auth/me', { expectedStatus: 401 });
   await request('/patients?study_id=LZXK-01', { token: 'invalid-token', expectedStatus: 401 });
 
+  const lungConfiguration = await request('/studies/LZXK-01/configuration', { token: crc.access_token });
+  assert(lungConfiguration.data.study_id === 'LZXK-01', 'lung Study configuration should be scoped to LZXK-01');
+  assert(lungConfiguration.data.disease_area === 'lung_cancer_resistance', 'lung Study configuration disease area mismatch');
+  assert(lungConfiguration.data.active_crf_version_id === 'CRFV-LZXK-01-V1.0', 'lung Study configuration should bind published lung CRF');
+  assert(lungConfiguration.data.consent_template === 'lung-cancer-rwd-consent-v1.0', 'lung Study configuration should bind lung consent template');
+  assert(lungConfiguration.data.testing_profile.testing_project_id === 'TP-LUNG-RESIST-OMICS', 'lung Study configuration testing profile mismatch');
+  assert(lungConfiguration.data.visit_plan.active_plan_codes.includes('V2'), 'lung Study configuration should expose active visit plan codes');
+  await request('/studies/LGL-1111/configuration', { token: crc.access_token, expectedStatus: 403 });
+  const adminConfigurations = await request('/study-configurations', { token: lzAdmin.access_token });
+  assert(adminConfigurations.data.length >= 3, 'LZ_ADMIN should see all Study configurations');
+  assert(adminConfigurations.data.every((row) => row.study_id && row.active_crf_version_id && row.consent_template), 'Study configuration rows must be complete');
+
   const patients = await request('/patients?study_id=LZXK-01', { token: crc.access_token });
   assert(patients.data.length > 0, 'LZXK-01 patients should be visible to lung CRC');
   assert(patients.data.every((patient) => patient.study_id === 'LZXK-01'), 'patient list leaked another study');
@@ -275,6 +287,8 @@ async function runSmoke() {
   });
   assert(consentWithdrawal.status === 201, 'eConsent withdrawal approval request should return 201');
   assert(consentWithdrawal.data.approval_type === 'econsent_withdrawal', 'eConsent withdrawal approval type mismatch');
+  const consentPendingWithdrawal = await request(`/consents?study_id=LZXK-01`, { token: crc.access_token });
+  assert(consentPendingWithdrawal.data.find((row) => row.id === patientConsent.id)?.status === '撤回审批中', 'withdrawal request should set pending consent status');
   await request(`/approvals/${consentWithdrawal.data.id}/approve`, {
     method: 'POST',
     token: crc.access_token,
@@ -296,6 +310,26 @@ async function runSmoke() {
   const consentAfterWithdrawal = await request(`/consents?study_id=LZXK-01`, { token: crc.access_token });
   const withdrawnConsent = consentAfterWithdrawal.data.find((row) => row.id === patientConsent.id);
   assert(withdrawnConsent?.status === '已撤回', 'completed eConsent withdrawal should update consent status');
+  const consentResign = await request(`/consents/${patientConsent.id}/resign-request`, {
+    method: 'POST',
+    token: crc.access_token,
+    body: { comment: 'Smoke re-sign request' },
+  });
+  assert(consentResign.data.approval_type === 'econsent_resign', 'eConsent re-sign approval type mismatch');
+  const consentPendingResign = await request(`/consents?study_id=LZXK-01`, { token: crc.access_token });
+  assert(consentPendingResign.data.find((row) => row.id === patientConsent.id)?.status === '重签审批中', 're-sign request should set pending consent status');
+  await request(`/approvals/${consentResign.data.id}/approve`, {
+    method: 'POST',
+    token: lzAdmin.access_token,
+    body: { comment: 'Approved eConsent re-sign' },
+  });
+  await request(`/approvals/${consentResign.data.id}/complete`, {
+    method: 'POST',
+    token: lzAdmin.access_token,
+    body: { comment: 'Applied eConsent re-sign' },
+  });
+  const consentAfterResign = await request(`/consents?study_id=LZXK-01`, { token: crc.access_token });
+  assert(consentAfterResign.data.find((row) => row.id === patientConsent.id)?.status === '已重签', 'completed eConsent re-sign should update consent status');
 
   const createdUser = await request('/users', {
     method: 'POST',
@@ -587,6 +621,14 @@ async function runSmoke() {
     body: { status: 'closed' },
   });
   assert(closedQuery.data.closed_at, 'closed query should set closed_at');
+  const reopenedQuery = await request(`/queries/${query.data.id}`, {
+    method: 'PUT',
+    token: dataManager.access_token,
+    body: { status: 'open', response: 'Reopened for source verification.' },
+  });
+  assert(reopenedQuery.data.status === 'open' && !reopenedQuery.data.closed_at, 'reopened query should clear closed_at');
+  const filteredQueries = await request(`/queries?study_id=LZXK-01&status=open&field_name=${encodeURIComponent('治疗线数')}&assigned_to=${encodeURIComponent(crc.user.id)}`, { token: dataManager.access_token });
+  assert(filteredQueries.data.some((row) => row.id === query.data.id), 'query filters should find reopened query by status, field, and assignee');
   const visits = await request(`/visits?study_id=LZXK-01&patient_id=${encodeURIComponent(patient.id)}`, { token: dataManager.access_token });
   const plannedFollowUpVisit = visits.data.find((visit) => visit.visit_plan_code === 'V2') ?? visits.data.find((visit) => visit.visit_plan_id);
   assert(plannedFollowUpVisit, 'planned visit required for visit-window smoke');
@@ -662,6 +704,13 @@ async function runSmoke() {
   const fieldPermissions = await request('/field-permissions?resource=patients', { token: dataManager.access_token });
   assert(fieldPermissions.data.every((item) => item.role === 'STUDY_DATA_MANAGER'), 'non-admin field permissions response should be role-scoped');
   assert(fieldPermissions.data.some((item) => item.field_name === 'name' && item.mask_rule === 'name'), 'field permissions should expose patient name masking rule');
+  const permissionMatrix = await request('/permissions/matrix', { token: lzAdmin.access_token });
+  const matrixByOperation = new Map(permissionMatrix.data.map((row) => [row.operation, row]));
+  assert(matrixByOperation.get('Create or update patient records')?.allowed_roles.includes('STUDY_CRC'), 'permission matrix should allow STUDY_CRC patient writes');
+  assert(!matrixByOperation.get('Create or update patient records')?.allowed_roles.includes('STUDY_PI'), 'permission matrix should block STUDY_PI patient writes');
+  assert(matrixByOperation.get('Configure CRF versions, fields, visit plans, and sites')?.allowed_roles.includes('STUDY_CONFIG_ADMIN'), 'permission matrix should allow Study config admin CRF config writes');
+  assert(matrixByOperation.get('Export and download data')?.allowed_roles.includes('STUDY_DATA_MANAGER'), 'permission matrix should allow Study data manager exports');
+  assert(matrixByOperation.get('Read audit logs')?.allowed_roles.includes('LZ_AUDITOR'), 'permission matrix should allow auditors to read audit logs');
 
   const exportApproval = await request('/approvals', {
     method: 'POST',

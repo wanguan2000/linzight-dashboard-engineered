@@ -25,6 +25,7 @@
 - `LZXK-01`：真实世界肺癌耐药研究，默认 20 名患者、60 条访视、40 条随访记录、60 条 CRF、44 个样本、84 条组学记录；CRF 为独立 15 字段肺癌耐药 schema，不再继承或追加 SLE 字段。账号 `lung-pi@demo.linzight`、`lung-crc@demo.linzight`、`lung-config@demo.linzight`、`lung-dm@demo.linzight` 分别覆盖 Study PI/CRC/配置管理员/数据管理员。
 - 平台级/研究级角色：`LZ_ADMIN`、`LZ_CRC`、`LZ_CRF_ADMIN`、`LZ_DATA_MANAGER`、`LZ_AUDITOR` 与 `STUDY_PI`、`STUDY_CRC`、`STUDY_CONFIG_ADMIN`、`STUDY_DATA_MANAGER`。
 - Study CRF 版本：`crf_templates` 到 `study_crf_versions` 再到 `crf_entries.crf_version_id`，已发布版本保留历史引用。
+- Study 配置总表：`study_configurations` 绑定 `study_id -> disease_area -> active_crf_version_id -> visit_plan -> consent_template -> testing_profile`；`LZXK-01` 绑定肺癌 CRF、肺癌知情同意模板和 `TP-LUNG-RESIST-OMICS` 检测 profile。
 - Study 访视计划：`study_visit_plans` 独立于 CRF 结构，按 Study 定义 V1/V2/V3、时间窗、必填表单和样本要求；`visits.visit_plan_id` 关联计划，新建患者会自动生成计划访视和 CRF 草稿。
 - 随访记录：`follow_up_records` 独立于 CRF 版本配置，隶属于患者信息，绑定 `study_id + patient_id`，可选关联 `visit_id`，Patient Journey 已接入展示。
 - FastAPI Demo 后端：患者、样本、组学、知情同意、CRF、文件、质量、导出、审计和患者全景接口。
@@ -33,17 +34,18 @@
 - Demo 运维脚本：`npm run backup:sqlite` 与 `npm run restore:sqlite -- backups/<dir>` 支持本地 SQLite/上传目录备份恢复，说明见 `docs/deployment-ops.md`。
 - OpenAPI schema 导出：`npm run export:openapi` 生成 `docs/openapi.json`，CI 和 release gate 会检查该契约快照。
 - Beta 发布准备验证记录：`docs/05-beta-release-readiness.md`，包含本轮 CRUD smoke、API/UI smoke、release gate、浏览器 smoke、安全扫描、敏感信息检查、配置检查和剩余正式化工作。页面、数据与 CRF 一致性审计记录见 `docs/page-data-crf-consistency-audit.md`；客户演示口径见 `docs/demo-readiness-checklist.md`。
-- 生产化第一版补强：字段级 Query 创建会校验 Study/患者/访视/CRF 字段一致性；质量检查会生成访视窗口超窗问题；审计日志返回结构化 before/after `diff`；eConsent 撤回/重签走 Approval Center；文件上传具备 object-storage 与 external virus scanner 适配点；`npm run export:postgres-migration` 生成 PostgreSQL staging 迁移包；`npm run browser:matrix` 覆盖桌面/移动端角色矩阵；患者/模块表格在 390px 移动端卡片化展示。
+- 生产化第一版补强：字段级 Query 创建会校验 Study/患者/访视/CRF 字段一致性，支持创建、回复、关闭、重开和筛选；质量检查会生成访视窗口超窗问题；审计日志返回结构化 before/after `diff`；eConsent 撤回/重签先进入 Approval Center 审批中状态，审批完成后同步为已撤回或已重签；文件上传具备 object-storage 与 external virus scanner 适配点；`backend/migrations/postgres/` 提供 schema/index/constraint/seed 分层 PostgreSQL 迁移，`npm run export:postgres-migration` 仍可生成 staging 数据导出包；`npm run smoke:performance` 覆盖 70 demo patients 与导出响应；`npm run deploy:staging` 输出 staging 部署计划；`npm run browser:matrix` 覆盖桌面/移动端角色矩阵；患者/模块表格在 390px 移动端卡片化展示。
 
 ## 尚未实现功能
 
 - 完整生产级认证、集中身份源、权限审批流和用户管理。
 - 真实 EDC/EMR/LIS/组学平台 API 接入。
-- 前端组件/真实浏览器自动化测试需要继续扩展；当前已提供并纳入 CI/release gate 的检查包括 `npm run smoke:api`、`npm run smoke:crf-semantics`、`npm run export:openapi`、`npm run smoke:ui`、`npm run browser:matrix`、`npm run demo:e2e`、`npm run release:check` 和 `npm test` 综合 smoke，后续仍需扩展到更多浏览器和截图基线。
+- 前端组件/真实浏览器自动化测试需要继续扩展；当前已提供并纳入 CI/release gate 的检查包括 `npm run smoke:api`、`npm run smoke:crf-semantics`、`npm run export:openapi`、`npm run smoke:ui`、`npm run smoke:static-runtime`、`npm run browser:matrix`、`npm run demo:e2e`、`npm run smoke:performance`、`npm run release:check` 和 `npm test` 综合 smoke，后续仍需扩展到更多浏览器和截图基线。
+- 静态导出 runtime smoke 已加入 `npm run smoke:static-runtime`：启动 `exports/html` 静态服务器，登录 `LZXK-01` 肺癌 CRC，验证 390px 临床数据采集页可见内容包含肺癌字段且不漏 SLE/免疫病字段。
 - CI/CD 自动发布流程；GitHub Actions 已覆盖基础验证、CRF 语义 smoke、角色浏览器矩阵、demo E2E、release gate 和静态 HTML artifact 上传。
-- 生产级部署模板；当前已提供本地 Demo 用 `Dockerfile.frontend`、`Dockerfile.backend` 和 `docker-compose.yml`。
-- 真实文件对象存储、病毒扫描、长期归档策略和 PostgreSQL migration 仍需替换为生产基础设施并完成演练。
-- Query 管理、字段级审计 before/after diff、eConsent 撤回/重签审批、访视窗口超窗预警和数据字典规则已有 Demo first pass，仍需产品化 reviewer UX、报表和 CI gate。锁库和脱敏审批属于内部治理流程，当前客户演示发布前不作为外显范围。
+- 生产级部署模板；当前已提供本地 Demo 用 `Dockerfile.frontend`、`Dockerfile.backend`、`docker-compose.yml` 和 staging dry-run 计划脚本。
+- 真实文件对象存储、病毒扫描、长期归档策略和 PostgreSQL runtime adapter 仍需接入生产基础设施并完成演练。
+- Query 管理、字段级审计 before/after diff、eConsent 撤回/重签审批、访视窗口超窗预警和数据字典规则已有 RC first pass，仍需更完整的 reviewer UX、报表和供应商级验证。锁库和脱敏审批属于内部治理流程，当前客户演示发布前不作为外显范围。
 
 ## 已知问题
 
@@ -55,6 +57,7 @@
 - 项目包含 Demo 医疗研究样例数据和模板资料；发布前必须持续检查不要混入真实患者隐私数据。
 - CSV 源模板中有重复字段 `免疫制剂2`；CRF V0.1 schema 已将第二个字段规范为 `免疫制剂2（第2项）`，后续真实字段字典确认前不要再改回重复 key。
 - 当前隔离模型已按 Demo API smoke 覆盖管理员全局患者口径、Study CRC 跨 Study 403、样本/检测/知情同意/文件/Query/质量/导出/审批/审计列表不串 Study；浏览器矩阵覆盖桌面和 390px 移动端主路由。正式发布前仍需纳入 CI 并扩展到真实身份源和更多浏览器。
+- 新建患者已禁止在当前 Study 没有 published CRF 时回退默认 LGL；若后续新增 Study，必须先发布该 Study 的 CRF 并同步 `study_configurations`。
 
 ## 下一步开发优先级
 

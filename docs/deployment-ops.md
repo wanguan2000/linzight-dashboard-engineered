@@ -37,6 +37,10 @@ Optional PostgreSQL service for migration rehearsals:
 
 ```bash
 docker compose --profile postgres up -d postgres
+psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/001_schema.sql
+psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/002_indexes.sql
+psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/003_constraints.sql
+psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/004_seed_demo.sql
 npm run export:postgres-migration -- exports/postgres-migration
 ```
 
@@ -46,6 +50,8 @@ Validation commands:
 
 ```bash
 npm run smoke:docker
+npm run smoke:performance
+npm run deploy:staging
 docker compose build
 docker compose up -d
 curl http://127.0.0.1:8000/health

@@ -127,6 +127,26 @@ export type ApiStudyVisitPlan = {
   updated_at: string;
 };
 
+export type ApiStudyConfiguration = {
+  study_id: string;
+  disease_area: string;
+  active_crf_version_id: string;
+  visit_plan: {
+    profile?: string;
+    active_plan_codes?: string[];
+    [key: string]: unknown;
+  };
+  consent_template: string;
+  testing_profile: {
+    testing_project_id?: string;
+    sample_types?: string[];
+    assays?: string[];
+    [key: string]: unknown;
+  };
+  created_at: string;
+  updated_at: string;
+};
+
 export type ApiStudyMember = {
   id: string;
   study_id: string;
@@ -252,7 +272,7 @@ export type ApiConsent = {
   patient_name: string;
   hospital_no: string;
   disease_type: DiseaseType;
-  status: '已签署' | '待签署' | '已撤回';
+  status: '待签署' | '已签署' | '撤回审批中' | '已撤回' | '重签审批中' | '已重签';
   version: string;
   signed_at: string;
   method: '电子' | '纸质' | '-';

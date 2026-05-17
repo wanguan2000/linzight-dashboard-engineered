@@ -52,6 +52,8 @@
 
 Beta 发布前验证与剩余正式化工作见 `docs/05-beta-release-readiness.md`。
 客户演示前检查口径见 `docs/demo-readiness-checklist.md`。
+生产发布收口的八条并行工作流见 `docs/07-production-release-candidate-workflows.md`。
+正式权限矩阵见 `docs/08-permission-matrix.md`。
 
 ## 本地安装
 
@@ -91,6 +93,7 @@ npm run dev
 - `src/data/crfTemplate.ts` 将 CRF V0.1 schema 接入前端临床数据采集和系统管理字段配置。
 - `backend/seed.py` 读取同一份 schema，生成 70 名测试患者、210 条访视、140 条随访记录、210 条 CRF 记录及关联样本/组学/知情同意数据；其中 `LZXK-01` 为真实世界肺癌耐药研究，默认 20 名患者。
 - `study_visit_plans` 为每个 Study 独立配置 V1/V2/V3 访视计划、时间窗、必填 CRF 表单和样本要求；`visits.visit_plan_id` 关联配置，新建患者时后端自动生成计划访视和 CRF 草稿。
+- `study_configurations` 是 Study 配置总表，绑定 `study_id -> disease_area -> active_crf_version_id -> visit_plan -> consent_template -> testing_profile`。新建患者必须使用当前 Study 的 published CRF；如果该 Study 没有 published CRF，后端拒绝创建，不再回退到默认 LGL。
 - `follow_up_records` 隶属于患者信息，绑定 `study_id + patient_id`，可选关联 `visit_id`，记录随访方式、随访人、生存/疾病状态、疗效、转移、不良事件、生活质量和失访原因。
 - `LZXK-01` 发布独立 Study CRF V1.0，使用 15 个肺癌耐药字段，不继承 SLE CRF 字段；已录入数据保留各自 `crf_version_id`。
 - SQLite 使用 JSONB（二进制 JSON）优先保存 CRF：`patients.clinical_data_jsonb` 与 `crf_entries.payload_jsonb` 为 BLOB，同时保留 `*_version` 与 `*_format` 供 API 和迁移校验。
@@ -145,6 +148,7 @@ npm run smoke:api
 ```
 
 CRF 语义 smoke（检查 `LZXK-01` 患者、CRF payload、CRF 字段字典不混入 SLE 字段，并验证肺癌 Study 拒绝 `SLEDAI评分` Query）：
+该检查同时验证 `LZXK-01` Study 配置总表绑定肺癌 CRF、肺癌知情同意模板和肺癌检测 profile。
 
 ```bash
 npm run smoke:crf-semantics
@@ -154,6 +158,18 @@ npm run smoke:crf-semantics
 
 ```bash
 npm run smoke:ui
+```
+
+静态导出 runtime smoke（启动 `exports/html` 静态服务器，登录 `LZXK-01` 肺癌 CRC，并检查 390px 临床数据采集页可见内容不漏 SLE/免疫病字段）：
+
+```bash
+npm run smoke:static-runtime
+```
+
+性能 smoke（临时后端 + 70 名 demo 患者，检查患者列表、导出任务和下载响应时间）：
+
+```bash
+npm run smoke:performance
 ```
 
 分层浏览器交互回归（优先使用 Playwright；未安装 Playwright 时会生成 limitation 报告）：
@@ -172,6 +188,12 @@ npm run demo:e2e
 
 ```bash
 npm run release:check
+```
+
+staging 部署计划（dry-run 输出前端、后端、PostgreSQL、对象存储、病毒扫描、验证和回滚步骤）：
+
+```bash
+npm run deploy:staging
 ```
 
 综合 smoke 测试（API smoke、CRF 语义 smoke、OpenAPI 导出、静态导出、UI smoke、release gate）：

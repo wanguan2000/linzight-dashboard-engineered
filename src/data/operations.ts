@@ -2,7 +2,7 @@ import { calculateClinicalCompleteness, patientRecords, samplePlanForDisease, ty
 
 export type SampleStatus = '已采集' | '已送检' | '检测中' | '检测完成' | '结果回传' | '待处理';
 export type OmicsQcStatus = '通过' | '未通过' | '待确认';
-export type ConsentStatus = '已签署' | '待签署' | '已撤回';
+export type ConsentStatus = '待签署' | '已签署' | '撤回审批中' | '已撤回' | '重签审批中' | '已重签';
 export type SampleLibraryCode =
   | 'T01'
   | 'T02'

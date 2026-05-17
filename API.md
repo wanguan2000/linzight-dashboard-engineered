@@ -25,9 +25,11 @@
 - `POST /users`
 - `PATCH /users/{user_id}/status`
 - `GET /field-permissions`
+- `GET /permissions/matrix`
 
 当前认证使用 HMAC 签名 Bearer token，密码使用 PBKDF2-HMAC-SHA256 加盐哈希。`POST /users` 会执行基础密码策略校验，账号禁用后登录会被拒绝。
 字段级权限集中在 `field_permissions`：患者姓名、住院号、身份证号、手机号、地址等直接标识符会按角色返回原文、脱敏值或导出空值。
+正式权限矩阵由 `/permissions/matrix` 输出，文档版本见 `docs/08-permission-matrix.md`。前端按钮状态必须与该矩阵和后端 403 保持一致。
 
 登录响应会返回新角色码、`study_scope` 和 `study_memberships`。后续请求需要携带 Bearer token，后端按 `study_id` 自动过滤授权数据。
 `POST /users` 用于系统管理页创建账号；`STUDY_CONFIG_ADMIN` 可在本 Study 内创建研究级账号并同步写入 `study_members`，平台级账号创建仅限 `LZ_ADMIN`。
@@ -35,6 +37,8 @@
 ### Studies 和权限
 
 - `GET /studies`
+- `GET /study-configurations`
+- `GET /studies/{study_id}/configuration`
 - `GET /studies/{study_id}/members`
 - `POST /studies/{study_id}/members`
 - `GET /studies/{study_id}/visit-plans`
@@ -54,6 +58,7 @@
 
 RWD EDC 主链路统一使用 `study_id`，不使用 `project_id`。样本检测项目编号使用 `testing_project_id`。
 当前 seed 包含 `LGL-1111`、`RWD-NMO-2026` 和 `LZXK-01`；`LZXK-01` 是真实世界肺癌耐药研究，默认 20 名患者，并有独立 Study 角色和 CRF V1.0。
+`study_configurations` 是发布收口的 Study 配置总表，接口返回 `study_id`、`disease_area`、`active_crf_version_id`、`visit_plan`、`consent_template` 和 `testing_profile`。新建患者会绑定当前 Study 的 published CRF；没有 published CRF 时后端拒绝创建，不回退默认 LGL。
 `POST /studies/{study_id}/members` 与成员列表返回同一展示结构，包含 `username` 和 `display_name`，用于系统管理页 upsert 后直接刷新成员行。
 `/studies/{study_id}/crf-fields` 从当前 Study CRF version 的 `schema_json.sections[].fields[]` 读取和写入字段配置，新增或更新字段会写入 `audit_logs`。字段配置支持 `options`、`required`、`validation_rule` 和 `conditional_logic`，供系统管理页维护下拉选项、必填状态、基础校验规则和条件逻辑。
 `PUT /studies/{study_id}/crf-versions/{version_id}` 支持草稿发布；发布时后端会写入 `published_at`，并将同 Study 的旧 published 版本置为 `retired`。

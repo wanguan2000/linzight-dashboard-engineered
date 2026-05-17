@@ -8,6 +8,14 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ### Added
 
+- `study_configurations` Study 配置总表，绑定 disease area、当前 published CRF、访视计划、知情同意模板和检测 profile，并暴露 `/study-configurations` 与 `/studies/{study_id}/configuration`。
+- `docs/07-production-release-candidate-workflows.md` documenting the eight release-candidate workstreams and explicit demo/private-beta limitations.
+- Formal permission matrix via `docs/08-permission-matrix.md` and `/permissions/matrix`, with API smoke checks for key role/action decisions.
+- Static export runtime smoke via `npm run smoke:static-runtime`, checking the `LZXK-01` 390px clinical capture path against visible SLE/immune field leakage.
+- Query lifecycle coverage for create, reply, close, reopen and list filters by Study, patient, status, field and assignee.
+- eConsent pending status machine for withdraw/re-sign approval before final consent state changes.
+- PostgreSQL release-candidate migrations split into schema, indexes, constraints and seed under `backend/migrations/postgres/`.
+- Staging dry-run deploy plan via `npm run deploy:staging`, UAT release package in `docs/09-uat-release-package.md`, and 70-patient performance smoke via `npm run smoke:performance`.
 - SLE CRF V0.1 schema generated from `resource/SLE临床数据记录表.csv`, with 10 sections and 89 fields.
 - 70-patient demo seed now writes versioned CRF payloads for patient `clinical_data` and `crf_entries`.
 - `LZXK-01` real-world lung cancer resistance Study with 20 default patients, Study roles, lung resistance CRF fields, tissue/pleural-effusion samples, and `TP-LUNG-RESIST-OMICS` testing project records.
@@ -28,6 +36,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ### Changed
 
+- New patient planned CRF generation now requires the current Study to have a published CRF and no longer falls back to the LGL default CRF.
 - Frontend demo fallback data now uses the same 70-patient, three-Study cohort shape as the SQLite seed.
 - Clinical data capture and system CRF field configuration now read from the CRF V0.1 schema.
 - SQLite CRF storage now prefers JSONB BLOB columns with explicit payload version and storage-format metadata, while retaining TEXT JSON compatibility columns.

@@ -131,6 +131,12 @@ async function run() {
     const dmToken = await login('lung-dm@demo.linzight');
     const configToken = await login('lung-config@demo.linzight');
 
+    const configuration = await request(`/studies/${lungStudyId}/configuration`, { token: crcToken });
+    assert(configuration.data.active_crf_version_id === 'CRFV-LZXK-01-V1.0', `${lungStudyId} should bind its published lung CRF in Study configuration`);
+    assert(configuration.data.consent_template === 'lung-cancer-rwd-consent-v1.0', `${lungStudyId} should bind lung consent template`);
+    assert(configuration.data.testing_profile.testing_project_id === 'TP-LUNG-RESIST-OMICS', `${lungStudyId} should bind lung testing profile`);
+    assertNoForbiddenTokens(configuration.data, 'lung Study configuration');
+
     const patients = await request(`/patients?study_id=${lungStudyId}`, { token: crcToken });
     assert(patients.data.length === 20, `${lungStudyId} should have 20 seeded patients`);
     assert(patients.data.every((patient) => patient.study_id === lungStudyId), 'lung patients leaked another Study');

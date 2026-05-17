@@ -151,6 +151,152 @@ ROLE_ACTIONS: dict[str, set[tuple[str, str]]] = {
     },
 }
 
+PERMISSION_MATRIX: list[dict[str, Any]] = [
+    {
+        "module": "Study Configuration",
+        "operation": "Read Study configuration",
+        "resource": "studies",
+        "action": "read",
+        "endpoints": ["GET /studies", "GET /study-configurations", "GET /studies/{study_id}/configuration"],
+    },
+    {
+        "module": "Account and Study Members",
+        "operation": "Create or update users and Study members",
+        "resource": "study_members",
+        "action": "write",
+        "endpoints": ["POST /users", "GET /studies/{study_id}/members", "POST /studies/{study_id}/members"],
+    },
+    {
+        "module": "Patient Cohort",
+        "operation": "Read patient records",
+        "resource": "patients",
+        "action": "read",
+        "endpoints": ["GET /patients", "GET /patients/{patient_id}", "GET /patients/{patient_id}/panorama"],
+    },
+    {
+        "module": "Patient Cohort",
+        "operation": "Create or update patient records",
+        "resource": "patients",
+        "action": "write",
+        "endpoints": ["POST /patients", "PUT /patients/{patient_id}", "DELETE /patients/{patient_id}"],
+    },
+    {
+        "module": "Clinical Data Capture",
+        "operation": "Read CRF and visits",
+        "resource": "crf",
+        "action": "read",
+        "endpoints": ["GET /crf", "GET /visits", "GET /patients/{patient_id}/journey"],
+    },
+    {
+        "module": "Clinical Data Capture",
+        "operation": "Write CRF entries",
+        "resource": "crf",
+        "action": "write",
+        "endpoints": ["POST /crf", "PUT /crf/{entry_id}"],
+    },
+    {
+        "module": "Clinical Data Capture",
+        "operation": "Write follow-up records",
+        "resource": "follow_up_records",
+        "action": "write",
+        "endpoints": ["POST /follow-up-records", "PUT /follow-up-records/{record_id}"],
+    },
+    {
+        "module": "System Management",
+        "operation": "Configure CRF versions, fields, visit plans, and sites",
+        "resource": "crf_config",
+        "action": "write",
+        "endpoints": [
+            "POST /studies/{study_id}/visit-plans",
+            "PUT /studies/{study_id}/visit-plans/{plan_id}",
+            "POST /studies/{study_id}/crf-versions",
+            "PUT /studies/{study_id}/crf-versions/{version_id}",
+            "POST /studies/{study_id}/crf-fields",
+            "PUT /studies/{study_id}/crf-fields/{field_id}",
+            "POST /studies/{study_id}/crf-migrations",
+            "POST /studies/{study_id}/crf-migrations/{migration_id}/approve",
+            "POST /studies/{study_id}/crf-migrations/{migration_id}/apply",
+            "POST /studies/{study_id}/sites",
+            "POST /studies/{study_id}/sites/{site_id}/users",
+        ],
+    },
+    {
+        "module": "Informed Consent",
+        "operation": "Read consent records",
+        "resource": "consents",
+        "action": "read",
+        "endpoints": ["GET /consents"],
+    },
+    {
+        "module": "Informed Consent",
+        "operation": "Update consent records and request withdrawal or re-sign",
+        "resource": "consents",
+        "action": "write",
+        "endpoints": ["PUT /consents/{consent_id}", "POST /consents/{consent_id}/withdrawal-request", "POST /consents/{consent_id}/resign-request"],
+    },
+    {
+        "module": "Samples and Testing",
+        "operation": "Write samples",
+        "resource": "samples",
+        "action": "write",
+        "endpoints": ["POST /samples", "PUT /samples/{sample_id}"],
+    },
+    {
+        "module": "Samples and Testing",
+        "operation": "Write omics records",
+        "resource": "omics",
+        "action": "write",
+        "endpoints": ["POST /omics", "PUT /omics/{omics_id}"],
+    },
+    {
+        "module": "Files",
+        "operation": "Upload, download, and archive files",
+        "resource": "files",
+        "action": "write",
+        "endpoints": ["POST /files", "GET /files/{file_id}/download", "POST /files/{file_id}/archive"],
+    },
+    {
+        "module": "Data Management",
+        "operation": "Run quality checks and create Query",
+        "resource": "quality",
+        "action": "write",
+        "endpoints": ["POST /quality/run", "POST /queries"],
+    },
+    {
+        "module": "Data Management",
+        "operation": "Export and download data",
+        "resource": "exports",
+        "action": "write",
+        "endpoints": ["POST /exports", "GET /exports/{export_id}/download"],
+    },
+    {
+        "module": "Approval Center",
+        "operation": "Create, approve, reject, cancel, and complete approvals",
+        "resource": "exports",
+        "action": "write",
+        "endpoints": ["POST /approvals", "POST /approvals/{approval_id}/approve", "POST /approvals/{approval_id}/reject", "POST /approvals/{approval_id}/cancel", "POST /approvals/{approval_id}/complete"],
+    },
+    {
+        "module": "Audit",
+        "operation": "Read audit logs",
+        "resource": "audit",
+        "action": "read",
+        "endpoints": ["GET /audit-logs"],
+    },
+]
+
+
+def permission_matrix() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in PERMISSION_MATRIX:
+        rows.append(
+            {
+                **row,
+                "allowed_roles": [role for role in ROLE_VALUES if role_can(role, row["resource"], row["action"])],
+            }
+        )
+    return rows
+
 
 def role_can(role: str, resource: str, action: str) -> bool:
     role = normalize_role_code(role)

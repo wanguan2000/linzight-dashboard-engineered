@@ -15,6 +15,8 @@ CRF 字段字典按 Study 绑定。`LGL-1111` 与 `RWD-NMO-2026` 使用 `resourc
 
 所有 RWD EDC 主链路数据使用 `study_id` 做隔离。前端会在登录后保存 `study_scope`，API 请求自动携带 HMAC 签名 Bearer token；登录态启动时会调用 `/auth/me` 校验，token 缺失、过期或无效时回到登录页。
 
+Study 配置总表由 `/study-configurations` 和 `/studies/{study_id}/configuration` 读取，字段为 `study_id`、`disease_area`、`active_crf_version_id`、`visit_plan`、`consent_template` 和 `testing_profile`。后端 seed 会把 `LZXK-01` 绑定到肺癌 CRF、肺癌知情同意模板和 `TP-LUNG-RESIST-OMICS`；免疫病 Study 绑定免疫病 CRF、免疫病知情同意模板和 `TP-SLE-OMICS`。新建患者时如当前 Study 没有 published CRF，API 直接失败，前端应提示配置未发布。
+
 字段级权限由后端 `field_permissions` 统一执行。前端不自行判断姓名、住院号、身份证号、手机号、地址等直接标识符是否需要脱敏，而是展示 API 返回值；导出文件也由后端按同一规则生成。当前默认规则让 `LZ_DATA_MANAGER`、`STUDY_DATA_MANAGER` 和 `LZ_AUDITOR` 在页面看到脱敏值，在 CSV 导出中移除直接标识符。
 
 文件上传由 `/files` 写入存储适配层，响应包含 `storage_backend`、`storage_path`、`scan_status`、`scan_message`、`archive_status`、`archived_at` 和 `retention_until`。本地开发默认 `local`；生产式 smoke 可用 `LINZIGHT_STORAGE_BACKEND=object` 返回 `object://bucket/prefix/...` URI。文件下载统一走 `/files/{file_id}/download`，后端会校验 Study 权限、角色权限、病毒扫描状态和归档状态，并写入 `audit_logs`。
@@ -35,9 +37,9 @@ CRF 字段字典按 Study 绑定。`LGL-1111` 与 `RWD-NMO-2026` 使用 `resourc
 系统管理页的 CRF 版本面板通过 `/studies/{study_id}/crf-versions` 读取版本列表。`New Draft` 会从当前字段表生成 schema 并调用 `POST /studies/{study_id}/crf-versions` 创建草稿。正式发布优先走审批流：`Request Approval` 调用 `POST /studies/{study_id}/crf-migrations`，`Approve` 调用 `/approve`，`Apply` 或 `Apply Approved` 调用 `/apply`，由后端发布目标 draft 并退休该 Study 的旧 published 版本。
 `Preview Migration` 调用 `POST /studies/{study_id}/crf-versions/migration-preview`，用当前字段表生成目标 schema，并显示新增、变更、移除和未变化字段数量，同时列出字段级新增、变更项和移除明细。该接口只读，不改变版本状态。
 系统管理页同时读取 `/studies/{study_id}/crf-migrations` 展示最近的 migration approval request 和 execution log 数量；所有提交、批准和应用操作均以 `study_id` 为路径参数，并写入后端 `audit_logs`。后端禁止 request 发起人批准或应用自己的 CRF migration，前端用通用状态消息提示权限或后端拒绝。
-系统管理页的 Approval Center 读取 `/approvals?study_id=...`，展示导出、CRF 发布和 eConsent 撤回/重签审批的 `draft / submitted / approved / rejected / cancelled / completed` 状态、动作记录数量和评论，并在全局视角保留 `Study ID`。Approve/Reject 按钮分别调用 `/approvals/{id}/approve` 与 `/approvals/{id}/reject`；后端禁止提交人自批，并将动作写入 `approval_actions` 和 `audit_logs`。知情同意页的撤回/重签按钮分别调用 `/consents/{consent_id}/withdrawal-request` 和 `/consents/{consent_id}/resign-request`，只有审批完成后才改变 consent 状态。脱敏审批作为内部治理能力保留，不作为当前客户演示发布范围。
+系统管理页的 Approval Center 读取 `/approvals?study_id=...`，展示导出、CRF 发布和 eConsent 撤回/重签审批的 `draft / submitted / approved / rejected / cancelled / completed` 状态、动作记录数量和评论，并在全局视角保留 `Study ID`。Approve/Reject 按钮分别调用 `/approvals/{id}/approve` 与 `/approvals/{id}/reject`；后端禁止提交人自批，并将动作写入 `approval_actions` 和 `audit_logs`。知情同意页的撤回/重签按钮分别调用 `/consents/{consent_id}/withdrawal-request` 和 `/consents/{consent_id}/resign-request`；请求创建后 consent 进入 `撤回审批中` 或 `重签审批中`，审批 complete 后才进入 `已撤回` 或 `已重签`。脱敏审批作为内部治理能力保留，不作为当前客户演示发布范围。
 
-字段级 Query 由 `/queries` 创建，前端必须传入 `study_id`、`patient_id`、`form_id` 和 CRF 字段名；如果关联访视，则 `visit_id` 必须属于同一患者和 Study。后端按当前发布 CRF 校验字段名，确保肺癌 Study 不再出现 SLE 字段 Query。
+字段级 Query 由 `/queries` 创建，前端必须传入 `study_id`、`patient_id`、`form_id` 和 CRF 字段名；如果关联访视，则 `visit_id` 必须属于同一患者和 Study。后端按当前发布 CRF 校验字段名，确保肺癌 Study 不再出现 SLE 字段 Query。`GET /queries` 支持按 `study_id`、`patient_id`、`status`、`field_name` 和 `assigned_to` 筛选；`PUT /queries/{query_id}` 支持 `open / answered / closed / cancelled`，关闭后重开为 `open` 会清空 `closed_at`。
 
 访视窗口预警由 `/quality/run?study_id=...` 生成。后端以患者最早实际访视作为 baseline，根据 `study_visit_plans.day_offset` 与 `window_before_days/window_after_days` 比对 `visits.visit_date`；超窗问题写入 `data_quality_issues`，`source_table=visits`、`field_name=visit_date`。
 

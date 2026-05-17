@@ -91,6 +91,7 @@ RWD EDC 主链路以 `study_id` 作为隔离边界。后端在统一权限函数
 - CRF V0.1 schema：`resource/sle-crf-v0.1.schema.json`，由 `resource/SLE临床数据记录表.csv` 派生；前端通过 `src/data/crfTemplate.ts` 读取，后端 seed 直接读取同一份 JSON。
 - `LZXK-01` Study：真实世界肺癌耐药研究，seed 默认生成 20 名患者，并在 Study CRF V1.0 中追加肺癌耐药字段；前端 fallback 数据与后端 seed 保持同一患者/访视/随访/样本/组学结构。
 - CRF JSON 存储：SQLite 支持 `jsonb()` 时，`patients.clinical_data_jsonb` 与 `crf_entries.payload_jsonb` 保存二进制 JSONB BLOB；API mapper 解码后仍返回 JSON object，并暴露 `*_version` 与 `*_format`。
+- Study 配置总表：`study_configurations` 绑定 `study_id`、`disease_area`、当前 published `active_crf_version_id`、active visit-plan codes、知情同意模板和检测 profile。后端新建患者时必须找到当前 Study 的 published CRF，否则拒绝创建，避免空 CRF 或默认 LGL 回退。
 - Study 隔离：`patients`、`consents`、`visits`、`follow_up_records`、`crf_entries`、`samples`、`omics_records`、`uploaded_files`、`export_jobs`、`data_quality_issues`、`audit_logs` 均包含 `study_id`；`omics_records.testing_project_id` 表示样本检测项目编号。
 - 访视计划：`study_visit_plans` 按 Study 保存 V1/V2/V3 等时间点配置、访视窗口、必填 CRF 表单和样本要求；`visits.visit_plan_id` 指向该配置，患者实际访视不再由前端或 seed 硬编码。
 - 随访记录：`follow_up_records` 隶属于患者信息，可选关联 `visits.id`，用于患者旅程展示出院后或门诊间隔随访事实，不放入 CRF 版本配置表。

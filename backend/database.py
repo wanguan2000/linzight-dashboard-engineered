@@ -103,6 +103,19 @@ def initialize_schema() -> None:
               FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS study_configurations (
+              study_id TEXT PRIMARY KEY,
+              disease_area TEXT NOT NULL,
+              active_crf_version_id TEXT NOT NULL,
+              visit_plan_json TEXT NOT NULL DEFAULT '{}',
+              consent_template TEXT NOT NULL,
+              testing_profile_json TEXT NOT NULL DEFAULT '{}',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE,
+              FOREIGN KEY (active_crf_version_id) REFERENCES study_crf_versions(id) ON DELETE RESTRICT
+            );
+
             CREATE TABLE IF NOT EXISTS samples (
               id TEXT PRIMARY KEY,
               study_id TEXT NOT NULL DEFAULT 'LGL-1111',
@@ -495,6 +508,7 @@ def initialize_schema() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_patients_disease_type ON patients(disease_type);
             CREATE INDEX IF NOT EXISTS idx_visit_plans_study_id ON study_visit_plans(study_id);
+            CREATE INDEX IF NOT EXISTS idx_study_configurations_active_crf ON study_configurations(active_crf_version_id);
             CREATE INDEX IF NOT EXISTS idx_samples_patient_id ON samples(patient_id);
             CREATE INDEX IF NOT EXISTS idx_omics_patient_id ON omics_records(patient_id);
             CREATE INDEX IF NOT EXISTS idx_follow_up_records_patient_id ON follow_up_records(patient_id);
@@ -517,6 +531,7 @@ def initialize_schema() -> None:
         migrate_json_storage(conn)
         seed_default_study(conn)
         seed_default_field_permissions(conn)
+        sync_study_configurations(conn)
         record_schema_version(conn)
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -552,6 +567,7 @@ def seed_default_field_permissions(conn: sqlite3.Connection) -> None:
 def record_schema_version(conn: sqlite3.Connection) -> None:
     versions = [
         ("20260512_001_auth_privacy_approvals_files", "Production-demo auth, field privacy, approvals, and file security baseline"),
+        ("20260516_001_study_configuration_registry", "Study configuration registry for CRF, visit plan, consent template, and testing profile binding"),
     ]
     now = utc_now()
     conn.executemany(
@@ -561,6 +577,96 @@ def record_schema_version(conn: sqlite3.Connection) -> None:
         """,
         [(version, description, now) for version, description in versions],
     )
+
+
+def study_configuration_defaults(study_id: str, indication: str, active_crf_version_id: str, visit_plans: list[dict[str, Any]]) -> dict[str, Any]:
+    if study_id == "LZXK-01":
+        return {
+            "study_id": study_id,
+            "disease_area": "lung_cancer_resistance",
+            "active_crf_version_id": active_crf_version_id,
+            "visit_plan": {
+                "profile": "lung_resistance_v1",
+                "active_plan_codes": [plan["code"] for plan in visit_plans],
+            },
+            "consent_template": "lung-cancer-rwd-consent-v1.0",
+            "testing_profile": {
+                "testing_project_id": "TP-LUNG-RESIST-OMICS",
+                "sample_types": ["血液", "组织", "胸水"],
+                "assays": ["NGS panel", "ctDNA", "病理复核"],
+            },
+        }
+    return {
+        "study_id": study_id,
+        "disease_area": "immune_neurology",
+        "active_crf_version_id": active_crf_version_id,
+        "visit_plan": {
+            "profile": "immune_neurology_v1",
+            "active_plan_codes": [plan["code"] for plan in visit_plans],
+        },
+        "consent_template": "immune-neurology-consent-v20260423",
+        "testing_profile": {
+            "testing_project_id": "TP-SLE-OMICS",
+            "sample_types": ["血液", "CSF", "肾", "尿液"],
+            "assays": ["WGS", "TCR/BCR", "Olink/Simoa", "蛋白组", "代谢组"],
+            "indication": indication,
+        },
+    }
+
+
+def sync_study_configurations(conn: sqlite3.Connection) -> None:
+    now = utc_now()
+    study_rows = conn.execute("SELECT id, indication FROM studies ORDER BY id").fetchall()
+    for study in study_rows:
+        version = conn.execute(
+            """
+            SELECT id
+            FROM study_crf_versions
+            WHERE study_id = ? AND status = 'published'
+            ORDER BY COALESCE(published_at, created_at) DESC, created_at DESC
+            LIMIT 1
+            """,
+            (study["id"],),
+        ).fetchone()
+        if not version:
+            continue
+        plans = [
+            row_to_study_visit_plan(row)
+            for row in conn.execute(
+                """
+                SELECT *
+                FROM study_visit_plans
+                WHERE study_id = ? AND status = 'active'
+                ORDER BY sort_order, day_offset, code
+                """,
+                (study["id"],),
+            ).fetchall()
+        ]
+        config = study_configuration_defaults(study["id"], study["indication"], version["id"], plans)
+        conn.execute(
+            """
+            INSERT INTO study_configurations
+              (study_id, disease_area, active_crf_version_id, visit_plan_json, consent_template, testing_profile_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(study_id) DO UPDATE SET
+              disease_area = excluded.disease_area,
+              active_crf_version_id = excluded.active_crf_version_id,
+              visit_plan_json = excluded.visit_plan_json,
+              consent_template = excluded.consent_template,
+              testing_profile_json = excluded.testing_profile_json,
+              updated_at = excluded.updated_at
+            """,
+            (
+                config["study_id"],
+                config["disease_area"],
+                config["active_crf_version_id"],
+                encode_json(config["visit_plan"]),
+                config["consent_template"],
+                encode_json(config["testing_profile"]),
+                now,
+                now,
+            ),
+        )
 
 
 def encode_json(value: Any) -> str:
@@ -844,6 +950,13 @@ def row_to_study_visit_plan(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
     item["required_forms"] = decode_json(item.pop("required_forms_json"), [])
     item["required_samples"] = decode_json(item.pop("required_samples_json"), [])
+    return item
+
+
+def row_to_study_configuration(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    item["visit_plan"] = decode_json(item.pop("visit_plan_json"), {})
+    item["testing_profile"] = decode_json(item.pop("testing_profile_json"), {})
     return item
 
 

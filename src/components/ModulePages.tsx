@@ -87,12 +87,15 @@ const systemAccountPageSize = 5;
 const systemFieldPageSize = 5;
 const consentVersion = 'V1.0';
 const consentPreviewPdfUrl = './consent-v1.0.pdf';
-const consentStatusOptions: Array<'全部' | ConsentRecord['status']> = ['全部', '待签署', '已签署', '已撤回'];
+const consentStatusOptions: Array<'全部' | ConsentRecord['status']> = ['全部', '待签署', '已签署', '撤回审批中', '已撤回', '重签审批中', '已重签'];
 const consentStatusClass: Record<'全部' | ConsentRecord['status'], string> = {
   全部: 'all',
   待签署: 'pending',
   已签署: 'signed',
-  已撤回: 'withdrawn'
+  撤回审批中: 'pending',
+  已撤回: 'withdrawn',
+  重签审批中: 'pending',
+  已重签: 'signed'
 };
 
 type ConsentPreviewBlock = {
@@ -1560,7 +1563,7 @@ export function ConsentManagementPage({ currentUser }: { currentUser?: Authentic
         acc[record.status] += 1;
         return acc;
       },
-      { 全部: 0, 待签署: 0, 已签署: 0, 已撤回: 0 }
+      { 全部: 0, 待签署: 0, 已签署: 0, 撤回审批中: 0, 已撤回: 0, 重签审批中: 0, 已重签: 0 }
     );
   }, [studyFilteredRecords]);
   const selectedConsentPreviewContent = getConsentPreviewContent(selectedRecord.studyId);
@@ -1573,7 +1576,11 @@ export function ConsentManagementPage({ currentUser }: { currentUser?: Authentic
   }, [consentApprovals, studyFilteredRecords]);
   const currentConsentSection = selectedConsentPreviewContent[Math.min(activeConsentSection, selectedConsentPreviewContent.length - 1)]!;
   const selectedUnderstood = understoodRecords[selectedRecord.id] || selectedRecord.status !== '待签署';
-  const flowStepIndex = selectedRecord.status === '已签署' ? 3 : selectedRecord.status === '已撤回' ? 1 : selectedUnderstood ? 1 : 0;
+  const flowStepIndex = ['已签署', '已重签'].includes(selectedRecord.status)
+    ? 3
+    : ['已撤回', '撤回审批中', '重签审批中'].includes(selectedRecord.status)
+      ? 1
+      : selectedUnderstood ? 1 : 0;
   const filteredRecords = useMemo(() => {
     const normalized = query.trim().toLowerCase();
 
@@ -1990,10 +1997,16 @@ export function ConsentManagementPage({ currentUser }: { currentUser?: Authentic
                             <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); startConsentUpload(record); }}>{t('上传')}</button>
                           </>
                         ) : null}
-                        {record.status === '已签署' ? (
+                        {record.status === '已签署' || record.status === '已重签' ? (
                           <>
                             <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); viewConsent(record); }}>{t('查看')}</button>
                             <button className="module-link-button module-link-button--danger" type="button" onClick={(event) => { event.stopPropagation(); withdrawConsent(record); }}>{t('撤回')}</button>
+                          </>
+                        ) : null}
+                        {record.status === '撤回审批中' || record.status === '重签审批中' ? (
+                          <>
+                            <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); viewConsent(record); }}>{t('查看')}</button>
+                            <button className="module-link-button" type="button" disabled title={t('审批完成后状态才会同步刷新')}>{t('审批中')}</button>
                           </>
                         ) : null}
                         {record.status === '已撤回' ? (
@@ -3148,6 +3161,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [siteRows, setSiteRows] = useState<ApiStudySite[]>([]);
   const [siteUserRows, setSiteUserRows] = useState<ApiSiteUser[]>([]);
   const [queryRows, setQueryRows] = useState<ApiDataQuery[]>([]);
+  const [queryStatusFilter, setQueryStatusFilter] = useState<'all' | ApiDataQuery['status']>('all');
   const [auditRows, setAuditRows] = useState<ApiAuditLog[]>([]);
   const [systemActionStatus, setSystemActionStatus] = useState('等待系统管理操作');
   const normalizedQuery = systemQuery.trim().toLowerCase();
@@ -3213,7 +3227,8 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     );
   }, [normalizedQuery, scopedStudyId, siteRows]);
   const visibleQueries = useMemo(() => {
-    const scopedQueries = scopedStudyId ? queryRows.filter((query) => query.study_id === scopedStudyId) : queryRows;
+    const scopedQueries = (scopedStudyId ? queryRows.filter((query) => query.study_id === scopedStudyId) : queryRows)
+      .filter((query) => queryStatusFilter === 'all' || query.status === queryStatusFilter);
     if (!normalizedQuery) return scopedQueries.slice(0, 6);
     return scopedQueries
       .filter((query) =>
@@ -3222,7 +3237,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         )
       )
       .slice(0, 6);
-  }, [normalizedQuery, queryRows, scopedStudyId]);
+  }, [normalizedQuery, queryRows, queryStatusFilter, scopedStudyId]);
   const queryCounts = useMemo(() => {
     const scopedQueries = scopedStudyId ? queryRows.filter((query) => query.study_id === scopedStudyId) : queryRows;
     return {
@@ -3797,6 +3812,20 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     }
   }
 
+  async function reopenSystemDataQuery(query: ApiDataQuery) {
+    setSystemActionStatus(`Query ${query.id} 正在重开...`);
+    try {
+      const reopened = await updateDataQuery(query.id, {
+        status: 'open',
+        response: query.response || 'Reopened from System Management.'
+      });
+      setQueryRows((rows) => [reopened, ...rows.filter((row) => row.id !== reopened.id)]);
+      setSystemActionStatus(`Query 已重开：${reopened.id}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 Query 重开权限');
+    }
+  }
+
   return (
     <div className="content workspace-page system-management-page">
       <section className="system-management-hero module-card">
@@ -4320,6 +4349,18 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
               <span className="status-pill status-pill--success">{t('Closed')}: {queryCounts.closed}</span>
               <small>{t('字段名由当前 Study CRF 校验，跨 Study 患者/访视会被后端拒绝。')}</small>
             </div>
+            <div className="system-query-summary" aria-label={t('Query 筛选')}>
+              {(['all', 'open', 'answered', 'closed', 'cancelled'] as Array<'all' | ApiDataQuery['status']>).map((statusValue) => (
+                <button
+                  className={`module-link-button${queryStatusFilter === statusValue ? ' module-link-button--primary' : ''}`}
+                  key={statusValue}
+                  type="button"
+                  onClick={() => setQueryStatusFilter(statusValue)}
+                >
+                  {t(statusValue === 'all' ? '全部 Query' : statusValue)}
+                </button>
+              ))}
+            </div>
             <div className="module-table-wrap">
               <table className="module-table system-query-table">
                 <thead>
@@ -4353,8 +4394,11 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                       <td>{query.updated_at.slice(0, 10)}</td>
                       <td>
                         <div className="module-table-actions">
-                          <button className="module-link-button" type="button" disabled={query.status === 'closed' || query.status === 'cancelled'} onClick={() => void answerSystemDataQuery(query)}>{t('回复')}</button>
-                          <button className="module-link-button module-link-button--danger" type="button" disabled={query.status === 'closed' || query.status === 'cancelled'} onClick={() => void closeSystemDataQuery(query)}>{t('关闭')}</button>
+                          <button className="module-link-button" type="button" disabled={query.status === 'closed' || query.status === 'cancelled'} title={query.status === 'closed' || query.status === 'cancelled' ? t('已关闭或取消的 Query 需要先重开') : undefined} onClick={() => void answerSystemDataQuery(query)}>{t('回复')}</button>
+                          <button className="module-link-button module-link-button--danger" type="button" disabled={query.status === 'closed' || query.status === 'cancelled'} title={query.status === 'closed' || query.status === 'cancelled' ? t('当前状态不可关闭') : undefined} onClick={() => void closeSystemDataQuery(query)}>{t('关闭')}</button>
+                          {query.status === 'closed' || query.status === 'cancelled' ? (
+                            <button className="module-link-button module-link-button--primary" type="button" onClick={() => void reopenSystemDataQuery(query)}>{t('重开')}</button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
