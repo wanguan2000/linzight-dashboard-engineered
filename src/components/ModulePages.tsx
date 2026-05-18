@@ -2960,6 +2960,10 @@ function accountFromApiUser(user: ApiUser, studyId: string): SystemAccount {
   };
 }
 
+function notifyStudiesUpdated() {
+  window.dispatchEvent(new window.Event('linzight-studies-updated'));
+}
+
 function studyScopeToIds(scope: string, studyIds: string[]) {
   if (scope === '全部 Study') return studyIds;
   return scope
@@ -3484,6 +3488,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       });
       setStudyRows((rows) => [{ ...study, systemAdminCount: 0 }, ...rows.filter((row) => row.id !== study.id)]);
       setSelectedSystemStudyId(study.id);
+      notifyStudiesUpdated();
       setSystemActionStatus(`Study 已创建为草稿：${study.id}。发布前需绑定 CRF、访视计划、知情模板和系统管理员。`);
     } catch {
       setSystemActionStatus('后端不可用或当前角色无 Study 新建权限');
@@ -3495,6 +3500,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     try {
       const study = await updateStudy(studyId, { status: 'terminated' });
       setStudyRows((rows) => rows.map((row) => (row.id === study.id ? { ...study, systemAdminCount: row.systemAdminCount } : row)));
+      notifyStudiesUpdated();
       setSystemActionStatus(`Study 已终止：${study.id}`);
     } catch {
       setSystemActionStatus('后端不可用或当前角色无 Study 终止权限');
@@ -3507,6 +3513,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       const study = await deleteStudy(studyId);
       setStudyRows((rows) => rows.map((row) => (row.id === study.id ? { ...study, systemAdminCount: row.systemAdminCount } : row)));
       setSelectedSystemStudyId((current) => (current === study.id ? '' : current));
+      notifyStudiesUpdated();
       setSystemActionStatus(`Study 已标记为 deleted：${study.id}`);
     } catch {
       setSystemActionStatus('后端不可用或当前角色无 Study 删除权限');

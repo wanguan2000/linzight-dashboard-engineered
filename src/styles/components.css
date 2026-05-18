@@ -510,12 +510,12 @@
 }
 
 .study-badge--select {
-  min-width: 190px;
+  min-width: 250px;
   justify-content: space-between;
 }
 
 .study-badge--select select {
-  max-width: 132px;
+  max-width: 182px;
   border: 0;
   background: transparent;
   color: #167286;
@@ -3940,6 +3940,58 @@
 }
 
 /* Patient cohort page */
+.study-project-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(75, 173, 185, 0.2);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(245, 252, 255, 0.9), rgba(226, 249, 245, 0.66)),
+    rgba(255, 255, 255, 0.64);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(14px);
+}
+
+.study-project-context__label,
+.study-project-context__meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.study-project-context__label span,
+.study-project-context__meta span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.study-project-context__label strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.study-project-context__meta {
+  flex: 0 0 auto;
+  min-width: 126px;
+  padding-left: 14px;
+  border-left: 1px solid rgba(75, 173, 185, 0.22);
+}
+
+.study-project-context__meta strong {
+  color: #167286;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .module-context {
   display: flex;
   align-items: center;

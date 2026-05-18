@@ -11,10 +11,12 @@ import { fetchAnalyticsSummary } from '../services/api';
 import type { ApiAnalysisSummary } from '../services/contracts';
 import { authStorageKey, normalizeAuthenticatedUser, type AuthenticatedUser } from '../data/auth';
 import type { PatientRecord } from '../data/patientCohort';
+import { useI18n } from '../i18n/I18nProvider';
 import type { CohortStat, JourneyStage, KpiMetric, WorkflowItem } from '../types';
 
 interface DashboardProps {
   currentUser?: AuthenticatedUser | null;
+  activeStudy?: { id: string; name: string };
   selectedModule?: string;
   selectedPatient?: PatientRecord | null;
   onNavigate?: (module: string) => void;
@@ -190,7 +192,8 @@ function getStoredDashboardUser() {
   }
 }
 
-export function Dashboard({ currentUser, selectedModule, selectedPatient, onNavigate = () => undefined }: DashboardProps = {}) {
+export function Dashboard({ currentUser, activeStudy, selectedModule, selectedPatient, onNavigate = () => undefined }: DashboardProps = {}) {
+  const { t } = useI18n();
   const [summary, setSummary] = useState<ApiAnalysisSummary | null>(null);
   const dashboardUser = currentUser ?? getStoredDashboardUser();
 
@@ -214,6 +217,19 @@ export function Dashboard({ currentUser, selectedModule, selectedPatient, onNavi
 
   return (
     <div className="content">
+      {activeStudy ? (
+        <section className="study-project-context" aria-label="Study 项目">
+          <div className="study-project-context__label">
+            <span>{t('Study 项目')}</span>
+            <strong>{activeStudy.name}</strong>
+          </div>
+          <div className="study-project-context__meta">
+            <span>{t('Study ID')}</span>
+            <strong>{activeStudy.id}</strong>
+          </div>
+        </section>
+      ) : null}
+
       {selectedModule && (
         <section className="module-context">
           <div>

@@ -222,6 +222,9 @@ export default function App() {
     const userStudyIds = accessibleStudyIdsForUser(currentUser);
     return userStudyIds.map((id) => runtimeStudyOptions.find((study) => study.id === id) ?? { id, name: id });
   }, [currentUser, runtimeStudyOptions]);
+  const activeStudyContext = activeStudyId
+    ? (topbarStudyOptions.find((study) => study.id === activeStudyId) ?? { id: activeStudyId, name: activeStudyId })
+    : undefined;
 
   function setActiveModule(label: string) {
     const index = navItems.findIndex((item) => item.label === label);
@@ -238,17 +241,22 @@ export default function App() {
       return undefined;
     }
     let cancelled = false;
-    fetchStudies()
-      .then((studies) => {
-        if (!cancelled) {
-          setRuntimeStudyOptions(studies.filter((study) => study.status !== 'deleted').map((study) => ({ id: study.id, name: study.name })));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setRuntimeStudyOptions([]);
-      });
+    const loadStudies = () => {
+      void fetchStudies()
+        .then((studies) => {
+          if (!cancelled) {
+            setRuntimeStudyOptions(studies.filter((study) => study.status !== 'deleted').map((study) => ({ id: study.id, name: study.name })));
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setRuntimeStudyOptions([]);
+        });
+    };
+    loadStudies();
+    window.addEventListener('linzight-studies-updated', loadStudies);
     return () => {
       cancelled = true;
+      window.removeEventListener('linzight-studies-updated', loadStudies);
     };
   }, [currentUser]);
 
@@ -392,6 +400,7 @@ export default function App() {
     return (
       <Dashboard
         currentUser={currentUser}
+        activeStudy={activeStudyContext}
         selectedModule={activeModule === '首页工作台' ? undefined : activeModule}
         selectedPatient={selectedPatient}
         onNavigate={setActiveModule}
@@ -419,6 +428,7 @@ export default function App() {
           subtitle={topbarCopy.subtitle}
           currentUser={currentUser}
           activeStudyId={activeStudyId}
+          activeStudy={activeStudyContext}
           studyOptions={topbarStudyOptions}
           onStudyChange={enterStudyWorkspace}
           onGlobalManagement={isPlatformRole(currentUser) ? enterGlobalManagement : undefined}

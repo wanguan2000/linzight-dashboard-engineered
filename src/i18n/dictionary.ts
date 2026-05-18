@@ -35,6 +35,7 @@ const exactEnglish: Record<string, string> = {
   'Study 研究入口': 'Study entry',
   'LZ 系统管理': 'LZ System Admin',
   'Study Workspace': 'Study Workspace',
+  'Study 项目': 'Study project',
   '选择 Study Workspace': 'Select Study Workspace',
   '登录后如账号只授权一个 Study，将直接进入；多个 Study 时再选择工作区。':
     'After sign-in, accounts with one authorized Study enter directly; accounts with multiple Studies choose a workspace.',

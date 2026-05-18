@@ -13,6 +13,7 @@ interface TopbarProps {
   subtitle?: string;
   currentUser?: AuthenticatedUser;
   activeStudyId?: string;
+  activeStudy?: { id: string; name: string };
   studyOptions?: Array<{ id: string; name: string }>;
   onStudyChange?: (studyId: string) => void;
   onGlobalManagement?: () => void;
@@ -26,6 +27,7 @@ export function Topbar({
   subtitle = '这里是今日临床研究运营概览。',
   currentUser,
   activeStudyId,
+  activeStudy,
   studyOptions = [],
   onStudyChange,
   onGlobalManagement,
@@ -35,7 +37,7 @@ export function Topbar({
   const [notificationStatus, setNotificationStatus] = useState('');
   const profile = currentUser ?? userProfile;
   const roleLabel = currentUser ? currentUser.roleLabel : userProfile.role;
-  const studyLabel = activeStudyId ?? visibleStudyLabel(currentUser);
+  const studyLabel = activeStudy ? `${activeStudy.id} · ${activeStudy.name}` : activeStudyId ?? visibleStudyLabel(currentUser);
   const showStudySwitcher = Boolean(onStudyChange && (studyOptions.length > 1 || onGlobalManagement));
 
   return (
@@ -60,7 +62,7 @@ export function Topbar({
               >
                 {onGlobalManagement ? <option value="__GLOBAL__">{t('LZ 全局管理')}</option> : null}
                 {studyOptions.map((study) => (
-                  <option value={study.id} key={study.id}>{study.id}</option>
+                  <option value={study.id} key={study.id}>{study.id} · {study.name}</option>
                 ))}
               </select>
             </label>
