@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project uses Semantic Versioning.
 
+## [1.0.1] - 2026-05-18
+
+### Added
+
+- Password reset request and confirmation APIs backed by SMTP configuration.
+- First-run GA bootstrap that creates only the configured LZ system administrator.
+
+### Changed
+
+- Docker Compose GA startup no longer seeds Studies, patients, samples, visits, omics, or test users.
+- Login UI now uses direct account email/password entry and formal authentication copy.
+- Home dashboard empty states now show zero connected records instead of demo/API wait text.
+- LZ System Management defaults to an empty Study registry with one initial administrator.
+- Frontend API fallbacks no longer show local mock patients when the backend is empty or unavailable.
+
+### Fixed
+
+- Removed visible `Demo` labels from the login and system-management overview surfaces.
+- Removed the automatic default `LGL-1111` Study insert from schema initialization.
+
 ## [1.0.0] - 2026-05-18
 
 ### Added

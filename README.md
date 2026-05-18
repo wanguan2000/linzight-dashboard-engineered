@@ -1,6 +1,6 @@
 # linzight-dashboard-engineered
 
-当前版本：`v1.0.0`
+当前版本：`v1.0.1`
 
 `linzight-dashboard-engineered` 是 LinZight 真实世界研究数据采集与管理系统的工程化 Demo。项目以患者为中心，覆盖研究工作台、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析和系统管理，并提供 FastAPI Demo 后端；默认使用 PostgreSQL，临时 smoke 和备份脚本仍可显式使用 SQLite。登录和写入动作依赖后端认证与 API；部分只读演示数据在后端不可用时仍可回退到本地 mock/seed 数据，适合产品演示、静态 HTML 交付和后续增量开发。
 

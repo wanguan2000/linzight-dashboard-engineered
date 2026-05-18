@@ -55,6 +55,15 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class PasswordResetRequest(BaseModel):
+    username: str
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(min_length=24)
+    password: str = Field(min_length=8)
+
+
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -66,7 +75,7 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=3)
     display_name: str = Field(min_length=1)
     role: UserRole = "STUDY_CRC"
-    password: str = Field(default="Demo1234!", min_length=8)
+    password: str = Field(min_length=8)
     status: Literal["active", "disabled"] = "active"
     study_id: str | None = None
     member_status: Literal["active", "pending", "disabled"] = "pending"

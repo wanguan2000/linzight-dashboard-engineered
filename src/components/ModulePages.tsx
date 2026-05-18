@@ -2955,7 +2955,7 @@ function accountFromApiUser(user: ApiUser, studyId: string): SystemAccount {
     role,
     roleLabel: roleLabels[role],
     studyScope: membership?.study_id ?? formatUserStudyScope(user, studyId),
-    status: membership?.status === 'disabled' || user.status === 'disabled' ? 'Disabled' : membership?.status === 'active' ? 'Active' : 'Pending',
+    status: membership?.status === 'disabled' || user.status === 'disabled' ? 'Disabled' : membership?.status === 'active' || user.status === 'active' ? 'Active' : 'Pending',
     lastLogin: '-'
   };
 }
@@ -3002,22 +3002,6 @@ type PermissionRow = {
   action: string;
   values: Partial<Record<UserRole, boolean>>;
 };
-
-const systemAccounts: SystemAccount[] = [
-  { name: '系统管理员', email: 'admin@demo.linzight', role: 'LZ_ADMIN', roleLabel: 'LZ 系统管理员', studyScope: '全部 Study', status: 'Active', lastLogin: '2026-05-07' },
-  { name: '中央 CRC', email: 'lz-crc@demo.linzight', role: 'LZ_CRC', roleLabel: 'LZ CRC / 中央 CRC', studyScope: 'LGL-1111 / RWD-NMO-2026 / LZXK-01', status: 'Active', lastLogin: '2026-05-07' },
-  { name: 'CRF 管理员', email: 'crf-admin@demo.linzight', role: 'LZ_CRF_ADMIN', roleLabel: 'LZ CRF 管理员', studyScope: 'LGL-1111 / RWD-NMO-2026 / LZXK-01', status: 'Active', lastLogin: '2026-05-06' },
-  { name: '平台数据管理员', email: 'lz-dm@demo.linzight', role: 'LZ_DATA_MANAGER', roleLabel: 'LZ 数据管理员', studyScope: 'RWD-NMO-2026', status: 'Active', lastLogin: '2026-05-06' },
-  { name: '任约翰', email: 'pi@demo.linzight', role: 'STUDY_PI', roleLabel: '研究 PI / 医生', studyScope: 'LGL-1111', status: 'Active', lastLogin: '2026-05-07' },
-  { name: '林清妍', email: 'crc@demo.linzight', role: 'STUDY_CRC', roleLabel: '研究 CRC', studyScope: 'LGL-1111', status: 'Active', lastLogin: '2026-05-07' },
-  { name: '顾明远', email: 'config@demo.linzight', role: 'STUDY_CONFIG_ADMIN', roleLabel: '研究配置管理员', studyScope: 'LGL-1111 / RWD-NMO-2026', status: 'Active', lastLogin: '2026-05-06' },
-  { name: '陈序', email: 'dm@demo.linzight', role: 'STUDY_DATA_MANAGER', roleLabel: '研究数据管理员', studyScope: 'LGL-1111', status: 'Active', lastLogin: '2026-05-06' },
-  { name: '平台审计员', email: 'auditor@demo.linzight', role: 'LZ_AUDITOR', roleLabel: 'LZ 平台审计员', studyScope: '授权 Study', status: 'Pending', lastLogin: '2026-05-05' },
-  { name: '肺癌 PI', email: 'lung-pi@demo.linzight', role: 'STUDY_PI', roleLabel: '研究 PI / 医生', studyScope: 'LZXK-01', status: 'Active', lastLogin: '2026-05-07' },
-  { name: '肺癌 CRC', email: 'lung-crc@demo.linzight', role: 'STUDY_CRC', roleLabel: '研究 CRC', studyScope: 'LZXK-01', status: 'Active', lastLogin: '2026-05-07' },
-  { name: '肺癌配置管理员', email: 'lung-config@demo.linzight', role: 'STUDY_CONFIG_ADMIN', roleLabel: '研究配置管理员', studyScope: 'LZXK-01', status: 'Active', lastLogin: '2026-05-07' },
-  { name: '肺癌数据管理员', email: 'lung-dm@demo.linzight', role: 'STUDY_DATA_MANAGER', roleLabel: '研究数据管理员', studyScope: 'LZXK-01', status: 'Active', lastLogin: '2026-05-07' }
-];
 
 const lungStudyFields: SystemField[] = [
   { studyId: 'LZXK-01', id: 'LUNG-RESIST-001', name: '研究编号', type: 'Text', module: '肺癌研究基本信息', updatedAt: '2026-04-27', status: '启用', options: [], required: true, validationRule: 'required', conditionalLogic: '' },
@@ -3142,24 +3126,8 @@ function nextCrfDraftVersion(versions: StudyCrfVersionRecord[]) {
   return `V${major}.${minor + 1}`;
 }
 
-const systemStudyOptions = ['LGL-1111', 'RWD-NMO-2026', 'LZXK-01'];
-const systemStudyNames: Record<string, string> = {
-  'LGL-1111': '免疫相关性神经系统疾病 RWD 研究',
-  'RWD-NMO-2026': '视神经脊髓炎谱系疾病 RWD 研究',
-  'LZXK-01': '真实世界肺癌耐药研究'
-};
-const fallbackSystemStudies: SystemStudy[] = systemStudyOptions.map((studyId) => ({
-  id: studyId,
-  code: studyId,
-  name: systemStudyNames[studyId],
-  indication: studyId === 'LZXK-01' ? 'NSCLC / EGFR-TKI resistance' : 'Immune-related neurological diseases',
-  phase: 'RWD',
-  status: 'active',
-  owner_org: 'LinZight',
-  created_at: '2026-05-01T00:00:00Z',
-  updated_at: '2026-05-01T00:00:00Z',
-  systemAdminCount: 0
-}));
+const systemStudyOptions: string[] = [];
+const fallbackSystemStudies: SystemStudy[] = [];
 
 function formatAuditValue(value: unknown): string {
   if (value === null || value === undefined || value === '') return '-';
@@ -3183,20 +3151,20 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const { t } = useI18n();
   const lockedStudyId = getCurrentScopedStudyId();
   const [studyRows, setStudyRows] = useState<SystemStudy[]>(fallbackSystemStudies);
-  const allSystemStudyIds = useMemo(() => studyRows.map((study) => study.id), [studyRows]);
+  const allSystemStudyIds = useMemo(() => studyRows.filter((study) => study.status !== 'deleted').map((study) => study.id), [studyRows]);
   const isGlobalManagement = !lockedStudyId;
   const availableSystemStudies = useMemo(() => {
     if (lockedStudyId) return [lockedStudyId];
     const userStudyIds = currentUser?.studyScope?.studyIds;
     if (userStudyIds?.length) return userStudyIds;
-    return allSystemStudyIds.length ? allSystemStudyIds : systemStudyOptions;
+    return allSystemStudyIds;
   }, [allSystemStudyIds, currentUser, lockedStudyId]);
-  const [selectedSystemStudyId, setSelectedSystemStudyId] = useState(lockedStudyId ?? availableSystemStudies[0] ?? 'LGL-1111');
-  const scopedStudyId = availableSystemStudies.includes(selectedSystemStudyId) ? selectedSystemStudyId : availableSystemStudies[0] ?? 'LGL-1111';
+  const [selectedSystemStudyId, setSelectedSystemStudyId] = useState(lockedStudyId ?? availableSystemStudies[0] ?? '');
+  const scopedStudyId = availableSystemStudies.includes(selectedSystemStudyId) ? selectedSystemStudyId : availableSystemStudies[0] ?? '';
   const [systemQuery, setSystemQuery] = useState('');
   const [accountPage, setAccountPage] = useState(1);
   const [fieldPage, setFieldPage] = useState(1);
-  const [accountRows, setAccountRows] = useState<SystemAccount[]>(systemAccounts);
+  const [accountRows, setAccountRows] = useState<SystemAccount[]>([]);
   const [fieldRows, setFieldRows] = useState<SystemField[]>(systemFields);
   const [fieldEditor, setFieldEditor] = useState<SystemField | null>(null);
   const [crfVersionRows, setCrfVersionRows] = useState<StudyCrfVersionRecord[]>([]);
@@ -3313,7 +3281,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
 
   useEffect(() => {
     if (!availableSystemStudies.includes(selectedSystemStudyId)) {
-      setSelectedSystemStudyId(availableSystemStudies[0] ?? 'LGL-1111');
+      setSelectedSystemStudyId(availableSystemStudies[0] ?? '');
     }
   }, [availableSystemStudies, selectedSystemStudyId]);
 
@@ -3321,7 +3289,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     let ignore = false;
     void fetchStudies()
       .then((studies) => {
-        if (ignore || !studies.length) return;
+        if (ignore) return;
         setStudyRows((rows) =>
           studies.map((study) => ({
             ...study,
@@ -3336,18 +3304,18 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   }, []);
 
   useEffect(() => {
-    if (!scopedStudyId) return;
+    if (!isGlobalManagement && !scopedStudyId) return;
     let ignore = false;
     void fetchUsers(isGlobalManagement ? undefined : scopedStudyId)
       .then((users) => {
-        if (ignore || !users.length) return;
+        if (ignore) return;
         const accounts = users.flatMap((user) => {
           if (user.study_memberships?.length && user.role.startsWith('STUDY_')) {
             return user.study_memberships.map((membership) => accountFromApiUser(user, membership.study_id));
           }
           return [accountFromApiUser(user, scopedStudyId)];
         });
-        setAccountRows((rows) => accounts.reduce((nextRows, account) => upsertAccountRow(nextRows, account), rows));
+        setAccountRows(accounts);
       })
       .catch(() => undefined);
     return () => {
@@ -3460,11 +3428,15 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
 
   async function createSystemAccount() {
     const index = accountRows.length + 1;
-    const studyScope = scopedStudyId ?? 'LGL-1111';
+    const studyScope = scopedStudyId;
+    if (!studyScope) {
+      setSystemActionStatus('请先新建或选择 Study，再创建 Study 用户');
+      return;
+    }
     const suffix = Date.now().toString().slice(-6);
     const nextAccount: SystemAccount = {
       name: `新账户 ${index}`,
-      email: `study-crc-${studyScope.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${suffix}@demo.linzight`,
+      email: `study-crc-${studyScope.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${suffix}@linzight.com`,
       role: 'STUDY_CRC',
       roleLabel: '研究 CRC',
       studyScope,
@@ -3479,7 +3451,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         username: nextAccount.email,
         display_name: nextAccount.name,
         role: 'STUDY_CRC',
-        password: 'Demo1234!',
+        password: `LZ${suffix}2026`,
         status: 'active',
         study_id: studyScope,
         member_status: 'pending'
@@ -3534,6 +3506,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     try {
       const study = await deleteStudy(studyId);
       setStudyRows((rows) => rows.map((row) => (row.id === study.id ? { ...study, systemAdminCount: row.systemAdminCount } : row)));
+      setSelectedSystemStudyId((current) => (current === study.id ? '' : current));
       setSystemActionStatus(`Study 已标记为 deleted：${study.id}`);
     } catch {
       setSystemActionStatus('后端不可用或当前角色无 Study 删除权限');
@@ -4093,7 +4066,6 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
           <div>
             <span>Total Accounts</span>
             <strong>{accountRows.length}</strong>
-            <small>Demo</small>
           </div>
           <div>
             <span>Global Roles</span>
@@ -4105,7 +4077,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
           </div>
           <div>
             <span>Studies</span>
-            <strong>3</strong>
+            <strong>{studyRows.filter((study) => study.status !== 'deleted').length}</strong>
           </div>
         </div>
         <div className="system-global-actions">
@@ -4146,6 +4118,11 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
 	                </tr>
 	              </thead>
 	              <tbody>
+	                {!studyRegistryRows.length ? (
+	                  <tr>
+	                    <td colSpan={9}>{t('暂无 Study，请点击新建 Study 创建第一个研究。')}</td>
+	                  </tr>
+	                ) : null}
 	                {studyRegistryRows.map((study) => (
 	                  <tr key={study.studyId}>
 	                    <td><span className="status-pill status-pill--info">{study.studyId}</span></td>

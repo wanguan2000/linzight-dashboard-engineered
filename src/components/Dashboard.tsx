@@ -42,47 +42,43 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
   workflowOverall: number;
   omics: OmicsMetric;
 } {
-  if (!summary) {
+  if (!summary || summary.patient_count === 0) {
     return {
       metrics: [
-        { label: '已入组患者', value: '—', helper: '等待 patients API', icon: 'patients' },
-        { label: '样本统计', value: '—', helper: '等待 samples API', icon: 'samples' },
-        { label: '样本及检测', value: '—', helper: '等待 omics API', icon: 'lab' },
-        { label: '随访次数', value: '—', helper: '等待 visits API', icon: 'calendarCheck' },
-        { label: '临床数据完整性', value: '—', helper: '等待 clinical_data', icon: 'check' }
+        { label: '已入组患者', value: '0', helper: '暂无患者数据', icon: 'patients' },
+        { label: '样本统计', value: '0', helper: '暂无样本数据', icon: 'samples' },
+        { label: '样本及检测', value: '0', helper: '暂无检测数据', icon: 'lab' },
+        { label: '随访次数', value: '0', helper: '暂无访视数据', icon: 'calendarCheck' },
+        { label: '临床数据完整性', value: '0%', helper: '暂无 CRF 数据', icon: 'check', progress: 0 }
       ],
-      enrollmentValue: '—',
-      enrollmentDelta: '等待 FastAPI / SQLite',
+      enrollmentValue: '0',
+      enrollmentDelta: '暂无入组数据',
       journey: [
-        { label: '已识别', value: '—', icon: 'patients', theme: 'teal' },
-        { label: '已筛选', value: '—', icon: 'check', theme: 'teal' },
-        { label: '已入组', value: '—', icon: 'studies', theme: 'teal' },
-        { label: '治疗中', value: '—', icon: 'lock', theme: 'blue' },
-        { label: '随访中', value: '—', icon: 'activity', theme: 'blue' },
-        { label: '已完成', value: '—', icon: 'check', theme: 'blue' }
+        { label: '已识别', value: '0', icon: 'patients', theme: 'teal' },
+        { label: '已筛选', value: '0', icon: 'check', theme: 'teal' },
+        { label: '已入组', value: '0', icon: 'studies', theme: 'teal' },
+        { label: '治疗中', value: '0', icon: 'lock', theme: 'blue' },
+        { label: '随访中', value: '0', icon: 'activity', theme: 'blue' },
+        { label: '已完成', value: '0', icon: 'check', theme: 'blue' }
       ],
-      journeyRateValues: ['—', '—', '—', '—', '—'],
+      journeyRateValues: ['0%', '0%', '0%', '0%', '0%'],
       cohort: [
-        { label: '患者总数', value: '—', icon: 'patients', drillable: true },
-        { label: 'NPSLE', value: '—', icon: 'activity', drillable: true },
-        { label: 'Non-NPSLE', value: '—', icon: 'patients', drillable: true },
-        { label: 'MS / NMOSD', value: '—', icon: 'dna', drillable: true },
-        { label: 'HC', value: '—', icon: 'check' },
-        { label: '平均完整度', value: '—', icon: 'visits', drillable: true }
+        { label: '患者总数', value: '0', icon: 'patients', drillable: true },
+        { label: '平均完整度', value: '0%', icon: 'visits', drillable: true }
       ],
       workflow: [
-        { label: '患者筛选', icon: 'patients', count: '—', percent: 0, status: 'empty' },
-        { label: '知情同意', icon: 'studies', count: '—', percent: 0, status: 'empty' },
-        { label: 'CRF 录入', icon: 'crf', count: '—', percent: 0, status: 'empty' },
-        { label: '样本采集', icon: 'samples', count: '—', percent: 0, status: 'empty' },
-        { label: '组学归档', icon: 'activity', count: '—', percent: 0, status: 'empty' },
-        { label: '导出审计', icon: 'shield', count: '—', percent: 0, status: 'empty' }
+        { label: '患者筛选', icon: 'patients', count: '0 / 0', percent: 0, status: 'empty' },
+        { label: '知情同意', icon: 'studies', count: '0 / 0', percent: 0, status: 'empty' },
+        { label: 'CRF 录入', icon: 'crf', count: '0 / 0', percent: 0, status: 'empty' },
+        { label: '样本采集', icon: 'samples', count: '0 / 0', percent: 0, status: 'empty' },
+        { label: '组学归档', icon: 'activity', count: '0 / 0', percent: 0, status: 'empty' },
+        { label: '导出审计', icon: 'shield', count: '0 / 0', percent: 0, status: 'empty' }
       ],
       workflowOverall: 0,
       omics: [
-        { label: '已处理样本', value: '—', delta: '等待 API' },
-        { label: '检测归档率', value: '—', delta: '等待 API' },
-        { label: '检测项目', value: '—' }
+        { label: '已处理样本', value: '0', delta: '暂无样本' },
+        { label: '检测归档率', value: '0%', delta: '0/0' },
+        { label: '检测项目', value: '0' }
       ]
     };
   }
@@ -107,14 +103,14 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
 
   return {
     metrics: [
-      { label: '已入组患者', value: formatCount(patientCount), helper: '来自 patients 表', icon: 'patients' },
-      { label: '样本统计', value: formatCount(summary.sample_count), helper: '来自 samples 表', icon: 'samples' },
+      { label: '已入组患者', value: formatCount(patientCount), helper: '已连接 patients 表', icon: 'patients' },
+      { label: '样本统计', value: formatCount(summary.sample_count), helper: '已连接 samples 表', icon: 'samples' },
       { label: '样本及检测', value: formatCount(summary.omics_count), helper: `${summary.completed_omics_count} 项已归档`, icon: 'lab' },
-      { label: '随访次数', value: formatCount(visitCount), helper: '来自 visits 表', icon: 'calendarCheck' },
+      { label: '随访次数', value: formatCount(visitCount), helper: '已连接 visits 表', icon: 'calendarCheck' },
       { label: '临床数据完整性', value: `${summary.data_completeness_avg}%`, helper: 'clinical_data 平均值', icon: 'check', progress: completeness }
     ],
     enrollmentValue: formatCount(patientCount),
-    enrollmentDelta: '来自 FastAPI / SQLite',
+    enrollmentDelta: '来自后端业务数据',
     journey: [
       { label: '已识别', value: formatCount(patientCount), icon: 'patients', theme: 'teal' },
       { label: '已筛选', value: formatCount(patientCount), icon: 'check', theme: 'teal' },
@@ -145,7 +141,7 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
     ],
     workflowOverall: overall,
     omics: [
-      { label: '已处理样本', value: formatCount(summary.sample_count), delta: 'SQLite' },
+      { label: '已处理样本', value: formatCount(summary.sample_count), delta: '后端' },
       { label: '检测归档率', value: `${completedOmicsPercent}%`, delta: `${summary.completed_omics_count}/${summary.omics_count}` },
       { label: '检测项目', value: formatCount(summary.omics_count) }
     ]
@@ -233,13 +229,13 @@ export function Dashboard({ currentUser, selectedModule, selectedPatient, onNavi
       <section className="charts-grid" aria-label="看板可视化">
         <EnrollmentTrendCard enrolled={dashboardData.enrollmentValue} delta={dashboardData.enrollmentDelta} />
         <PatientJourneyCard stages={dashboardData.journey} rates={dashboardData.journeyRateValues} onOpenPatients={() => onNavigate('患者队列管理')} />
-        <OmicsTatCard stats={dashboardData.omics} tatValue={summary ? 'API' : '2.6'} tatUnit={summary ? '' : '天'} tatLabel={summary ? '实时统计' : '中位 TAT'} onOpenLab={() => onNavigate('样本及检测')} />
+        <OmicsTatCard stats={dashboardData.omics} tatValue={summary ? String(summary.completed_omics_count) : '0'} tatUnit="" tatLabel={summary ? '已归档检测' : '暂无检测'} onOpenLab={() => onNavigate('样本及检测')} />
       </section>
 
       <section className="bottom-grid" aria-label="运营概览">
         <CohortOverviewCard stats={dashboardData.cohort} onOpenCohort={() => onNavigate('患者队列管理')} />
         <WorkflowProgressCard items={dashboardData.workflow} overall={dashboardData.workflowOverall} />
-        <SmartSummaryCard onViewInsights={() => onNavigate('数据分析')} />
+        <SmartSummaryCard summary={summary} onViewInsights={() => onNavigate('数据分析')} />
       </section>
 
       <QuickActions

@@ -468,6 +468,7 @@ async function runSmoke() {
       username: `blocked-crc-${Date.now()}@demo.linzight`,
       display_name: 'Blocked CRC',
       role: 'STUDY_CRC',
+      password: 'Demo1234!',
       study_id: 'LZXK-01',
     },
     expectedStatus: 403,

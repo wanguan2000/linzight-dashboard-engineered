@@ -43,7 +43,7 @@ for (const path of [
   'docs/07-production-release-candidate-workflows.md',
   'docs/08-permission-matrix.md',
   'docs/09-uat-release-package.md',
-  'docs/release-notes-v1.0.0.md',
+  'docs/release-notes-v1.0.1.md',
   'docs/deployment-ops.md',
   'docs/frontend-function-gap-audit.md',
   'docs/frontend-html-export.md',

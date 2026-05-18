@@ -11,7 +11,7 @@ import time
 from typing import Any
 
 TOKEN_TTL_SECONDS = int(os.getenv("LINZIGHT_TOKEN_TTL_SECONDS", str(12 * 60 * 60)))
-TOKEN_ISSUER = "linzight-demo-api"
+TOKEN_ISSUER = "linzight-rws-api"
 DEFAULT_DEMO_PASSWORD = os.getenv("LINZIGHT_DEMO_PASSWORD", "Demo1234!")
 PBKDF2_ITERATIONS = int(os.getenv("LINZIGHT_PASSWORD_ITERATIONS", "210000"))
 PASSWORD_POLICY_MESSAGE = "password must be at least 8 characters and include letters and numbers"

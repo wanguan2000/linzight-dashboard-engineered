@@ -68,6 +68,15 @@ export type ApiLoginResponse = {
   user: ApiUser;
 };
 
+export type ApiPasswordResetRequest = {
+  username: string;
+};
+
+export type ApiPasswordResetConfirm = {
+  token: string;
+  password: string;
+};
+
 export type ApiPatient = {
   id: string;
   study_id: string;

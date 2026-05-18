@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { summaryItems } from '../data/dashboard';
 import { useI18n } from '../i18n/I18nProvider';
+import type { ApiAnalysisSummary } from '../services/contracts';
 import { Card } from './Card';
 import { Icon } from './Icon';
 
@@ -18,8 +19,9 @@ function highlightText(text: string, emphasis: string[] = []): ReactNode[] {
   });
 }
 
-export function SmartSummaryCard({ onViewInsights = () => undefined }: { onViewInsights?: () => void }) {
+export function SmartSummaryCard({ summary, onViewInsights = () => undefined }: { summary?: ApiAnalysisSummary | null; onViewInsights?: () => void }) {
   const { locale, t } = useI18n();
+  const hasData = Boolean(summary && summary.patient_count > 0);
 
   return (
     <Card
@@ -31,7 +33,7 @@ export function SmartSummaryCard({ onViewInsights = () => undefined }: { onViewI
       }
     >
       <div className="summary-list">
-        {summaryItems.map((item) => (
+        {(hasData ? summaryItems : [{ marker: '0', theme: 'blue', text: '暂无可生成洞察的数据。', emphasis: [] }]).map((item) => (
           <div className="summary-list__row" key={item.text}>
             <span className={`summary-list__marker summary-list__marker--${item.theme}`}>{locale === 'zh-CN' ? item.marker : t(item.marker)}</span>
             <p>{locale === 'zh-CN' ? highlightText(item.text, item.emphasis) : t(item.text)}</p>

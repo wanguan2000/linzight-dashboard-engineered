@@ -1,17 +1,6 @@
-import {
-  followUpRecords,
-  omicsRecords,
-  samples,
-  visits,
-  type ConsentRecord,
-  type FollowUpRecord,
-  type OmicsRecord,
-  type SampleRecord,
-  type StudyVisitPlanRecord,
-  type VisitRecord
-} from '../data/operations';
+import type { ConsentRecord, FollowUpRecord, OmicsRecord, SampleRecord, StudyVisitPlanRecord, VisitRecord } from '../data/operations';
 import { activeStudyStorageKey, authStorageKey, normalizeAuthenticatedUser, roleLabels, userCanAccessStudy, type AuthenticatedUser } from '../data/auth';
-import { patientRecords, type OmicsStatus, type PatientRecord, type SampleCollection } from '../data/patientCohort';
+import type { OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
 import type {
   ApiAnalysisSummary,
   ApiApprovalRequest,
@@ -27,6 +16,8 @@ import type {
   ApiLoginResponse,
   ApiOmics,
   ApiPanorama,
+  ApiPasswordResetConfirm,
+  ApiPasswordResetRequest,
   ApiPatient,
   ApiQualityIssue,
   ApiSample,
@@ -141,12 +132,12 @@ async function putJson<T>(path: string, body: unknown, headers?: Record<string, 
   });
 }
 
-async function requestJson<T>(path: string, init?: FetchInit): Promise<T> {
+async function requestJson<T>(path: string, init?: FetchInit, timeoutMs = 900): Promise<T> {
   let lastError: unknown;
 
   for (const base of apiBases) {
     const controller = new window.AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 900);
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const headers = new window.Headers(init?.headers);
@@ -204,6 +195,22 @@ export async function loginWithBackend(username: string, password: string): Prom
     studyMemberships: response.user.study_memberships ?? [],
     initials
   };
+}
+
+export async function requestPasswordReset(payload: ApiPasswordResetRequest): Promise<{ status: string; email: string }> {
+  return requestJson<{ status: string; email: string }>(
+    '/auth/password-reset/request',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    },
+    15000
+  );
+}
+
+export async function confirmPasswordReset(payload: ApiPasswordResetConfirm): Promise<{ status: string }> {
+  return postJson<{ status: string }>('/auth/password-reset/confirm', payload);
 }
 
 export async function fetchCurrentUser(): Promise<AuthenticatedUser> {
@@ -1049,13 +1056,13 @@ export function filterRecordsByCurrentStudyScope<T extends { studyId?: string }>
 }
 
 function fallbackDemoDataset(): DemoDataset {
-  return filterDatasetByStudyScope({
-    patients: patientRecords,
-    samples,
-    omics: omicsRecords,
-    visits,
-    followUps: followUpRecords
-  });
+  return {
+    patients: [],
+    samples: [],
+    omics: [],
+    visits: [],
+    followUps: []
+  };
 }
 
 function filterDatasetByStudyScope(dataset: DemoDataset): DemoDataset {
@@ -1121,10 +1128,6 @@ export async function fetchDemoDataset(): Promise<DemoDataset> {
       getJson<ApiFollowUpRecord[]>(currentStudyBusinessPath('follow-up-records'))
     ]);
 
-    if (!apiPatients.length) {
-      return fallbackDemoDataset();
-    }
-
     return filterDatasetByStudyScope({
       patients: apiPatients.map((patient) => toPatientRecord(patient, apiSamples, apiOmics)),
       samples: apiSamples.map(toSampleRecord),
@@ -1141,7 +1144,7 @@ export async function fetchSamples(): Promise<SampleRecord[]> {
   try {
     return filterRecordsByCurrentStudyScope((await getJson<ApiSample[]>(currentStudyBusinessPath('samples'))).map(toSampleRecord));
   } catch {
-    return filterRecordsByCurrentStudyScope(samples);
+    return [];
   }
 }
 
@@ -1149,7 +1152,7 @@ export async function fetchOmicsRecords(): Promise<OmicsRecord[]> {
   try {
     return filterRecordsByCurrentStudyScope((await getJson<ApiOmics[]>(currentStudyBusinessPath('omics'))).map(toOmicsRecord));
   } catch {
-    return filterRecordsByCurrentStudyScope(omicsRecords);
+    return [];
   }
 }
 
@@ -1157,7 +1160,7 @@ export async function fetchVisits(): Promise<VisitRecord[]> {
   try {
     return filterRecordsByCurrentStudyScope((await getJson<ApiVisit[]>(currentStudyBusinessPath('visits'))).map(toVisitRecord));
   } catch {
-    return filterRecordsByCurrentStudyScope(visits);
+    return [];
   }
 }
 
@@ -1165,7 +1168,7 @@ export async function fetchFollowUpRecords(): Promise<FollowUpRecord[]> {
   try {
     return filterRecordsByCurrentStudyScope((await getJson<ApiFollowUpRecord[]>(currentStudyBusinessPath('follow-up-records'))).map(toFollowUpRecord));
   } catch {
-    return filterRecordsByCurrentStudyScope(followUpRecords);
+    return [];
   }
 }
 

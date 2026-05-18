@@ -18,14 +18,13 @@ import {
   authStorageKey,
   isPlatformRole,
   normalizeAuthenticatedUser,
-  studyOptions,
   userCanAccessStudy,
   type AuthenticatedUser
 } from './data/auth';
 import { navItems } from './data/dashboard';
 import type { PatientRecord } from './data/patientCohort';
 import { useI18n } from './i18n/I18nProvider';
-import { authTokenStorageKey, fetchCurrentUser, logoutFromBackend } from './services/api';
+import { authTokenStorageKey, fetchCurrentUser, fetchStudies, logoutFromBackend } from './services/api';
 
 declare global {
   interface Window {
@@ -179,6 +178,7 @@ export default function App() {
   const [activeStudyId, setActiveStudyId] = useState<string | undefined>(() => getInitialActiveStudyId(getInitialUser()));
   const [activeNavIndex, setActiveNavIndex] = useState(getInitialNavIndex);
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
+  const [runtimeStudyOptions, setRuntimeStudyOptions] = useState<Array<{ id: string; name: string }>>([]);
   const hasVerifiedSession = useRef(false);
   const visibleNavItems = useMemo(() => {
     const items = navItems.filter((item) => canAccessModule(currentUser, item.label, activeStudyId));
@@ -216,6 +216,12 @@ export default function App() {
     activeModule === '首页工作台' && currentUser
       ? `欢迎回来，${currentUser.name}`
       : topbarCopy.title;
+  const topbarStudyOptions = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.studyScope?.scopeType === 'all_studies') return runtimeStudyOptions;
+    const userStudyIds = accessibleStudyIdsForUser(currentUser);
+    return userStudyIds.map((id) => runtimeStudyOptions.find((study) => study.id === id) ?? { id, name: id });
+  }, [currentUser, runtimeStudyOptions]);
 
   function setActiveModule(label: string) {
     const index = navItems.findIndex((item) => item.label === label);
@@ -225,6 +231,26 @@ export default function App() {
   useEffect(() => {
     syncModuleRoute(activeModule);
   }, [activeModule]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setRuntimeStudyOptions([]);
+      return undefined;
+    }
+    let cancelled = false;
+    fetchStudies()
+      .then((studies) => {
+        if (!cancelled) {
+          setRuntimeStudyOptions(studies.filter((study) => study.status !== 'deleted').map((study) => ({ id: study.id, name: study.name })));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRuntimeStudyOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
 
   useEffect(() => {
     let cancelled = false;
@@ -393,7 +419,7 @@ export default function App() {
           subtitle={topbarCopy.subtitle}
           currentUser={currentUser}
           activeStudyId={activeStudyId}
-          studyOptions={studyOptions.filter((study) => accessibleStudyIdsForUser(currentUser).includes(study.id))}
+          studyOptions={topbarStudyOptions}
           onStudyChange={enterStudyWorkspace}
           onGlobalManagement={isPlatformRole(currentUser) ? enterGlobalManagement : undefined}
           onLogout={handleLogout}

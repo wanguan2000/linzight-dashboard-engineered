@@ -96,7 +96,7 @@ async function login(page, role) {
   if (role.entry === 'admin') {
     await page.getByRole('button', { name: /LZ 系统管理|LZ System/i }).click();
   }
-  await page.getByLabel(/角色账号|Role account/i).selectOption(role.username);
+  await page.getByLabel(/账号邮箱|Account email|email/i).fill(role.username);
   await page.getByLabel(/密码|password/i).fill('Demo1234!');
   await page.getByRole('button', { name: /进入系统|Enter system/i }).click();
   const studySelector = page.getByLabel(/选择 Study Workspace|Select Study Workspace/i);

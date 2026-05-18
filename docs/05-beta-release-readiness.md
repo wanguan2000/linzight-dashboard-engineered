@@ -4,7 +4,7 @@
 
 更新：2026-05-12 增加 `npm run release:check`、`docs/release-checklist.md`、`npm run export:openapi`、`Dockerfile.frontend`、`Dockerfile.backend`、`docker-compose.yml`、`docs/deployment-ops.md` 和 Demo SQLite 备份恢复脚本，CI 会在 lint/build/API smoke/OpenAPI export/HTML export/UI smoke 后执行 release gate，并上传 `exports/html/` 静态 HTML artifact。后端默认数据库已切换为 PostgreSQL；`npm run smoke:api`、`npm run smoke:ui` 和 `.github/workflows/ci.yml` 仍可自动启动临时 FastAPI + SQLite 实例并验证 Study 隔离、权限矩阵、用户创建、CRF 字段写入、CRF 版本迁移审批/发布、知情同意文件上传、样本/组学创建、导出权限和审计日志；静态 UI smoke 会检查 8 个 HTML 导出页面、关键按钮文案和 CRF migration approval 文案。
 
-本文记录从 `v0.0.1-beta.0` 到 `v1.0.0` GA 功能测试包的工程验证结果。当前结论是：项目适合发布为 GA 功能测试、演示和测试数据填写版本；真实患者生产上线前仍必须完成生产级身份源、对象存储、PostgreSQL RLS、备份恢复演练和合规签字。
+本文记录从 `v0.0.1-beta.0` 到 `v1.0.1` GA 功能测试包的工程验证结果。当前结论是：项目适合发布为 GA 功能测试和测试数据填写版本；正式 Docker 启动为空库，仅保留首个 LZ 系统管理员。真实患者生产上线前仍必须完成生产级身份源、对象存储、PostgreSQL RLS、备份恢复演练和合规签字。
 
 ## 已完成检查
 

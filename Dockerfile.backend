@@ -3,7 +3,8 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DATABASE_URL=postgresql+psycopg2://linzight:linzight@postgres:5432/linzight \
-    LINZIGHT_UPLOADS_DIR=/uploads
+    LINZIGHT_UPLOADS_DIR=/uploads \
+    LINZIGHT_INITIAL_ADMIN_EMAIL=guan.wang@linzight.com
 
 WORKDIR /app
 

@@ -2,11 +2,11 @@
 
 ## 当前版本
 
-`v1.0.0`
+`v1.0.1`
 
 ## 当前状态
 
-项目处于 `v1.0.0` GA 功能测试发布阶段。前端为 Vite + React + TypeScript dashboard，后端为可选 FastAPI Demo API，默认 PostgreSQL；临时 smoke、备份恢复和 SQLite 导出脚本可显式使用 SQLite URL。前端在 API 不可用时会回退到本地 Demo 数据；`npm run export:html` 可生成八个可直接打开的交互式 HTML 页面。本版本可用于正式功能测试、演示和用户自行填写测试数据；真实患者生产上线仍需集中身份源、生产对象存储、PostgreSQL RLS、备份恢复演练和合规签字。
+项目处于 `v1.0.1` GA 功能测试发布阶段。前端为 Vite + React + TypeScript dashboard，后端为可选 FastAPI API，默认 PostgreSQL；临时 smoke、备份恢复和 SQLite 导出脚本可显式使用 SQLite URL。正式 Docker 启动只创建首个 LZ 系统管理员，不再自动 seed Study、患者或检测数据；`npm run export:html` 可生成八个可直接打开的交互式 HTML 页面。本版本可用于正式功能测试和用户自行填写测试数据；真实患者生产上线仍需集中身份源、生产对象存储、PostgreSQL RLS、备份恢复演练和合规签字。
 
 ## 已实现功能
 

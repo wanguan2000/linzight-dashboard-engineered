@@ -433,6 +433,16 @@ def initialize_schema() -> None:
               updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              token_hash TEXT NOT NULL UNIQUE,
+              expires_at TEXT NOT NULL,
+              used_at TEXT,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS role_permissions (
               role TEXT NOT NULL,
               resource TEXT NOT NULL,
@@ -740,11 +750,11 @@ def initialize_schema() -> None:
             CREATE INDEX IF NOT EXISTS idx_sites_study_id ON sites(study_id);
             CREATE INDEX IF NOT EXISTS idx_site_users_study_site ON site_users(study_id, site_id);
             CREATE INDEX IF NOT EXISTS idx_data_queries_study_id ON data_queries(study_id);
+            CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
             """
         )
         migrate_study_schema(conn)
         migrate_json_storage(conn)
-        seed_default_study(conn)
         seed_default_field_permissions(conn)
         sync_study_configurations(conn)
         record_schema_version(conn)

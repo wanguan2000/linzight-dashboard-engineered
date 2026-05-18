@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +9,17 @@ const frontendUrl = process.env.DOCKER_SMOKE_FRONTEND_URL || 'http://localhost:5
 const shouldStop = process.env.DOCKER_SMOKE_DOWN === '1';
 const buildTimeoutMs = Number(process.env.DOCKER_SMOKE_BUILD_TIMEOUT_MS || 180000);
 const cachedImageNames = ['linzight-dashboard-engineered-backend:latest', 'linzight-dashboard-engineered-frontend:latest'];
+
+function localEnvValue(name) {
+  if (process.env[name]) return process.env[name];
+  const envPath = resolve(repoRoot, '.env');
+  if (!existsSync(envPath)) return undefined;
+  const match = readFileSync(envPath, 'utf8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line && !line.startsWith('#') && line.startsWith(`${name}=`));
+  return match?.slice(name.length + 1);
+}
 
 function run(args, options = {}) {
   const result = spawnSync('docker', args, {
@@ -67,16 +79,23 @@ async function waitForHealth() {
 }
 
 async function verifyBackendLogin() {
+  const username = localEnvValue('LINZIGHT_INITIAL_ADMIN_EMAIL') || 'guan.wang@linzight.com';
+  const password = localEnvValue('LINZIGHT_INITIAL_ADMIN_PASSWORD') || 'ChangeMe1234!';
   const response = await fetch(`${backendUrl}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'lung-crc@demo.linzight', password: 'Demo1234!' }),
+    body: JSON.stringify({ username, password }),
   });
   const raw = await response.text();
   assert(response.ok, `Docker backend login failed ${response.status}: ${raw}`);
   const data = JSON.parse(raw);
   assert(data.access_token, 'Docker backend login did not return an access token');
-  assert(data.user?.study_scope?.studyIds?.includes('LZXK-01'), 'Docker backend login did not preserve LZXK-01 study scope');
+  assert(data.user?.role === 'LZ_ADMIN', 'Docker backend login did not return the LZ system administrator');
+  const patients = await fetch(`${backendUrl}/global/patient-index`, {
+    headers: { Authorization: `Bearer ${data.access_token}` },
+  });
+  const patientRows = JSON.parse(await patients.text());
+  assert(Array.isArray(patientRows) && patientRows.length === 0, 'Docker GA bootstrap should not seed patient data');
 }
 
 async function verifyFrontend() {
@@ -100,7 +119,7 @@ async function verifyFrontend() {
 
 async function runSmoke() {
   run(['version']);
-  run(['compose', 'config']);
+  run(['compose', 'config'], { capture: true });
   const usingCachedImages = buildOrUseCachedImages();
   run(usingCachedImages ? ['compose', 'up', '-d', '--no-build'] : ['compose', 'up', '-d']);
   await waitForHealth();

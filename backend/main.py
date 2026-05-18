@@ -5,7 +5,8 @@ import hashlib
 import io
 import json
 import os
-from datetime import date, timedelta
+import secrets
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -50,9 +51,11 @@ try:
         sync_study_configurations,
         utc_now,
     )
+    from .email_service import send_email, smtp_configured
     from .permissions import can_access_study, first_accessible_study_id, get_user_study_scope, permission_matrix, role_can, user_role
+    from .provisioning import ensure_initial_admin
     from .security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, UserUpdate, VisitUpdate
+    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PasswordResetConfirm, PasswordResetRequest, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, UserUpdate, VisitUpdate
     from .seed import seed_database
 except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from database import (
@@ -90,12 +93,15 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         sync_study_configurations,
         utc_now,
     )
+    from email_service import send_email, smtp_configured
     from permissions import can_access_study, first_accessible_study_id, get_user_study_scope, permission_matrix, role_can, user_role
+    from provisioning import ensure_initial_admin
     from security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, UserUpdate, VisitUpdate
+    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PasswordResetConfirm, PasswordResetRequest, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, UserUpdate, VisitUpdate
     from seed import seed_database
 
-app = FastAPI(title="LinZight RWS Demo API", version="1.0.0")
+app = FastAPI(title="LinZight RWS EDC API", version="1.0.1")
+PASSWORD_RESET_TTL_SECONDS = int(os.getenv("LINZIGHT_PASSWORD_RESET_TTL_SECONDS", str(30 * 60)))
 
 LEGACY_ROLE_BY_ROLE_CODE = {
     "LZ_ADMIN": "sys_admin",
@@ -215,6 +221,7 @@ virus_scanner = configured_virus_scanner()
 @app.on_event("startup")
 def on_startup() -> None:
     initialize_schema()
+    ensure_initial_admin()
     upgrade_legacy_demo_passwords()
 
 
@@ -940,7 +947,7 @@ def create_planned_visits_for_patient(
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "service": "linzight-demo-api"}
+    return {"status": "ok", "service": "linzight-rws-api"}
 
 
 @app.post("/seed")
@@ -965,6 +972,68 @@ def login(payload: LoginRequest) -> dict[str, Any]:
         user = load_user(conn, row["id"])
         insert_audit(conn, user, "login", "users", user["id"], after={"username": user["username"]}, study_id=first_accessible_study_id(conn, user) or "LGL-1111")
         return {"access_token": create_access_token(user["id"], user_role(user)), "token_type": "bearer", "user": user}
+
+
+def password_reset_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+@app.post("/auth/password-reset/request")
+def request_password_reset(payload: PasswordResetRequest) -> dict[str, str]:
+    username = payload.username.strip().lower()
+    email_status = "not_configured"
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE lower(username) = ?", (username,)).fetchone()
+        if row and row["status"] == "active":
+            now = utc_now()
+            token = secrets.token_urlsafe(32)
+            expires_at = (datetime.now(timezone.utc) + timedelta(seconds=PASSWORD_RESET_TTL_SECONDS)).isoformat(timespec="seconds")
+            conn.execute(
+                """
+                INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used_at, created_at)
+                VALUES (?, ?, ?, ?, NULL, ?)
+                """,
+                (f"PRT-{uuid4().hex[:12].upper()}", row["id"], password_reset_token_hash(token), expires_at, now),
+            )
+            public_url = os.getenv("LINZIGHT_PUBLIC_APP_URL", "http://127.0.0.1:5173").rstrip("/")
+            reset_url = f"{public_url}/?reset_token={token}"
+            body = "\n".join(
+                [
+                    "LinZight RWS EDC password reset",
+                    "",
+                    "Use the link below to set a new password. The link expires shortly.",
+                    reset_url,
+                    "",
+                    "If you did not request this change, ignore this email.",
+                ]
+            )
+            email_status = send_email(row["username"], "LinZight password reset", body)["status"]
+        elif smtp_configured():
+            email_status = "sent"
+    return {"status": "accepted", "email": email_status}
+
+
+@app.post("/auth/password-reset/confirm")
+def confirm_password_reset(payload: PasswordResetConfirm) -> dict[str, str]:
+    if not password_meets_policy(payload.password):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=PASSWORD_POLICY_MESSAGE)
+    token_hash = password_reset_token_hash(payload.token)
+    now = utc_now()
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM password_reset_tokens
+            WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?
+            """,
+            (token_hash, now),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid or expired password reset token")
+        conn.execute("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?", (hash_password(payload.password), now, row["user_id"]))
+        conn.execute("UPDATE password_reset_tokens SET used_at = ? WHERE id = ?", (now, row["id"]))
+        user = row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (row["user_id"],)))
+        insert_audit(conn, user, "password_reset", "users", user["id"], after={"username": user["username"]}, study_id=first_accessible_study_id(conn, user) or "GLOBAL")
+    return {"status": "updated"}
 
 
 @app.get("/auth/me")

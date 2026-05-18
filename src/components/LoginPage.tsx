@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import linzightLogo from '../assets/linzight-logo.svg';
-import { accessibleStudyIdsForUser, authenticateDemoUser, demoUsers, isPlatformRole, studyOptions, type AuthenticatedUser } from '../data/auth';
-import { loginWithBackend } from '../services/api';
+import { accessibleStudyIdsForUser, isPlatformRole, studyOptions, type AuthenticatedUser } from '../data/auth';
+import { confirmPasswordReset, loginWithBackend, requestPasswordReset } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import { Icon } from './Icon';
 import { LanguageToggle } from './LanguageToggle';
@@ -15,33 +15,23 @@ type LoginEntryMode = 'study' | 'lz';
 export function LoginPage({ onAuthenticated }: LoginPageProps) {
   const { t } = useI18n();
   const [entryMode, setEntryMode] = useState<LoginEntryMode>('study');
-  const [username, setUsername] = useState('lung-crc@demo.linzight');
-  const [password, setPassword] = useState('Demo1234!');
+  const [username, setUsername] = useState('guan.wang@linzight.com');
+  const [password, setPassword] = useState('');
+  const [resetEmail, setResetEmail] = useState('guan.wang@linzight.com');
+  const [resetToken, setResetToken] = useState(() => (typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('reset_token') ?? ''));
+  const [newPassword, setNewPassword] = useState('');
+  const [resetMode, setResetMode] = useState(() => Boolean(resetToken));
+  const [resetStatus, setResetStatus] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingUser, setPendingUser] = useState<AuthenticatedUser | null>(null);
   const [pendingStudyId, setPendingStudyId] = useState('LZXK-01');
 
-  const availableUsers = useMemo(() => {
-    if (entryMode === 'lz') return demoUsers.filter((user) => user.role.startsWith('LZ_'));
-    return demoUsers;
-  }, [entryMode]);
-
-  const selectedUser = useMemo(
-    () => availableUsers.find((user) => user.username === username) ?? availableUsers[0] ?? demoUsers[0],
-    [availableUsers, username]
-  );
   const pendingStudyOptions = useMemo(
     () => accessibleStudyIdsForUser(pendingUser).map((id) => studyOptions.find((study) => study.id === id) ?? { id, name: id }),
     [pendingUser]
   );
   const pendingStudy = pendingStudyOptions.find((study) => study.id === pendingStudyId) ?? pendingStudyOptions[0] ?? studyOptions[0];
-
-  useEffect(() => {
-    if (!availableUsers.some((user) => user.username === username)) {
-      setUsername(availableUsers[0]?.username ?? demoUsers[0].username);
-    }
-  }, [availableUsers, username]);
 
   useEffect(() => {
     setPendingUser(null);
@@ -54,6 +44,35 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
     }
   }, [pendingStudyId, pendingStudyOptions]);
 
+  async function handleResetRequest() {
+    setResetStatus(t('重置邮件正在发送...'));
+    setError('');
+    try {
+      await requestPasswordReset({ username: resetEmail });
+      setResetStatus(t('如果账号存在，系统会发送密码重置邮件。'));
+    } catch {
+      setResetStatus(t('邮件服务暂不可用，请联系 LZ 系统管理员。'));
+    }
+  }
+
+  async function handleResetConfirm() {
+    if (!resetToken) {
+      setResetStatus(t('缺少密码重置 token。'));
+      return;
+    }
+    setResetStatus(t('密码正在更新...'));
+    setError('');
+    try {
+      await confirmPasswordReset({ token: resetToken, password: newPassword });
+      setResetStatus(t('密码已更新，请使用新密码登录。'));
+      setResetMode(false);
+      setNewPassword('');
+      setResetToken('');
+    } catch {
+      setResetStatus(t('密码重置链接无效或已过期。'));
+    }
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (pendingUser) {
@@ -62,7 +81,7 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
     }
 
     setIsSubmitting(true);
-    const user = await loginWithBackend(username, password).catch(() => authenticateDemoUser(username, password));
+    const user = await loginWithBackend(username, password).catch(() => null);
     setIsSubmitting(false);
     if (!user) {
       setError(t('账号或密码不正确，或账号已被禁用。'));
@@ -98,7 +117,7 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
         <div className="login-panel__brand">
           <img src={linzightLogo} alt="LinZight" />
           <div className="login-panel__tools">
-            <span>RWS EDC Demo</span>
+            <span>RWS EDC</span>
             <LanguageToggle />
           </div>
         </div>
@@ -120,7 +139,7 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
           </div>
           <div>
             <h2>{t('账号登录')}</h2>
-            <p>{t('开发阶段 Demo 认证')}</p>
+            <p>{t('正式系统认证')}</p>
           </div>
         </header>
 
@@ -164,17 +183,31 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
           </div>
         )}
 
-        {!pendingUser ? (
+        {resetMode ? (
+          <div className="login-reset-panel">
+            <label>
+              <span>{t('账号邮箱')}</span>
+              <input type="email" value={resetEmail} onChange={(event) => setResetEmail(event.target.value)} autoComplete="email" />
+            </label>
+            {resetToken ? (
+              <label>
+                <span>{t('新密码')}</span>
+                <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" />
+              </label>
+            ) : null}
+            <button className="module-link-button module-link-button--primary" type="button" onClick={() => (resetToken ? void handleResetConfirm() : void handleResetRequest())}>
+              {resetToken ? t('修改密码') : t('发送重置邮件')}
+            </button>
+            <button className="module-link-button" type="button" onClick={() => setResetMode(false)}>
+              {t('返回登录')}
+            </button>
+            {resetStatus ? <p className="login-reset-status">{resetStatus}</p> : null}
+          </div>
+        ) : !pendingUser ? (
           <>
             <label>
-              <span>{t('角色账号')}</span>
-              <select value={username} onChange={(event) => setUsername(event.target.value)}>
-                {availableUsers.map((user) => (
-                  <option value={user.username} key={user.id}>
-                    {t(user.name)} · {t(user.roleLabel)} · {user.username}
-                  </option>
-                ))}
-              </select>
+              <span>{t('账号邮箱')}</span>
+              <input type="email" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
             </label>
 
             <label>
@@ -186,24 +219,27 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
                 autoComplete="current-password"
               />
             </label>
+            <button className="module-link-button login-reset-link" type="button" onClick={() => setResetMode(true)}>
+              {t('忘记密码 / 修改密码')}
+            </button>
           </>
         ) : null}
 
-        <div className="login-user-preview">
-          <div className="avatar avatar--small">{pendingUser?.initials ?? selectedUser.initials}</div>
+        {!resetMode ? <div className="login-user-preview">
+          <div className="avatar avatar--small">{pendingUser?.initials ?? 'LZ'}</div>
           <div>
-            <strong>{t(pendingUser?.name ?? selectedUser.name)}</strong>
-            <span>{t(pendingUser?.roleLabel ?? selectedUser.roleLabel)}</span>
+            <strong>{t(pendingUser?.name ?? username)}</strong>
+            <span>{t(pendingUser?.roleLabel ?? (entryMode === 'lz' ? 'LZ 系统管理' : 'Study 研究入口'))}</span>
           </div>
-        </div>
-        <div className="login-scope-preview">
+        </div> : null}
+        {!resetMode ? <div className="login-scope-preview">
           <span>{entryMode === 'study' ? t('工作区边界') : t('管理入口')}</span>
           <strong>{entryMode === 'study' ? (pendingUser ? `${pendingStudy.id} · ${t(pendingStudy.name)}` : t('登录后选择或自动进入单个 Study')) : t('LZ 系统管理 · 全局配置与索引')}</strong>
-        </div>
+        </div> : null}
 
         {error ? <p className="login-error">{t(error)}</p> : null}
 
-        <button className="login-submit" type="submit" disabled={isSubmitting}>
+        <button className="login-submit" type="submit" disabled={isSubmitting || resetMode}>
           <Icon name="lock" />
           {isSubmitting ? t('登录中') : pendingUser ? t('进入 Study Workspace') : t('进入系统')}
         </button>

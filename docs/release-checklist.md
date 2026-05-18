@@ -2,7 +2,7 @@
 
 Use this checklist before publishing a GA functional-testing branch, tag, or release artifact.
 
-Current candidate: `v1.0.0`.
+Current candidate: `v1.0.1`.
 
 ## Required Local Gates
 
@@ -36,7 +36,7 @@ git status --short --branch
 
 - Confirm `package.json` version matches the planned GA tag.
 - Update `CHANGELOG.md` before creating a tag or GitHub release.
-- Suggested GA tag format: `v1.0.0`.
+- Suggested GA tag format: `v1.0.1`.
 - Release notes should call out that this is a GA functional-testing release for demo/test data entry, not a real-patient production clinical deployment.
 - Rollback path for the static frontend is the previous `dist/` or `exports/html/` artifact; rollback path for the Demo backend is the previous source tag plus a verified SQLite/upload backup.
 

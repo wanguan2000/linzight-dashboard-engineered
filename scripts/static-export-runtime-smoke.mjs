@@ -10,23 +10,8 @@ const reportPath = join(repoRoot, 'reports', 'static-export-runtime-smoke.json')
 const port = Number(process.env.STATIC_EXPORT_SMOKE_PORT || 23100 + Math.floor(Math.random() * 1000));
 const baseUrl = `http://127.0.0.1:${port}`;
 
-const forbiddenLungVisibleText = [
-  'SLEDAI',
-  'C3 (g/L)',
-  'C4 (g/L)',
-  'IgG Index',
-  '免疫抑制剂',
-  'NPSLE',
-  '免疫相关性神经系统疾病多组学解析及机制探索',
-];
-
-const requiredLungVisibleText = [
-  'LZXK-01',
-  'ECOG评分',
-  'TNM分期',
-  'ctDNA突变丰度',
-  '真实世界肺癌耐药研究',
-];
+const forbiddenVisibleText = ['RWS EDC Demo', '开发阶段 Demo 认证', 'Role account', 'Demo1234!'];
+const requiredVisibleText = ['RWS EDC', '正式系统认证', '账号邮箱', '忘记密码 / 修改密码'];
 
 function writeReport(status, details) {
   mkdirSync(dirname(reportPath), { recursive: true });
@@ -132,22 +117,6 @@ function startStaticServer() {
   });
 }
 
-async function loginLungCrc(page) {
-  await page.goto(`${baseUrl}/clinical-data-capture.html?locale=zh-CN`, { waitUntil: 'networkidle' });
-  await page.getByLabel(/角色账号|Role account/i).selectOption('lung-crc@demo.linzight');
-  await page.getByLabel(/密码|password/i).fill('Demo1234!');
-  await page.getByRole('button', { name: /进入系统|Enter system/i }).click();
-  await page.waitForFunction(() => globalThis.localStorage.getItem('linzight-demo-user'), null, { timeout: 10000 });
-  const studySelector = page.getByLabel(/选择 Study Workspace|Select Study Workspace/i);
-  if (await studySelector.isVisible({ timeout: 1000 }).catch(() => false)) {
-    await studySelector.selectOption('LZXK-01');
-    await page.getByRole('button', { name: /进入 Study Workspace|Enter Study Workspace/i }).click();
-  }
-  await page.waitForLoadState('networkidle').catch(() => undefined);
-  await page.goto(`${baseUrl}/clinical-data-capture.html?locale=zh-CN`, { waitUntil: 'networkidle' });
-  await page.getByText('LZXK-01', { exact: false }).first().waitFor({ timeout: 10000 });
-}
-
 async function run() {
   if (!existsSync(join(exportDir, 'clinical-data-capture.html'))) {
     throw new Error('exports/html/clinical-data-capture.html is missing; run npm run export:html first');
@@ -162,21 +131,19 @@ async function run() {
 	    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
 	    const page = await context.newPage();
 	    await installStaticAuthRoutes(page);
-	    await loginLungCrc(page);
-    await page.getByText('LZXK-01', { exact: false }).first().waitFor({ timeout: 10000 });
-    await page.getByText('ECOG评分', { exact: false }).first().waitFor({ timeout: 15000 });
+    await page.goto(`${baseUrl}/clinical-data-capture.html?locale=zh-CN`, { waitUntil: 'networkidle' });
     const visibleText = await page.locator('body').innerText({ timeout: 10000 });
-    const missing = requiredLungVisibleText.filter((text) => !visibleText.includes(text));
+    const missing = requiredVisibleText.filter((text) => !visibleText.includes(text));
     if (missing.length) {
-      throw new Error(`LZXK-01 static runtime view missing lung text: ${missing.join(', ')}`);
+      throw new Error(`Static runtime login view missing formal text: ${missing.join(', ')}`);
     }
-    const leaked = forbiddenLungVisibleText.filter((text) => visibleText.includes(text));
+    const leaked = forbiddenVisibleText.filter((text) => visibleText.includes(text));
     if (leaked.length) {
-      throw new Error(`LZXK-01 static runtime view leaked SLE/immune text: ${leaked.join(', ')}`);
+      throw new Error(`Static runtime login view leaked demo text: ${leaked.join(', ')}`);
     }
     await context.close();
-    writeReport('passed', { checkedPage: 'clinical-data-capture.html', role: 'lung-crc@demo.linzight', viewport: '390x844' });
-    console.log(`Static export runtime smoke passed: LZXK-01 clinical capture visible text is lung-specific. Report: ${reportPath}`);
+    writeReport('passed', { checkedPage: 'clinical-data-capture.html', viewport: '390x844' });
+    console.log(`Static export runtime smoke passed: formal login text is visible and demo login text is absent. Report: ${reportPath}`);
   } catch (error) {
     const visibleText = await browser?.contexts()[0]?.pages()[0]?.locator('body').innerText({ timeout: 1000 }).catch(() => '');
     writeReport('failed', {

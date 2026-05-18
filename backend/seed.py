@@ -702,6 +702,7 @@ def seed_database() -> None:
             DELETE FROM consents;
             DELETE FROM role_permissions;
             DELETE FROM field_permissions;
+            DELETE FROM password_reset_tokens;
             DELETE FROM global_role_study_scope;
             DELETE FROM study_members;
             DELETE FROM study_configurations;
