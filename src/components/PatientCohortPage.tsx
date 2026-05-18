@@ -57,7 +57,7 @@ type CompletenessTrend = {
 
 type PatientEditorMode = 'create' | 'edit';
 
-const patientWriteRoles = new Set(['LZ_ADMIN', 'LZ_CRC', 'STUDY_CRC']);
+const patientWriteRoles = new Set(['LZ_ADMIN', 'LZ_CRC', 'STUDY_CRC', 'STUDY_CONFIG_ADMIN']);
 
 function canWritePatients(user?: AuthenticatedUser | null) {
   return Boolean(user && patientWriteRoles.has(user.role));

@@ -19,7 +19,7 @@
 | 角色 | 账号 | UAT 链路 |
 | --- | --- | --- |
 | LZ Admin | configured initial admin | Study 创建/终止/删除、用户与 Study 授权范围、全局系统管理 |
-| Study System Admin | user-created `STUDY_CONFIG_ADMIN` | 本 Study 用户、成员、CRF 配置、访视计划、Query/审批配置 |
+| Study System Admin | user-created `STUDY_CONFIG_ADMIN` | 本 Study 患者、知情同意、CRF、访视、随访、样本、检测、文件、Query、质控、导出、审批、审计、用户、成员和配置全权限 |
 | Study Data Manager | user-created `STUDY_DATA_MANAGER` | 本 Study 质控、Query、导出、Approval Center、Audit Diff |
 
 ## UAT Checklist

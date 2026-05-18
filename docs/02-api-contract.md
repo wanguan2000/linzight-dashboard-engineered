@@ -115,7 +115,7 @@ Study 配置总表使用 `study_configurations` 作为发布收口源，绑定 `
 | --- | --- | --- | --- | --- | --- | --- |
 | `STUDY_PI` | 所属 Study | 查看/医学审核 | 无 | 查看 | 按配置可读 | 无 |
 | `STUDY_CRC` | 所属 Study | 新建/录入/回复 Query | 无 | 回复 | 无 | 无 |
-| `STUDY_CONFIG_ADMIN` | 所属 Study | 默认只读 | 配置/发布 | 无 | 无 | 可管理本 Study |
+| `STUDY_CONFIG_ADMIN` | 所属 Study | 本 Study 全部读写 | 配置/发布 | 全部 | 可导出 | 可管理本 Study |
 | `STUDY_DATA_MANAGER` | 所属 Study | 只读/核查 | 无 | 发起/关闭/冻结 | 可导出 | 无 |
 
 ## 核心请求示例

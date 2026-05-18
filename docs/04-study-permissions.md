@@ -40,7 +40,7 @@ type StudyScope = {
 - `crc@demo.linzight`：`STUDY_CRC`，只访问 `LGL-1111`。
 - `lung-pi@demo.linzight`：`STUDY_PI`，只访问 `LZXK-01`。
 - `lung-crc@demo.linzight`：`STUDY_CRC`，只访问 `LZXK-01`。
-- `lung-config@demo.linzight`：`STUDY_CONFIG_ADMIN`，只管理 `LZXK-01` 配置与 CRF。
+- `lung-config@demo.linzight`：`STUDY_CONFIG_ADMIN`，拥有 `LZXK-01` 本 Study 全部业务、配置、成员、审计、导出和审批权限。
 - `lung-dm@demo.linzight`：`STUDY_DATA_MANAGER`，只访问 `LZXK-01` 质控、Query、导出和审计流程。
 - `admin@demo.linzight`：`LZ_ADMIN`，访问全部 Study。
 - `lz-crc@demo.linzight`：`LZ_CRC`，访问 `LGL-1111`、`RWD-NMO-2026`、`LZXK-01`。

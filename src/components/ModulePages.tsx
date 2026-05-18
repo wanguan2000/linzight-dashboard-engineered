@@ -3137,7 +3137,7 @@ const permissionColumns: Array<{ key: UserRole; label: string }> = [
   { key: 'LZ_DATA_MANAGER', label: 'LZ DM' },
   { key: 'STUDY_PI', label: 'Study PI' },
   { key: 'STUDY_CRC', label: 'Study CRC' },
-  { key: 'STUDY_CONFIG_ADMIN', label: 'Config Admin' },
+  { key: 'STUDY_CONFIG_ADMIN', label: 'Study Admin' },
   { key: 'STUDY_DATA_MANAGER', label: 'Study DM' }
 ];
 
@@ -3148,11 +3148,11 @@ const fallbackPermissionRows: PermissionRow[] = [
   { action: 'LZ System Management / Create, update, terminate, or delete Studies', values: { LZ_ADMIN: true } },
   { action: 'Account and Study Members / Create or update users and Study members', values: { LZ_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
   { action: 'Patient Cohort / Read patient records', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_CRF_ADMIN: true, LZ_DATA_MANAGER: true, LZ_AUDITOR: true, STUDY_PI: true, STUDY_CRC: true, STUDY_CONFIG_ADMIN: true, STUDY_DATA_MANAGER: true } },
-  { action: 'Patient Cohort / Create or update patient records', values: { LZ_ADMIN: true, LZ_CRC: true, STUDY_CRC: true } },
-  { action: 'Clinical Data Capture / Write CRF entries', values: { LZ_ADMIN: true, LZ_CRC: true, STUDY_CRC: true } },
+  { action: 'Patient Cohort / Create or update patient records', values: { LZ_ADMIN: true, LZ_CRC: true, STUDY_CRC: true, STUDY_CONFIG_ADMIN: true } },
+  { action: 'Clinical Data Capture / Write CRF entries', values: { LZ_ADMIN: true, LZ_CRC: true, STUDY_CRC: true, STUDY_CONFIG_ADMIN: true } },
   { action: 'System Management / Configure CRF versions, fields, visit plans, and sites', values: { LZ_ADMIN: true, LZ_CRF_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
-  { action: 'Data Management / Run quality checks and create Query', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_DATA_MANAGER: true, STUDY_DATA_MANAGER: true } },
-  { action: 'Data Management / Export and download data', values: { LZ_ADMIN: true, LZ_DATA_MANAGER: true, STUDY_DATA_MANAGER: true } },
+  { action: 'Data Management / Run quality checks and create Query', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_DATA_MANAGER: true, STUDY_CONFIG_ADMIN: true, STUDY_DATA_MANAGER: true } },
+  { action: 'Data Management / Export and download data', values: { LZ_ADMIN: true, LZ_DATA_MANAGER: true, STUDY_CONFIG_ADMIN: true, STUDY_DATA_MANAGER: true } },
   { action: 'Audit / Read audit logs', values: { LZ_ADMIN: true, LZ_DATA_MANAGER: true, LZ_AUDITOR: true, STUDY_CONFIG_ADMIN: true, STUDY_DATA_MANAGER: true } }
 ];
 
@@ -5305,8 +5305,8 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   );
 }
 
-const exportWriteRoles = new Set<UserRole>(['LZ_ADMIN', 'LZ_CRC', 'LZ_DATA_MANAGER', 'STUDY_DATA_MANAGER']);
-const qualityWriteRoles = new Set<UserRole>(['LZ_ADMIN', 'LZ_CRC', 'LZ_DATA_MANAGER', 'STUDY_DATA_MANAGER']);
+const exportWriteRoles = new Set<UserRole>(['LZ_ADMIN', 'LZ_CRC', 'LZ_DATA_MANAGER', 'STUDY_CONFIG_ADMIN', 'STUDY_DATA_MANAGER']);
+const qualityWriteRoles = new Set<UserRole>(['LZ_ADMIN', 'LZ_CRC', 'LZ_DATA_MANAGER', 'STUDY_CONFIG_ADMIN', 'STUDY_DATA_MANAGER']);
 
 function canCreateExports(user?: { role: UserRole } | null) {
   return Boolean(user && exportWriteRoles.has(user.role));

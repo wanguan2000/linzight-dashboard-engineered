@@ -162,7 +162,7 @@ const quickActionModuleMap: Record<string, string> = {
 };
 
 const quickWriteActions = new Set(['新增患者', '数据录入', '样本录入', '随访录入']);
-const quickWriteRoles = new Set(['LZ_ADMIN', 'LZ_CRC', 'STUDY_CRC']);
+const quickWriteRoles = new Set(['LZ_ADMIN', 'LZ_CRC', 'STUDY_CRC', 'STUDY_CONFIG_ADMIN']);
 const systemManagementRoles = new Set(['LZ_ADMIN', 'LZ_CRF_ADMIN', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_CONFIG_ADMIN', 'STUDY_DATA_MANAGER']);
 
 function getDisabledQuickActions(user?: AuthenticatedUser | null) {

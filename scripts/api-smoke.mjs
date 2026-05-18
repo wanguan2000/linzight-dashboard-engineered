@@ -787,9 +787,12 @@ async function runSmoke() {
   const permissionMatrix = await request('/permissions/matrix', { token: lzAdmin.access_token });
   const matrixByOperation = new Map(permissionMatrix.data.map((row) => [row.operation, row]));
   assert(matrixByOperation.get('Create or update patient records')?.allowed_roles.includes('STUDY_CRC'), 'permission matrix should allow STUDY_CRC patient writes');
+  assert(matrixByOperation.get('Create or update patient records')?.allowed_roles.includes('STUDY_CONFIG_ADMIN'), 'permission matrix should allow Study Admin patient writes in its Study');
   assert(!matrixByOperation.get('Create or update patient records')?.allowed_roles.includes('STUDY_PI'), 'permission matrix should block STUDY_PI patient writes');
   assert(matrixByOperation.get('Configure CRF versions, fields, visit plans, and sites')?.allowed_roles.includes('STUDY_CONFIG_ADMIN'), 'permission matrix should allow Study config admin CRF config writes');
+  assert(!matrixByOperation.get('Create, update, terminate, or delete Studies')?.allowed_roles.includes('STUDY_CONFIG_ADMIN'), 'permission matrix should keep Study lifecycle changes LZ_ADMIN-only');
   assert(matrixByOperation.get('Export and download data')?.allowed_roles.includes('STUDY_DATA_MANAGER'), 'permission matrix should allow Study data manager exports');
+  assert(matrixByOperation.get('Export and download data')?.allowed_roles.includes('STUDY_CONFIG_ADMIN'), 'permission matrix should allow Study Admin exports in its Study');
   assert(matrixByOperation.get('Read audit logs')?.allowed_roles.includes('LZ_AUDITOR'), 'permission matrix should allow auditors to read audit logs');
 
   const exportApproval = await request('/approvals', {
