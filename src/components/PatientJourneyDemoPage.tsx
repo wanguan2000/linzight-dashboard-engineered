@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ElementRef, type PointerEvent } from 'react';
 import {
   journeyCategoryConfig,
-  journeyDemoEvents,
   journeyEnd,
   journeyStart,
   journeyStreamOrder,
@@ -11,19 +10,14 @@ import {
   type JourneyEventCategory
 } from '../data/patientJourneyDemo';
 import {
-  followUpRecords,
-  getSelectedPatient,
-  omicsRecords,
-  samples,
-  visits,
   type FollowUpRecord,
   type OmicsRecord,
   type SampleRecord,
   type VisitRecord
 } from '../data/operations';
-import { patientRecords, type PatientRecord } from '../data/patientCohort';
+import { type PatientRecord } from '../data/patientCohort';
 import { useI18n } from '../i18n/I18nProvider';
-import { fetchDemoDataset, filterRecordsByCurrentStudyScope, recordBelongsToCurrentStudyScope } from '../services/api';
+import { fetchDemoDataset, getCurrentScopedStudyId, recordBelongsToCurrentStudyScope } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 
@@ -95,11 +89,11 @@ type ChartFrame = {
   amplitude: number;
 };
 
-const fallbackJourneySource: PatientJourneySource = {
-  visits,
-  followUps: followUpRecords,
-  samples,
-  omics: omicsRecords
+const emptyJourneySource: PatientJourneySource = {
+  visits: [],
+  followUps: [],
+  samples: [],
+  omics: []
 };
 
 const dayMs = 24 * 60 * 60 * 1000;
@@ -363,7 +357,7 @@ function buildPatientBiomarkerPoints(patient: PatientRecord, patientVisits: Visi
 
 function getDefaultSelectedEvent(events: JourneyDemoEvent[]) {
   const descending = [...events].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
-  return descending.find((event) => event.category === 'visit') ?? descending[0] ?? journeyDemoEvents[0];
+  return descending.find((event) => event.category === 'visit') ?? descending[0] ?? null;
 }
 
 function getChartFrame(width: number): ChartFrame {
@@ -496,7 +490,7 @@ function nearestBiomarker(date: string, points: JourneyBiomarkerPoint[]) {
 
 function getNearestEvent(events: JourneyDemoEvent[], date: string) {
   const target = Date.parse(date);
-  if (!events.length || Number.isNaN(target)) return events[0] ?? journeyDemoEvents[0];
+  if (!events.length || Number.isNaN(target)) return events[0] ?? null;
   return events.reduce((nearest, event) => {
     const eventStart = Date.parse(event.date);
     const eventEnd = Date.parse(event.endDate ?? event.date);
@@ -688,17 +682,10 @@ export function PatientJourneyDemoPage({
   onPatientChange?: (patient: PatientRecord) => void;
 }) {
   const { t } = useI18n();
-  const scopedFallbackPatients = filterRecordsByCurrentStudyScope(patientRecords);
   const scopedSelectedPatient = selectedPatient && recordBelongsToCurrentStudyScope(selectedPatient) ? selectedPatient : null;
-  const initialPatient = scopedSelectedPatient ?? scopedFallbackPatients[0] ?? getSelectedPatient(null);
-  const [patients, setPatients] = useState<PatientRecord[]>(scopedFallbackPatients);
-  const [journeySource, setJourneySource] = useState<PatientJourneySource>({
-    visits: filterRecordsByCurrentStudyScope(fallbackJourneySource.visits),
-    followUps: filterRecordsByCurrentStudyScope(fallbackJourneySource.followUps),
-    samples: filterRecordsByCurrentStudyScope(fallbackJourneySource.samples),
-    omics: filterRecordsByCurrentStudyScope(fallbackJourneySource.omics)
-  });
-  const [activePatient, setActivePatient] = useState<PatientRecord>(initialPatient);
+  const [patients, setPatients] = useState<PatientRecord[]>([]);
+  const [journeySource, setJourneySource] = useState<PatientJourneySource>(emptyJourneySource);
+  const [activePatient, setActivePatient] = useState<PatientRecord | null>(scopedSelectedPatient);
   const [patientQuery, setPatientQuery] = useState('');
   const [patientPickerOpen, setPatientPickerOpen] = useState(false);
   const [enabledCategories, setEnabledCategories] = useState<JourneyEventCategory[]>(categoryOrder);
@@ -708,6 +695,7 @@ export function PatientJourneyDemoPage({
   const [streamPage, setStreamPage] = useState(1);
   const [zoomRange, setZoomRange] = useState<TimelineZoomRange>({ start: 0, end: 100 });
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
+  const currentStudyId = getCurrentScopedStudyId();
   const patient = activePatient;
 
   useEffect(() => {
@@ -715,7 +703,7 @@ export function PatientJourneyDemoPage({
 
     void fetchDemoDataset()
       .then((dataset) => {
-        if (ignore || !dataset.patients.length) return;
+        if (ignore) return;
         setPatients(dataset.patients);
         setJourneySource({
           visits: dataset.visits,
@@ -723,12 +711,27 @@ export function PatientJourneyDemoPage({
           samples: dataset.samples,
           omics: dataset.omics
         });
+        if (!dataset.patients.length) {
+          setActivePatient(null);
+          setSelectedEventId(null);
+          return;
+        }
         setActivePatient((current) => {
-          if (scopedSelectedPatient) return scopedSelectedPatient;
-          return dataset.patients.find((item) => item.id === current.id || item.name === current.name) ?? dataset.patients[0];
+          if (scopedSelectedPatient) {
+            return dataset.patients.find((item) => item.id === scopedSelectedPatient.id || item.name === scopedSelectedPatient.name) ?? dataset.patients[0];
+          }
+          if (current) return dataset.patients.find((item) => item.id === current.id || item.name === current.name) ?? dataset.patients[0];
+          return dataset.patients[0];
         });
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!ignore) {
+          setPatients([]);
+          setJourneySource(emptyJourneySource);
+          setActivePatient(null);
+          setSelectedEventId(null);
+        }
+      });
 
     return () => {
       ignore = true;
@@ -736,7 +739,7 @@ export function PatientJourneyDemoPage({
   }, [scopedSelectedPatient]);
 
   useEffect(() => {
-    if (selectedPatient) {
+    if (selectedPatient && recordBelongsToCurrentStudyScope(selectedPatient)) {
       setActivePatient(selectedPatient);
       setPatientQuery('');
       setPatientPickerOpen(false);
@@ -744,25 +747,34 @@ export function PatientJourneyDemoPage({
   }, [selectedPatient]);
 
   useEffect(() => {
-    if (activePatient.id) onPatientChange?.(activePatient);
+    if (activePatient?.id) onPatientChange?.(activePatient);
   }, [activePatient, onPatientChange]);
 
-  const scopedJourneyRows = useMemo(() => getPatientScopedRows(patient, journeySource), [journeySource, patient]);
+  const scopedJourneyRows = useMemo(() => (patient ? getPatientScopedRows(patient, journeySource) : emptyJourneySource), [journeySource, patient]);
   const journeyEvents = useMemo(
-    () => buildPatientJourneyEvents(patient, scopedJourneyRows.visits, scopedJourneyRows.followUps, scopedJourneyRows.samples, scopedJourneyRows.omics),
+    () => patient ? buildPatientJourneyEvents(patient, scopedJourneyRows.visits, scopedJourneyRows.followUps, scopedJourneyRows.samples, scopedJourneyRows.omics) : [],
     [patient, scopedJourneyRows]
   );
-  const biomarkerPoints = useMemo(() => buildPatientBiomarkerPoints(patient, scopedJourneyRows.visits), [patient, scopedJourneyRows.visits]);
+  const biomarkerPoints = useMemo(() => patient ? buildPatientBiomarkerPoints(patient, scopedJourneyRows.visits) : [], [patient, scopedJourneyRows.visits]);
   const timelineDomain = useMemo(() => buildTimelineDomain(journeyEvents, biomarkerPoints), [biomarkerPoints, journeyEvents]);
 
   useEffect(() => {
+    if (!patient || !journeyEvents.length) {
+      setSelectedEventId(null);
+      setSelectedDate('');
+      setStreamPage(1);
+      setZoomRange({ start: 0, end: 100 });
+      setHoveredEventId(null);
+      return;
+    }
     const defaultEvent = getDefaultSelectedEvent(journeyEvents);
+    if (!defaultEvent) return;
     setSelectedEventId(defaultEvent.id);
     setSelectedDate(defaultEvent.date);
     setStreamPage(1);
     setZoomRange({ start: 0, end: 100 });
     setHoveredEventId(null);
-  }, [journeyEvents, patient.id]);
+  }, [journeyEvents, patient]);
 
   const normalizedPatientQuery = patientQuery.trim().toLowerCase();
   const patientSearchMatches = useMemo(() => {
@@ -790,7 +802,7 @@ export function PatientJourneyDemoPage({
     (selectedEventId ? journeyEvents.find((event) => event.id === selectedEventId) : null) ??
     getNearestEvent(filteredEvents, selectedDate) ??
     journeyEvents[0] ??
-    journeyDemoEvents[0];
+    null;
   const currentPoint = nearestBiomarker(selectedDate, biomarkerPoints);
 
   const getStreamPageForEvent = (eventId: string) => {
@@ -817,12 +829,16 @@ export function PatientJourneyDemoPage({
   const selectDate = (date: string) => {
     const nearestEvent = getNearestEvent(filteredEvents, date);
     setSelectedDate(date);
-    setSelectedEventId(nearestEvent.id);
-    setStreamPage(getStreamPageForEvent(nearestEvent.id));
+    if (nearestEvent) {
+      setSelectedEventId(nearestEvent.id);
+      setStreamPage(getStreamPageForEvent(nearestEvent.id));
+    }
   };
 
   const resetView = () => {
+    if (!journeyEvents.length) return;
     const defaultEvent = getDefaultSelectedEvent(journeyEvents);
+    if (!defaultEvent) return;
     setEnabledCategories(categoryOrder);
     setQuery('');
     setSelectedEventId(defaultEvent.id);
@@ -845,7 +861,9 @@ export function PatientJourneyDemoPage({
           <div>
             <h2>{t('临床 Patient Journey')}</h2>
             <p>
-              {t('Study ID')}: {patient.studyId} / {t(`${patient.name} · ${patient.sex} · ${patient.age}岁 · ${patient.diseaseType}`)}
+              {patient
+                ? `${t('Study ID')}: ${patient.studyId} / ${t(`${patient.name} · ${patient.sex} · ${patient.age}岁 · ${patient.diseaseType}`)}`
+                : `${t('Study ID')}: ${currentStudyId ?? '-'} / ${t('暂无患者')}`}
             </p>
           </div>
         </div>
@@ -886,7 +904,7 @@ export function PatientJourneyDemoPage({
             <div className="journey-demo-patient-results" aria-label={t('患者查找结果')}>
               {patientMatches.map((item) => (
                 <button
-                  className={item.name === patient.name ? 'is-active' : undefined}
+                  className={patient && item.name === patient.name ? 'is-active' : undefined}
                   key={`${item.studyId}-${item.name}`}
                   onClick={() => {
                     setActivePatient(item);
@@ -905,6 +923,18 @@ export function PatientJourneyDemoPage({
         </div>
       </section>
 
+      {!patient ? (
+        <section className="journey-demo-card journey-demo-empty-state">
+          <header className="journey-demo-card__header">
+            <div>
+              <span>Patient Journey</span>
+              <h2>{t('暂无患者旅程数据')}</h2>
+            </div>
+          </header>
+          <p>{t('当前 Study 尚未建立患者。患者旅程只从 patients、CRF、visits、follow_up_records、samples 和 omics_records 等数据库记录生成。')}</p>
+          <p>{t('请先在患者队列管理中新建患者，并完成 CRF、访视、随访、样本或检测记录后再查看旅程。')}</p>
+        </section>
+      ) : selectedEvent ? (
       <section className="journey-demo-grid">
         <div className="journey-demo-main">
           <JourneyTimeline
@@ -945,6 +975,17 @@ export function PatientJourneyDemoPage({
           selectedEvent={selectedEvent}
         />
       </section>
+      ) : (
+        <section className="journey-demo-card journey-demo-empty-state">
+          <header className="journey-demo-card__header">
+            <div>
+              <span>Patient Journey</span>
+              <h2>{t('暂无旅程事件')}</h2>
+            </div>
+          </header>
+          <p>{t('当前患者尚未产生 CRF、访视、随访、样本或检测记录。')}</p>
+        </section>
+      )}
     </div>
   );
 }

@@ -114,7 +114,7 @@ CRF 录入响应还包含 `crf_version_id` 和 `form_id`。已录入数据必须
 
 ## 主链路聚合
 
-Patient Journey 页面以患者为中心汇总：
+Patient Journey 页面以患者为中心汇总；正式连接态必须从当前 Study 的 `patients`、`crf_entries`、`visits`、`follow_up_records`、`samples`、`omics_records` 和文件等数据库记录生成。当前 Study 没有患者时必须显示空状态，不能回退到前端静态患者或样例旅程。
 
 ```json
 {

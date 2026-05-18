@@ -4839,6 +4839,22 @@
   font-weight: 800;
 }
 
+.journey-demo-empty-state {
+  min-height: 220px;
+  display: grid;
+  align-content: center;
+  gap: 12px;
+}
+
+.journey-demo-empty-state p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
 .journey-demo-categories,
 .journey-demo-actions,
 .journey-demo-legend {

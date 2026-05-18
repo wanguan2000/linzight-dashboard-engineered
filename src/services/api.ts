@@ -1112,16 +1112,38 @@ async function fetchStudyBusinessRows<T>(resource: string): Promise<T[]> {
 
 export async function fetchDemoDataset(): Promise<DemoDataset> {
   try {
-    const [apiPatients, apiSamples, apiOmics, apiVisits, apiFollowUps] = await Promise.all([
+    const [apiPatients, apiSamples, apiOmics, apiVisits, apiFollowUps, apiCrfEntries] = await Promise.all([
       fetchStudyBusinessRows<ApiPatient>('patients'),
       fetchStudyBusinessRows<ApiSample>('samples'),
       fetchStudyBusinessRows<ApiOmics>('omics'),
       fetchStudyBusinessRows<ApiVisit>('visits'),
-      fetchStudyBusinessRows<ApiFollowUpRecord>('follow-up-records')
+      fetchStudyBusinessRows<ApiFollowUpRecord>('follow-up-records'),
+      fetchStudyBusinessRows<ApiCrfEntry>('crf')
     ]);
+    const crfPayloadByPatient = apiCrfEntries.reduce<Record<string, PatientRecord['clinicalData']>>((payloads, entry) => {
+      const normalizedPayload = Object.fromEntries(
+        Object.entries(entry.payload ?? {})
+          .filter(([, value]) => value !== null)
+          .map(([key, value]) => [key, typeof value === 'boolean' ? String(value) : value])
+      ) as PatientRecord['clinicalData'];
+      payloads[entry.patient_id] = {
+        ...(payloads[entry.patient_id] ?? {}),
+        ...normalizedPayload
+      };
+      return payloads;
+    }, {});
 
     return filterDatasetByStudyScope({
-      patients: apiPatients.map((patient) => toPatientRecord(patient, apiSamples, apiOmics)),
+      patients: apiPatients.map((patient) => {
+        const record = toPatientRecord(patient, apiSamples, apiOmics);
+        return {
+          ...record,
+          clinicalData: {
+            ...record.clinicalData,
+            ...(crfPayloadByPatient[patient.id] ?? {})
+          }
+        };
+      }),
       samples: apiSamples.map(toSampleRecord),
       omics: apiOmics.map(toOmicsRecord),
       visits: apiVisits.map(toVisitRecord),
