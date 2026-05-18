@@ -40,7 +40,7 @@ import {
   deleteStudy,
   downloadExportJob,
   fetchConsentRecords,
-  fetchDemoDataset,
+  fetchWorkspaceDataset,
   fetchOmicsRecords,
   fetchSamples,
   fetchDataQueries,
@@ -86,7 +86,7 @@ import type { CrfMigrationApprovalRecord, CrfMigrationPreview, StudyCrfVersionRe
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 import { PatientListModule } from './PatientCohortPage';
-import { PatientJourneyDemoPage } from './PatientJourneyDemoPage';
+import { PatientJourneyPage as PatientJourneyWorkspacePage } from './PatientJourneyPage';
 
 const consentPageSize = 6;
 const sampleLedgerPageSize = 6;
@@ -684,7 +684,7 @@ function buildClinicalSectionsFromPatient(patient: PatientRecord): ClinicalFormS
 
   if (otherItems.length) sections.push({ title: '其他已录入字段', items: otherItems });
 
-  return sections.length ? sections : [{ title: '等待 API 数据', items: [['数据源', '等待 FastAPI / SQLite'] as [string, string]] }];
+  return sections.length ? sections : [{ title: '等待 API 数据', items: [['数据源', '等待 PostgreSQL API'] as [string, string]] }];
 }
 
 const emptyClinicalPatient: PatientRecord = {
@@ -697,7 +697,7 @@ const emptyClinicalPatient: PatientRecord = {
   organs: [],
   samples: [],
   omicsStatus: '样本采集',
-  note: '等待 FastAPI / SQLite',
+  note: '等待 PostgreSQL API',
   clinicalData: {}
 };
 
@@ -753,7 +753,7 @@ export function ClinicalDataCapturePage({
   useEffect(() => {
     let ignore = false;
 
-    void fetchDemoDataset()
+    void fetchWorkspaceDataset()
       .then((dataset) => {
         if (ignore) return;
         if (dataset.patients.length) setPatients(dataset.patients);
@@ -2145,7 +2145,7 @@ export function SampleManagementPage() {
         <ModuleKpi icon="blood" label="血液样本" value={`${sampleTypeCounts.血液 ?? 0}`} helper="来自样本台账" />
         <ModuleKpi icon="csf" label="CSF 样本" value={`${sampleTypeCounts.CSF ?? 0}`} helper="来自样本台账" tone="green" />
         <ModuleKpi icon="kidney" label="肾组织样本" value={`${sampleTypeCounts.肾 ?? 0}`} helper="来自样本台账" tone="purple" />
-        <ModuleKpi icon="sampleBank" label="总样本数" value={`${sampleRows.length}`} helper="FastAPI / SQLite" tone="orange" />
+        <ModuleKpi icon="sampleBank" label="总样本数" value={`${sampleRows.length}`} helper="PostgreSQL API" tone="orange" />
       </section>
 
       <div className="module-layout">
@@ -2218,9 +2218,9 @@ export function OmicsTestingPage() {
   return (
     <div className="content workspace-page">
       <section className="module-kpis">
-        <ModuleKpi icon="dna" label="送检样本" value={`${records.length}`} helper="FastAPI / SQLite" />
+        <ModuleKpi icon="dna" label="送检样本" value={`${records.length}`} helper="PostgreSQL API" />
         <ModuleKpi icon="clock" label="检测进行中" value={`${records.length - completed}`} helper="待归档检测" tone="orange" />
-        <ModuleKpi icon="check" label="已完成检测" value={`${completed}`} helper="本 Demo 已归档" tone="green" />
+        <ModuleKpi icon="check" label="已完成检测" value={`${completed}`} helper="已归档检测" tone="green" />
         <ModuleKpi icon="shield" label="QC 通过率" value="94.6%" helper="较上月 ↑ 3.1%" tone="purple" />
       </section>
 
@@ -2904,7 +2904,7 @@ export function PatientJourneyPage({
   selectedPatient?: PatientRecord | null;
   onPatientChange?: (patient: PatientRecord) => void;
 }) {
-  return <PatientJourneyDemoPage selectedPatient={selectedPatient} onPatientChange={onPatientChange} />;
+  return <PatientJourneyWorkspacePage selectedPatient={selectedPatient} onPatientChange={onPatientChange} />;
 }
 
 type SystemAccount = {
@@ -4305,7 +4305,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     const studyId = scopedStudyId ?? 'LGL-1111';
     setSystemActionStatus('Query 正在创建并写入后端...');
     try {
-      const dataset = await fetchDemoDataset();
+      const dataset = await fetchWorkspaceDataset();
       const patient = dataset.patients.find((record) => record.studyId === studyId);
       if (!patient?.id) {
         setSystemActionStatus('当前 Study 没有可绑定 Query 的患者');
@@ -5535,7 +5535,7 @@ export function ReportsPage({ currentUser }: { currentUser?: AuthenticatedUser |
         <header className="module-card__header">
           <div>
             <h2>{t('数据导出流水线')}</h2>
-            <span>{t('用于 Demo 后端 API 联调')}</span>
+            <span>{t('用于后端 API 联调')}</span>
           </div>
           <div className="module-header-actions">
             <label className="module-select-inline">

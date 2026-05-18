@@ -39,7 +39,7 @@ import type {
   ApiVisit
 } from './contracts';
 
-export type DemoDataset = {
+export type WorkspaceDataset = {
   patients: PatientRecord[];
   samples: SampleRecord[];
   omics: OmicsRecord[];
@@ -166,7 +166,6 @@ async function requestJson<T>(path: string, init?: FetchInit, timeoutMs = 900): 
 
 export async function loginWithBackend(username: string, password: string): Promise<AuthenticatedUser> {
   const response = await postJson<ApiLoginResponse>('/auth/login', { username, password });
-  window.localStorage.removeItem('linzight-demo-token');
   window.localStorage.setItem(authTokenStorageKey, response.access_token);
   const initials = response.user.display_name
     .split('')
@@ -1038,7 +1037,7 @@ export function filterRecordsByCurrentStudyScope<T extends { studyId?: string }>
   return records.filter((record) => Boolean(record.studyId && userCanAccessStudy(user, record.studyId)));
 }
 
-function fallbackDemoDataset(): DemoDataset {
+function fallbackWorkspaceDataset(): WorkspaceDataset {
   return {
     patients: [],
     samples: [],
@@ -1048,7 +1047,7 @@ function fallbackDemoDataset(): DemoDataset {
   };
 }
 
-function filterDatasetByStudyScope(dataset: DemoDataset): DemoDataset {
+function filterDatasetByStudyScope(dataset: WorkspaceDataset): WorkspaceDataset {
   const activeStudyId = getCurrentScopedStudyId();
   if (activeStudyId) {
     const patients = dataset.patients.filter((patient) => patient.studyId === activeStudyId);
@@ -1110,7 +1109,7 @@ async function fetchStudyBusinessRows<T>(resource: string): Promise<T[]> {
   return results.flatMap((result) => (result.status === 'fulfilled' ? result.value : []));
 }
 
-export async function fetchDemoDataset(): Promise<DemoDataset> {
+export async function fetchWorkspaceDataset(): Promise<WorkspaceDataset> {
   try {
     const [apiPatients, apiSamples, apiOmics, apiVisits, apiFollowUps, apiCrfEntries] = await Promise.all([
       fetchStudyBusinessRows<ApiPatient>('patients'),
@@ -1150,7 +1149,7 @@ export async function fetchDemoDataset(): Promise<DemoDataset> {
       followUps: apiFollowUps.map(toFollowUpRecord)
     });
   } catch {
-    return fallbackDemoDataset();
+    return fallbackWorkspaceDataset();
   }
 }
 
@@ -1204,7 +1203,7 @@ function visitRecordToFollowUpPayload(record: VisitRecord, patient: PatientRecor
     visit_id: record.id.startsWith('V-NEW-') || record.id.startsWith('FUP-') ? null : record.id,
     follow_up_date: record.visitDate,
     follow_up_method: method,
-    followed_by: 'LinZight Demo',
+    followed_by: 'LinZight',
     survival_status: '存活',
     disease_status: record.status,
     symptoms_signs: isLungStudy ? `ECOG/疗效 ${record.sleDai}` : `SLEDAI ${record.sleDai}`,
@@ -1261,7 +1260,7 @@ export async function saveVisitFollowUpRecord(record: VisitRecord, patient: Pati
   return followUpRecordToVisitRecord(toFollowUpRecord(response), record);
 }
 
-export async function fetchPatientPanorama(patientId: string): Promise<DemoDataset> {
+export async function fetchPatientPanorama(patientId: string): Promise<WorkspaceDataset> {
   const panorama = await getJson<ApiPanorama>(`/patients/${patientId}/panorama`);
   return {
     patients: [toPatientRecord(panorama.patient, panorama.samples, panorama.omics_records)],

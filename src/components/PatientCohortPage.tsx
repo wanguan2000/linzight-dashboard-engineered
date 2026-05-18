@@ -8,7 +8,7 @@ import {
 import { Icon } from './Icon';
 import { KpiProgress } from './MetricGrid';
 import type { AuthenticatedUser } from '../data/auth';
-import { createPatientRecord, fetchDemoDataset, getCurrentScopedStudyId, isPermissionError, updatePatientRecord } from '../services/api';
+import { createPatientRecord, fetchWorkspaceDataset, getCurrentScopedStudyId, isPermissionError, updatePatientRecord } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import type { IconName } from '../types';
 
@@ -658,7 +658,7 @@ export function PatientCohortPage({
   useEffect(() => {
     let ignore = false;
 
-    void fetchDemoDataset()
+    void fetchWorkspaceDataset()
       .then((dataset) => {
         if (!ignore && dataset.patients.length) {
           setPatients(dataset.patients);

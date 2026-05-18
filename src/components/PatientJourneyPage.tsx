@@ -6,9 +6,9 @@ import {
   journeyStreamOrder,
   journeyTrackLabels,
   type JourneyBiomarkerPoint,
-  type JourneyDemoEvent,
+  type JourneyEvent,
   type JourneyEventCategory
-} from '../data/patientJourneyDemo';
+} from '../data/patientJourney';
 import {
   type FollowUpRecord,
   type OmicsRecord,
@@ -17,7 +17,7 @@ import {
 } from '../data/operations';
 import { type PatientRecord } from '../data/patientCohort';
 import { useI18n } from '../i18n/I18nProvider';
-import { fetchDemoDataset, getCurrentScopedStudyId, recordBelongsToCurrentStudyScope } from '../services/api';
+import { fetchWorkspaceDataset, getCurrentScopedStudyId, recordBelongsToCurrentStudyScope } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 
@@ -161,14 +161,14 @@ function buildPatientJourneyEvents(
   patientFollowUps: FollowUpRecord[],
   patientSamples: SampleRecord[],
   patientOmics: OmicsRecord[]
-): JourneyDemoEvent[] {
+): JourneyEvent[] {
   const firstVisitDate = patientVisits[0]?.visitDate ?? '2024-05-01';
   const lastVisitDate = patientVisits[patientVisits.length - 1]?.visitDate ?? firstVisitDate;
   const isLungStudy = patient.studyId === 'LZXK-01';
   const baselineSledai = Number(patientVisits[0]?.sleDai ?? patient.clinicalData['SLEDAI评分'] ?? 0);
   const baselineEcog = Number(patient.clinicalData['ECOG评分'] ?? 0);
   const diseaseTitle = patient.diseaseType === 'HC' ? '健康对照入组' : isLungStudy ? `明确${patient.diseaseType} / 肺癌耐药队列` : `明确${patient.diseaseType}`;
-  const events: JourneyDemoEvent[] = [
+  const events: JourneyEvent[] = [
     {
       id: `${patient.id}-screening`,
       kind: 'point',
@@ -355,7 +355,7 @@ function buildPatientBiomarkerPoints(patient: PatientRecord, patientVisits: Visi
   });
 }
 
-function getDefaultSelectedEvent(events: JourneyDemoEvent[]) {
+function getDefaultSelectedEvent(events: JourneyEvent[]) {
   const descending = [...events].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
   return descending.find((event) => event.category === 'visit') ?? descending[0] ?? null;
 }
@@ -396,7 +396,7 @@ function clampPercent(value: number) {
   return Math.min(100, Math.max(0, value));
 }
 
-function buildTimelineDomain(events: JourneyDemoEvent[], points: JourneyBiomarkerPoint[]): TimelineDomain {
+function buildTimelineDomain(events: JourneyEvent[], points: JourneyBiomarkerPoint[]): TimelineDomain {
   const timestamps = [
     ...events.flatMap((event) => [parseDateMs(event.date), parseDateMs(event.endDate)]),
     ...points.map((point) => parseDateMs(point.date))
@@ -450,7 +450,7 @@ function dateIsVisible(date: string, zoomRange: TimelineZoomRange, domain: Timel
   return percent >= zoomRange.start && percent <= zoomRange.end;
 }
 
-function eventIntersectsZoom(event: JourneyDemoEvent, zoomRange: TimelineZoomRange, domain: TimelineDomain) {
+function eventIntersectsZoom(event: JourneyEvent, zoomRange: TimelineZoomRange, domain: TimelineDomain) {
   const start = datePercent(event.date, domain);
   const end = datePercent(event.endDate ?? event.date, domain);
   return Math.max(start, end) >= zoomRange.start && Math.min(start, end) <= zoomRange.end;
@@ -460,7 +460,7 @@ function formatDate(date: string) {
   return date.replace(/-/g, '.');
 }
 
-function matchesEventQuery(event: JourneyDemoEvent, query: string) {
+function matchesEventQuery(event: JourneyEvent, query: string) {
   const keyword = query.trim().toLowerCase();
   if (!keyword) return true;
   return [event.title, event.tag, event.subtitle, event.description, event.date, event.endDate]
@@ -468,9 +468,9 @@ function matchesEventQuery(event: JourneyDemoEvent, query: string) {
     .some((value) => String(value).toLowerCase().includes(keyword));
 }
 
-function getOrderedStreamEvents(events: JourneyDemoEvent[]) {
+function getOrderedStreamEvents(events: JourneyEvent[]) {
   const eventMap = new Map(events.map((event) => [event.id, event]));
-  const ordered = journeyStreamOrder.map((id) => eventMap.get(id)).filter(Boolean) as JourneyDemoEvent[];
+  const ordered = journeyStreamOrder.map((id) => eventMap.get(id)).filter(Boolean) as JourneyEvent[];
   const orderedIds = new Set(ordered.map((event) => event.id));
   const rest = events
     .filter((event) => !orderedIds.has(event.id))
@@ -488,7 +488,7 @@ function nearestBiomarker(date: string, points: JourneyBiomarkerPoint[]) {
   }, fallback);
 }
 
-function getNearestEvent(events: JourneyDemoEvent[], date: string) {
+function getNearestEvent(events: JourneyEvent[], date: string) {
   const target = Date.parse(date);
   if (!events.length || Number.isNaN(target)) return events[0] ?? null;
   return events.reduce((nearest, event) => {
@@ -674,7 +674,7 @@ function getChartLegendItems() {
   });
 }
 
-export function PatientJourneyDemoPage({
+export function PatientJourneyPage({
   selectedPatient,
   onPatientChange
 }: {
@@ -701,7 +701,7 @@ export function PatientJourneyDemoPage({
   useEffect(() => {
     let ignore = false;
 
-    void fetchDemoDataset()
+    void fetchWorkspaceDataset()
       .then((dataset) => {
         if (ignore) return;
         setPatients(dataset.patients);
@@ -820,7 +820,7 @@ export function PatientJourneyDemoPage({
     });
   };
 
-  const selectEvent = (event: JourneyDemoEvent) => {
+  const selectEvent = (event: JourneyEvent) => {
     setSelectedEventId(event.id);
     setSelectedDate(event.date);
     setStreamPage(getStreamPageForEvent(event.id));
@@ -854,10 +854,10 @@ export function PatientJourneyDemoPage({
   };
 
   return (
-    <div className="content workspace-page patient-journey-demo">
-      <section className="journey-demo-toolbar">
-        <div className="journey-demo-patient">
-          <div className="journey-demo-avatar">PJ</div>
+    <div className="content workspace-page patient-journey-page">
+      <section className="patient-journey-toolbar">
+        <div className="patient-journey-patient">
+          <div className="patient-journey-avatar">PJ</div>
           <div>
             <h2>{t('临床 Patient Journey')}</h2>
             <p>
@@ -867,15 +867,15 @@ export function PatientJourneyDemoPage({
             </p>
           </div>
         </div>
-        <div className="journey-demo-patient-picker">
-          <div className="journey-demo-patient-picker__header">
+        <div className="patient-journey-patient-picker">
+          <div className="patient-journey-patient-picker__header">
             <div>
               <strong>{t('查找患者')}</strong>
               <span>{t(patientResultSummary)}</span>
             </div>
             {patientQuery ? (
               <button
-                className="journey-demo-patient-clear"
+                className="patient-journey-patient-clear"
                 onClick={() => {
                   setPatientQuery('');
                   setPatientPickerOpen(false);
@@ -886,7 +886,7 @@ export function PatientJourneyDemoPage({
               </button>
             ) : null}
           </div>
-          <label className="journey-demo-search journey-demo-patient-search">
+          <label className="patient-journey-search patient-journey-patient-search">
             <Icon name="search" />
             <input
               onChange={(event) => {
@@ -901,7 +901,7 @@ export function PatientJourneyDemoPage({
             />
           </label>
           {showPatientMatches ? (
-            <div className="journey-demo-patient-results" aria-label={t('患者查找结果')}>
+            <div className="patient-journey-patient-results" aria-label={t('患者查找结果')}>
               {patientMatches.map((item) => (
                 <button
                   className={patient && item.name === patient.name ? 'is-active' : undefined}
@@ -917,15 +917,15 @@ export function PatientJourneyDemoPage({
                   <span>{t(`${item.hospitalNo} · ${item.sex} · ${item.age}岁 · ${item.diseaseType}`)}</span>
                 </button>
               ))}
-              {!patientMatches.length ? <span className="journey-demo-patient-empty">{t('无匹配患者')}</span> : null}
+              {!patientMatches.length ? <span className="patient-journey-patient-empty">{t('无匹配患者')}</span> : null}
             </div>
           ) : null}
         </div>
       </section>
 
       {!patient ? (
-        <section className="journey-demo-card journey-demo-empty-state">
-          <header className="journey-demo-card__header">
+        <section className="patient-journey-card patient-journey-empty-state">
+          <header className="patient-journey-card__header">
             <div>
               <span>Patient Journey</span>
               <h2>{t('暂无患者旅程数据')}</h2>
@@ -935,8 +935,8 @@ export function PatientJourneyDemoPage({
           <p>{t('请先在患者队列管理中新建患者，并完成 CRF、访视、随访、样本或检测记录后再查看旅程。')}</p>
         </section>
       ) : selectedEvent ? (
-      <section className="journey-demo-grid">
-        <div className="journey-demo-main">
+      <section className="patient-journey-grid">
+        <div className="patient-journey-main">
           <JourneyTimeline
             enabledCategories={enabledCategories}
             events={filteredEvents}
@@ -976,8 +976,8 @@ export function PatientJourneyDemoPage({
         />
       </section>
       ) : (
-        <section className="journey-demo-card journey-demo-empty-state">
-          <header className="journey-demo-card__header">
+        <section className="patient-journey-card patient-journey-empty-state">
+          <header className="patient-journey-card__header">
             <div>
               <span>Patient Journey</span>
               <h2>{t('暂无旅程事件')}</h2>
@@ -1007,12 +1007,12 @@ function JourneyTimeline({
   zoomRange
 }: {
   enabledCategories: JourneyEventCategory[];
-  events: JourneyDemoEvent[];
+  events: JourneyEvent[];
   hoveredEventId: string | null;
   onHover: (eventId: string | null) => void;
   onQueryChange: (value: string) => void;
   onResetView: () => void;
-  onSelect: (event: JourneyDemoEvent) => void;
+  onSelect: (event: JourneyEvent) => void;
   onToggleCategory: (category: JourneyEventCategory) => void;
   onZoomChange: (range: TimelineZoomRange) => void;
   query: string;
@@ -1028,21 +1028,21 @@ function JourneyTimeline({
   const ticks = getTimelineTicks(zoomRange, timelineDomain);
 
   return (
-    <section className="journey-demo-card journey-demo-timeline-card">
-      <header className="journey-demo-card__header">
+    <section className="patient-journey-card patient-journey-timeline-card">
+      <header className="patient-journey-card__header">
         <div>
           <span>Multi-track Event Timeline</span>
           <h2>{t('多轨临床事件轴')}</h2>
         </div>
       </header>
-      <div className="journey-demo-timeline-controls">
-        <div className="journey-demo-categories journey-demo-timeline-categories" aria-label={t('旅程事件分类筛选')}>
+      <div className="patient-journey-timeline-controls">
+        <div className="patient-journey-categories patient-journey-timeline-categories" aria-label={t('旅程事件分类筛选')}>
           {categoryOrder.map((category) => {
             const config = journeyCategoryConfig[category];
             const active = enabledCategories.includes(category);
             return (
               <button
-                className={active ? 'journey-demo-category is-active' : 'journey-demo-category'}
+                className={active ? 'patient-journey-category is-active' : 'patient-journey-category'}
                 key={category}
                 onClick={() => onToggleCategory(category)}
                 style={{
@@ -1058,8 +1058,8 @@ function JourneyTimeline({
             );
           })}
         </div>
-        <div className="journey-demo-actions journey-demo-timeline-actions">
-          <label className="journey-demo-search journey-demo-timeline-search">
+        <div className="patient-journey-actions patient-journey-timeline-actions">
+          <label className="patient-journey-search patient-journey-timeline-search">
             <Icon name="search" />
             <input onChange={(event) => onQueryChange(event.target.value)} placeholder={t('搜索事件、治疗或样本')} value={query} />
           </label>
@@ -1069,9 +1069,9 @@ function JourneyTimeline({
           </button>
         </div>
       </div>
-      <div className="journey-demo-timeline-scale">
-        <div className="journey-demo-track-label" />
-        <div className="journey-demo-scale-axis">
+      <div className="patient-journey-timeline-scale">
+        <div className="patient-journey-track-label" />
+        <div className="patient-journey-scale-axis">
           {ticks.map((tick) => (
             <span key={tick.label} style={{ left: `${tick.percent}%` }}>
               {tick.label}
@@ -1079,19 +1079,19 @@ function JourneyTimeline({
           ))}
         </div>
       </div>
-      <div className="journey-demo-timeline">
+      <div className="patient-journey-timeline">
         {journeyTrackLabels.map((track) => {
           const trackEvents = visibleEvents.filter((event) => event.track === track);
           return (
-            <div className="journey-demo-track-row" key={track}>
-              <div className="journey-demo-track-label">{t(track)}</div>
-              <div className="journey-demo-track-axis">
-                {selectedDateVisible ? <span className="journey-demo-selected-date-line" style={{ left: `${selectedDatePosition}%` }} /> : null}
+            <div className="patient-journey-track-row" key={track}>
+              <div className="patient-journey-track-label">{t(track)}</div>
+              <div className="patient-journey-track-axis">
+                {selectedDateVisible ? <span className="patient-journey-selected-date-line" style={{ left: `${selectedDatePosition}%` }} /> : null}
                 {trackEvents.map((event) =>
                   event.kind === 'range' ? (
                     <button
                       className={[
-                        'journey-demo-event-range',
+                        'patient-journey-event-range',
                         event.id === selectedEventId ? 'is-active' : '',
                         event.id === hoveredEventId ? 'is-hovered' : ''
                       ]
@@ -1125,7 +1125,7 @@ function JourneyTimeline({
                   ) : (
                     <button
                       className={[
-                        'journey-demo-event-point',
+                        'patient-journey-event-point',
                         event.id === selectedEventId ? 'is-active' : '',
                         event.id === hoveredEventId ? 'is-hovered' : ''
                       ]
@@ -1154,7 +1154,7 @@ function JourneyTimeline({
         })}
       </div>
       <RangeBrush
-        className="journey-demo-brush--timeline"
+        className="patient-journey-brush--timeline"
         label={t('患者旅程时间范围')}
         onChange={onZoomChange}
         range={zoomRange}
@@ -1221,16 +1221,16 @@ function JourneyBiomarkers({
   };
 
   return (
-    <section className="journey-demo-card">
-      <header className="journey-demo-card__header journey-demo-trend-header">
-        <div className="journey-demo-trend-title">
+    <section className="patient-journey-card">
+      <header className="patient-journey-card__header patient-journey-trend-header">
+        <div className="patient-journey-trend-title">
           <span>Clinical Trend</span>
-          <div className="journey-demo-trend-title-row">
+          <div className="patient-journey-trend-title-row">
             <h2>{t('关键指标趋势')}</h2>
-            <div className="journey-demo-metrics">
+            <div className="patient-journey-metrics">
               {metricLines.map((metric) => (
                 <div
-                  className="journey-demo-metric"
+                  className="patient-journey-metric"
                   key={metric.key}
                   style={{ '--metric-color': metric.color } as CSSProperties}
                 >
@@ -1244,7 +1244,7 @@ function JourneyBiomarkers({
             </div>
           </div>
         </div>
-        <label className="journey-demo-date-picker">
+        <label className="patient-journey-date-picker">
           {t('指标日期')}
           <input
             max={timelineDomain.end}
@@ -1255,7 +1255,7 @@ function JourneyBiomarkers({
           />
         </label>
       </header>
-      <div className="journey-demo-chart" ref={chartRef}>
+      <div className="patient-journey-chart" ref={chartRef}>
         <svg
           aria-label={t('患者关键指标趋势')}
           onPointerDown={handleChartPointer}
@@ -1264,11 +1264,11 @@ function JourneyBiomarkers({
           role="img"
           viewBox={`0 0 ${chartWidth} 246`}
         >
-          <g className="journey-demo-chart-legend" transform={`translate(${chartFrame.left + 8}, 22)`}>
+          <g className="patient-journey-chart-legend" transform={`translate(${chartFrame.left + 8}, 22)`}>
             {legendItems.map(({ metric, x }) => (
               <g
                 className={[
-                  'journey-demo-chart-legend-item',
+                  'patient-journey-chart-legend-item',
                   hoveredMetricKey && hoveredMetricKey !== metric.key ? 'is-muted' : '',
                   hoveredMetricKey === metric.key ? 'is-active' : ''
                 ]
@@ -1293,16 +1293,16 @@ function JourneyBiomarkers({
               </text>
             </g>
           </g>
-          <g className="journey-demo-chart-grid">
+          <g className="patient-journey-chart-grid">
             {metricLines.map((metric, index) => (
               <g key={metric.key}>
-                <text className="journey-demo-chart-y-label" textAnchor="end" x="98" y={getMetricLaneY(index, chartFrame) + 4}>
+                <text className="patient-journey-chart-y-label" textAnchor="end" x="98" y={getMetricLaneY(index, chartFrame) + 4}>
                   {getMetricValue(currentPoint, metric.key)}
                 </text>
                 <line x1={chartFrame.left} x2={chartFrame.right} y1={getMetricLaneY(index, chartFrame)} y2={getMetricLaneY(index, chartFrame)} />
               </g>
             ))}
-            <line className="journey-demo-chart-axis" x1={chartFrame.left} x2={chartFrame.left} y1={plotTop} y2={plotBottom} />
+            <line className="patient-journey-chart-axis" x1={chartFrame.left} x2={chartFrame.left} y1={plotTop} y2={plotBottom} />
           </g>
           {metricLines.map((metric, metricIndex) => {
             const lastPoint = visiblePoints[visiblePoints.length - 1];
@@ -1311,7 +1311,7 @@ function JourneyBiomarkers({
             return (
               <g
                 className={[
-                  'journey-demo-trend-line',
+                  'patient-journey-trend-line',
                   hoveredMetricKey && hoveredMetricKey !== metric.key ? 'is-muted' : '',
                   hoveredMetricKey === metric.key ? 'is-active' : ''
                 ]
@@ -1321,7 +1321,7 @@ function JourneyBiomarkers({
                 onMouseEnter={() => setHoveredMetricKey(metric.key)}
                 onMouseLeave={() => setHoveredMetricKey(null)}
               >
-                <polyline className="journey-demo-trend-hit" fill="none" points={linePoints} stroke="transparent" strokeWidth="14" />
+                <polyline className="patient-journey-trend-hit" fill="none" points={linePoints} stroke="transparent" strokeWidth="14" />
                 <polyline
                   fill="none"
                   points={linePoints}
@@ -1344,7 +1344,7 @@ function JourneyBiomarkers({
                         strokeWidth="2"
                       />
                       <text
-                        className={['journey-demo-chart-point-value', isSelected ? 'is-selected' : ''].filter(Boolean).join(' ')}
+                        className={['patient-journey-chart-point-value', isSelected ? 'is-selected' : ''].filter(Boolean).join(' ')}
                         style={{ fill: metric.color }}
                         textAnchor={valueLabel.textAnchor}
                         x={valueLabel.x}
@@ -1357,7 +1357,7 @@ function JourneyBiomarkers({
                 })}
                 {labelPoint ? (
                   <text
-                    className="journey-demo-chart-inline-label"
+                    className="patient-journey-chart-inline-label"
                     fill={metric.color}
                     textAnchor={labelPoint.x > chartFrame.right - 92 ? 'end' : 'start'}
                     x={labelPoint.x > chartFrame.right - 92 ? chartFrame.right - 8 : labelPoint.x + 10}
@@ -1370,7 +1370,7 @@ function JourneyBiomarkers({
             );
           })}
           {selectedDateVisible ? (
-            <g className="journey-demo-chart-selected-date">
+            <g className="patient-journey-chart-selected-date">
               <line x1={selectedX} x2={selectedX} y1={plotTop} y2={plotBottom} />
               <rect height="24" rx="6" width="86" x={selectedLabelX - 43} y={selectedLabelY} />
               <text textAnchor="middle" x={selectedLabelX} y={selectedLabelY + 17}>
@@ -1380,7 +1380,7 @@ function JourneyBiomarkers({
           ) : null}
           {visiblePoints.map((point) => (
             <g
-              className="journey-demo-chart-hit"
+              className="patient-journey-chart-hit"
               key={point.date}
               onClick={(event) => {
                 event.stopPropagation();
@@ -1403,7 +1403,7 @@ function JourneyBiomarkers({
           ))}
         </svg>
         <RangeBrush
-          className="journey-demo-brush--chart"
+          className="patient-journey-brush--chart"
           label={t('指标趋势时间范围')}
           onChange={onZoomChange}
           range={zoomRange}
@@ -1425,13 +1425,13 @@ function JourneyEventStream({
   selectedEvent
 }: {
   currentPage: number;
-  events: JourneyDemoEvent[];
+  events: JourneyEvent[];
   hoveredEventId: string | null;
   onHover: (eventId: string | null) => void;
   onPageChange: (page: number) => void;
   pageSize: number;
-  onSelect: (event: JourneyDemoEvent) => void;
-  selectedEvent: JourneyDemoEvent;
+  onSelect: (event: JourneyEvent) => void;
+  selectedEvent: JourneyEvent;
 }) {
   const { t } = useI18n();
   const totalPages = Math.max(1, Math.ceil(events.length / pageSize));
@@ -1442,15 +1442,15 @@ function JourneyEventStream({
   const selectedConfig = journeyCategoryConfig[selectedEvent.category];
 
   return (
-    <aside className="journey-demo-card journey-demo-stream">
-      <header className="journey-demo-card__header">
+    <aside className="patient-journey-card patient-journey-stream">
+      <header className="patient-journey-card__header">
         <div>
           <span>Event Detail Stream</span>
           <h2>{t('事件明细流')}</h2>
         </div>
         <strong>{events.length}</strong>
       </header>
-      <div className="journey-demo-selected-event" style={{ borderColor: selectedConfig.borderColor, backgroundColor: selectedConfig.softColor }}>
+      <div className="patient-journey-selected-event" style={{ borderColor: selectedConfig.borderColor, backgroundColor: selectedConfig.softColor }}>
         <span style={{ color: selectedConfig.color }}>{t(selectedConfig.label)}</span>
         <h3>{t(selectedEvent.title)}</h3>
         <p>{t(selectedEvent.description)}</p>
@@ -1459,13 +1459,13 @@ function JourneyEventStream({
           {selectedEvent.endDate ? ` - ${formatDate(selectedEvent.endDate)}` : ''}
         </small>
       </div>
-      <div className="journey-demo-stream-list">
+      <div className="patient-journey-stream-list">
         {visibleEvents.map((event) => {
           const config = journeyCategoryConfig[event.category];
           return (
             <button
               className={[
-                'journey-demo-stream-item',
+                'patient-journey-stream-item',
                 event.id === selectedEvent.id ? 'is-active' : '',
                 event.id === hoveredEventId ? 'is-hovered' : ''
               ]
@@ -1477,7 +1477,7 @@ function JourneyEventStream({
               onClick={() => onSelect(event)}
               type="button"
             >
-              <span className="journey-demo-stream-icon" style={{ color: config.color, backgroundColor: config.softColor }}>
+              <span className="patient-journey-stream-icon" style={{ color: config.color, backgroundColor: config.softColor }}>
                 <Icon name={categoryIcons[event.category]} />
               </span>
               <span>
@@ -1493,7 +1493,7 @@ function JourneyEventStream({
         })}
       </div>
       {events.length > pageSize ? (
-        <div className="journey-demo-pagination" aria-label={t('事件分页')}>
+        <div className="patient-journey-pagination" aria-label={t('事件分页')}>
           <button disabled={safePage <= 1} onClick={() => onPageChange(safePage - 1)} type="button">
             {t('上一页')}
           </button>
@@ -1539,18 +1539,18 @@ function RangeBrush({
   };
 
   return (
-    <div className={['journey-demo-brush', className].filter(Boolean).join(' ')}>
-      <div className="journey-demo-brush__date-pills">
+    <div className={['patient-journey-brush', className].filter(Boolean).join(' ')}>
+      <div className="patient-journey-brush__date-pills">
         <span style={{ left: `${range.start}%` }}>{percentToDate(range.start, timelineDomain)}</span>
         <span style={{ left: `${range.end}%` }}>{percentToDate(range.end, timelineDomain)}</span>
       </div>
-      <div className="journey-demo-brush__rail">
-        <div className="journey-demo-brush__ticks" aria-hidden="true">
+      <div className="patient-journey-brush__rail">
+        <div className="patient-journey-brush__ticks" aria-hidden="true">
           {ticks.map((tick) => (
             <i className={tick.major ? 'is-major' : ''} key={tick.id} style={{ left: `${tick.percent}%` }} />
           ))}
         </div>
-        <span className="journey-demo-brush__selection" style={{ left: `${range.start}%`, width: `${range.end - range.start}%` }} />
+        <span className="patient-journey-brush__selection" style={{ left: `${range.start}%`, width: `${range.end - range.start}%` }} />
         <input
           aria-label={`${t(label)} ${t('开始')}`}
           max="100"
@@ -1568,7 +1568,7 @@ function RangeBrush({
           value={range.end}
         />
       </div>
-      <div className="journey-demo-brush__labels">
+      <div className="patient-journey-brush__labels">
         {labelTicks.map((tick) => (
           <span key={tick.label} style={{ left: `${tick.percent}%` }}>
             {tick.label}

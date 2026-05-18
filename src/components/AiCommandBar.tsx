@@ -33,7 +33,7 @@ export function AiCommandBar({
     if (prompt.includes('导出') || prompt.includes('数据分析') || normalized.includes('export')) {
       return '导出建议：先运行数据校验，确认脱敏策略、Study 范围和文件格式，再生成可下载的数据包并写入审计。';
     }
-    return `AI Demo 建议：已识别“${prompt}”，可继续选择完整性、待签署、样本未上传、随访风险或导出建议进行演示。`;
+    return `AI 建议：已识别“${prompt}”，可继续选择完整性、待签署、样本未上传、随访风险或导出建议。`;
   }
 
   function submitPrompt() {

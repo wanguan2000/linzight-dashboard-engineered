@@ -1,7 +1,7 @@
 export type JourneyEventCategory = 'disease' | 'admission' | 'treatment' | 'visit' | 'sample' | 'omics';
 export type JourneyEventKind = 'point' | 'range';
 
-export interface JourneyDemoEvent {
+export interface JourneyEvent {
   id: string;
   kind: JourneyEventKind;
   category: JourneyEventCategory;
@@ -46,7 +46,7 @@ export const journeyCategoryConfig: Record<
 
 const c = journeyCategoryConfig;
 
-export const journeyDemoEvents: JourneyDemoEvent[] = [
+export const journeyReferenceEvents: JourneyEvent[] = [
   {
     id: 'evt-onset',
     kind: 'point',
