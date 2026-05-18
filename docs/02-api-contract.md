@@ -54,7 +54,6 @@
 | Study CRF 字段 | `GET` | `/studies/{study_id}/crf-fields` | 查询当前 Study CRF 字段配置 |
 | Study CRF 字段 | `POST` | `/studies/{study_id}/crf-fields` | 新增 Study CRF 字段并写入审计 |
 | Study CRF 字段 | `PUT` | `/studies/{study_id}/crf-fields/{field_id}` | 更新字段名称、类型、模块、状态、选项、必填和校验规则 |
-| 全局患者索引 | `GET` | `/global/patient-index` | LZ 全局页只读索引；返回 `patient_id`、`masked_subject_code`、`study_id`、`study_name`、`status`、`last_updated` |
 | 患者列表 | `GET` | `/studies/{study_id}/patients` | 搜索、筛选单个 Study 患者 |
 | 患者创建 | `POST` | `/studies/{study_id}/patients` | 在单个 Study Workspace 内创建患者 |
 | 患者详情 | `GET` | `/patients/{patient_id}` | 患者主档 |

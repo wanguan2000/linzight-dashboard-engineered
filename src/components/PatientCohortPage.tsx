@@ -346,51 +346,10 @@ interface PatientTableProps {
   activePatientName?: string;
   canEdit?: boolean;
   showStudyId?: boolean;
-  globalIndexOnly?: boolean;
 }
 
-function PatientTable({ patients, onEditPatient, onViewPatient, activePatientName, canEdit = true, showStudyId = false, globalIndexOnly = false }: PatientTableProps) {
+function PatientTable({ patients, onEditPatient, onViewPatient, activePatientName, canEdit = true, showStudyId = false }: PatientTableProps) {
   const { t } = useI18n();
-
-  if (globalIndexOnly) {
-    return (
-      <div className="patient-table-wrap">
-        <table className="patient-table">
-          <thead>
-            <tr>
-              <th>{t('患者索引')}</th>
-              <th>{t('Study ID')}</th>
-              <th>{t('Study 名称')}</th>
-              <th>{t('状态')}</th>
-              <th>{t('最近更新')}</th>
-              <th>{t('操作')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {patients.map((patient) => (
-              <tr className={patient.name === activePatientName ? 'is-active' : undefined} key={`${patient.studyId}-${patient.id ?? patient.name}`}>
-                <td data-label={t('患者索引')}>{patient.name}</td>
-                <td data-label={t('Study ID')}><span className="status-pill status-pill--info">{patient.studyId}</span></td>
-                <td data-label={t('Study 名称')}>{patient.studyName ?? '-'}</td>
-                <td data-label={t('状态')}>{t(patient.status ?? patient.note)}</td>
-                <td data-label={t('最近更新')}>{patient.lastUpdated ?? '-'}</td>
-                <td data-label={t('操作')}>
-                  <div className="patient-actions">
-                    <button type="button" onClick={() => onViewPatient(patient)}>{t('进入 Study')}</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {!patients.length && (
-              <tr>
-                <td colSpan={6}>{t('暂无匹配患者')}</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
 
   return (
     <div className="patient-table-wrap">
@@ -673,7 +632,6 @@ export function PatientCohortPage({
   const [saveStatus, setSaveStatus] = useState('等待患者操作');
   const [sampleCollectedOnly, setSampleCollectedOnly] = useState(false);
   const currentStudyId = getCurrentScopedStudyId();
-  const globalIndexOnly = false;
   const availableStudyOptions = useMemo(
     () => currentStudyId ? [currentStudyId] : studyOptionsForUser(currentUser, patients),
     [currentStudyId, currentUser, patients]
@@ -1032,7 +990,6 @@ export function PatientCohortPage({
             onEditPatient={openEditPatientEditor}
             onViewPatient={onViewPatient}
             showStudyId={showStudyId}
-            globalIndexOnly={globalIndexOnly}
           />
 
           <footer className="patient-list-card__footer">

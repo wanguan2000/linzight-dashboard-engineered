@@ -325,7 +325,7 @@ def require_study_context(study_id: str | None, resource: str) -> str:
     if not study_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"study_id is required for {resource}; use /global/patient-index for LZ global index",
+            detail=f"study_id is required for {resource}; use /studies/{{study_id}}/{resource} for business APIs",
         )
     return study_id
 
@@ -1940,54 +1940,6 @@ def update_study_crf_field(study_id: str, field_id: str, payload: StudyCrfFieldU
         after = next(item for item in crf_fields_from_version(after_version) if item["id"] == field_id)
         insert_audit(conn, user, "update_crf_field", "study_crf_versions", version["id"], before=before, after=after, study_id=study_id)
         return after
-
-
-@app.get("/global/patient-index")
-def global_patient_index(
-    q: str | None = Query(default=None),
-    authorization: str | None = Header(default=None),
-) -> list[dict[str, Any]]:
-    sql = """
-        SELECT
-          p.id AS patient_id,
-          p.study_id,
-          s.name AS study_name,
-          p.name AS subject_code,
-          p.disease_type,
-          p.updated_at AS last_updated,
-          COALESCE(c.status, '未签署') AS status
-        FROM patients p
-        JOIN studies s ON s.id = p.study_id
-        LEFT JOIN (
-          SELECT patient_id, MAX(status) AS status
-          FROM consents
-          GROUP BY patient_id
-        ) c ON c.patient_id = p.id
-    """
-    params: list[Any] = []
-    where: list[str] = []
-    with connect() as conn:
-        user = authorize(authorization, "patients", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "p.study_id")
-        if q:
-            where.append("(p.name LIKE ? OR p.study_id LIKE ? OR s.name LIKE ? OR p.disease_type LIKE ?)")
-            params.extend([f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"])
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY p.updated_at DESC"
-        rows = conn.execute(sql, params).fetchall()
-        return [
-            {
-                "patient_id": row["patient_id"],
-                "masked_subject_code": mask_sensitive_value(row["subject_code"], "name"),
-                "study_id": row["study_id"],
-                "study_name": row["study_name"],
-                "disease_type": row["disease_type"],
-                "status": row["status"],
-                "last_updated": row["last_updated"],
-            }
-            for row in rows
-        ]
 
 
 @app.get("/studies/{path_study_id}/patients")

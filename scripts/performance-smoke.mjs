@@ -94,11 +94,16 @@ async function run() {
     await waitForHealth();
     await request('/seed', { method: 'POST' });
     const token = await login();
-    const patients = await request('/global/patient-index', { headers: { Authorization: `Bearer ${token}` } });
-    details.patientListMs = patients.elapsedMs;
-    details.patientCount = patients.data.length;
-    assert(patients.data.length === 70, `expected 70 demo patient index rows, got ${patients.data.length}`);
-    assert(patients.elapsedMs < 2000, `patient list too slow: ${patients.elapsedMs}ms`);
+    const studies = await request('/studies', { headers: { Authorization: `Bearer ${token}` } });
+    const patientLists = await Promise.all(
+      studies.data.map((study) => request(`/studies/${study.id}/patients`, { headers: { Authorization: `Bearer ${token}` } }))
+    );
+    const elapsedMs = studies.elapsedMs + patientLists.reduce((sum, result) => sum + result.elapsedMs, 0);
+    const patientRows = patientLists.flatMap((result) => result.data);
+    details.patientListMs = elapsedMs;
+    details.patientCount = patientRows.length;
+    assert(patientRows.length === 70, `expected 70 demo patient rows from Study APIs, got ${patientRows.length}`);
+    assert(elapsedMs < 2000, `patient list too slow: ${elapsedMs}ms`);
 
     const exportJob = await request('/exports', {
       method: 'POST',

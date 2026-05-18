@@ -19,7 +19,6 @@ const exactEnglish: Record<string, string> = {
   '登录': 'Login',
   '患者列表': 'Patient list',
   '患者索引': 'Patient index',
-  '全局患者索引': 'Global Patient Index',
   'Study 系统管理': 'Study System Management',
   'Study 名称': 'Study name',
   '进入 Study': 'Enter Study',

@@ -282,13 +282,15 @@ async function runSmoke() {
   assert(patients.data.length > 0, 'LZXK-01 patients should be visible to lung CRC');
   assert(patients.data.every((patient) => patient.study_id === 'LZXK-01'), 'patient list leaked another study');
   await request('/studies/LGL-1111/patients', { token: crc.access_token, expectedStatus: 403 });
-  const adminPatients = await request('/global/patient-index', { token: lzAdmin.access_token });
+  const adminStudyPatientLists = await Promise.all(
+    ['LGL-1111', 'RWD-NMO-2026', 'LZXK-01'].map((studyId) => request(`/studies/${studyId}/patients`, { token: lzAdmin.access_token }))
+  );
+  const adminPatients = { data: adminStudyPatientLists.flatMap((result) => result.data) };
   const adminPatientStudies = new Set(adminPatients.data.map((patient) => patient.study_id));
-  assert(adminPatientStudies.size >= 3, 'LZ_ADMIN should see all seeded Study patient indexes');
-  assert(adminPatients.data.every((patient) => patient.study_id && patient.masked_subject_code && patient.last_updated), 'admin patient index must include minimal global fields');
-  const lglIndexPatient = adminPatients.data.find((row) => row.study_id === 'LGL-1111');
-  const lglPatient = { id: lglIndexPatient?.patient_id, study_id: lglIndexPatient?.study_id, name: lglIndexPatient?.masked_subject_code, hospital_no: 'GLOBAL-INDEX' };
-  assert(lglPatient.id, 'seeded admin view should include an LGL-1111 patient');
+  assert(adminPatientStudies.size >= 3, 'LZ_ADMIN should see patients from each seeded Study through Study-scoped APIs');
+  assert(adminPatients.data.every((patient) => patient.study_id && patient.id && patient.updated_at), 'admin patient views must use Study-scoped patient rows');
+  const lglPatient = adminPatients.data.find((row) => row.study_id === 'LGL-1111');
+  assert(lglPatient?.id, 'seeded admin view should include an LGL-1111 patient');
   const dataManagerPatients = await request('/studies/LZXK-01/patients', { token: dataManager.access_token });
   assert(dataManagerPatients.data.length > 0, 'data manager should see scoped patients');
   assert(dataManagerPatients.data[0].name.includes('**'), 'data manager patient name should be masked');

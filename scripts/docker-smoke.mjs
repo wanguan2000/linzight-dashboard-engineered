@@ -91,11 +91,11 @@ async function verifyBackendLogin() {
   const data = JSON.parse(raw);
   assert(data.access_token, 'Docker backend login did not return an access token');
   assert(data.user?.role === 'LZ_ADMIN', 'Docker backend login did not return the LZ system administrator');
-  const patients = await fetch(`${backendUrl}/global/patient-index`, {
+  const patients = await fetch(`${backendUrl}/studies`, {
     headers: { Authorization: `Bearer ${data.access_token}` },
   });
-  const patientRows = JSON.parse(await patients.text());
-  assert(Array.isArray(patientRows) && patientRows.length === 0, 'Docker GA bootstrap should not seed patient data');
+  const studyRows = JSON.parse(await patients.text());
+  assert(Array.isArray(studyRows) && studyRows.length === 0, 'Docker GA bootstrap should not seed Study or patient data');
 }
 
 async function verifyFrontend() {

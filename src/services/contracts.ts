@@ -101,16 +101,6 @@ export type ApiPatient = {
   clinical_data_format?: 'jsonb' | 'json' | 'legacy';
 };
 
-export type ApiGlobalPatientIndex = {
-  patient_id: string;
-  masked_subject_code: string;
-  study_id: string;
-  study_name: string;
-  disease_type: DiseaseType;
-  status: string;
-  last_updated: string;
-};
-
 export type ApiSample = {
   id: string;
   study_id: string;

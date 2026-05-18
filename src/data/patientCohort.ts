@@ -24,7 +24,6 @@ export interface PatientRecord {
   clinicalData: Record<string, string | number>;
   clinicalDataVersion?: string;
   clinicalDataFormat?: 'jsonb' | 'json' | 'legacy';
-  isGlobalIndexOnly?: boolean;
   studyName?: string;
   status?: string;
   lastUpdated?: string;
