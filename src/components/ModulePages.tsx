@@ -18,7 +18,7 @@ import {
   type VisitRecord
 } from '../data/operations';
 import type { PatientRecord } from '../data/patientCohort';
-import { demoUsers, roleLabels, type AuthenticatedUser, type UserRole } from '../data/auth';
+import { demoUsers, roleLabels, type AuthenticatedUser, type StudyRole, type UserRole } from '../data/auth';
 import { useI18n } from '../i18n/I18nProvider';
 import {
   applyStudyCrfMigration,
@@ -2921,6 +2921,26 @@ type SystemStudy = ApiStudy & {
   systemAdminCount: number;
 };
 
+type StudyCreateDraft = {
+  id: string;
+  code: string;
+  name: string;
+  indication: string;
+  phase: string;
+  status: ApiStudy['status'];
+  owner_org: string;
+};
+
+type AccountCreateDraft = {
+  displayName: string;
+  username: string;
+  role: UserRole;
+  password: string;
+  status: 'active' | 'disabled';
+  studyId: string;
+  memberStatus: 'active' | 'pending' | 'disabled';
+};
+
 function userIdForEmail(email: string) {
   return demoUsers.find((user) => user.username === email)?.id;
 }
@@ -3076,6 +3096,7 @@ const systemStatusTone: Record<SystemAccount['status'], 'success' | 'warning' | 
   Pending: 'warning',
   Disabled: 'danger'
 };
+const creatableStudyRoles: StudyRole[] = ['STUDY_CRC', 'STUDY_PI', 'STUDY_CONFIG_ADMIN', 'STUDY_DATA_MANAGER'];
 const systemFieldTypeOptions: SystemField['type'][] = ['Text', 'Number', 'Dropdown', 'Boolean'];
 const systemFieldStatusOptions: SystemField['status'][] = ['启用', '草稿', '停用'];
 
@@ -3181,6 +3202,8 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [queryRows, setQueryRows] = useState<ApiDataQuery[]>([]);
   const [queryStatusFilter, setQueryStatusFilter] = useState<'all' | ApiDataQuery['status']>('all');
   const [auditRows, setAuditRows] = useState<ApiAuditLog[]>([]);
+  const [studyCreateDraft, setStudyCreateDraft] = useState<StudyCreateDraft | null>(null);
+  const [accountCreateDraft, setAccountCreateDraft] = useState<AccountCreateDraft | null>(null);
   const [systemActionStatus, setSystemActionStatus] = useState('等待系统管理操作');
   const normalizedQuery = systemQuery.trim().toLowerCase();
   const visibleAccounts = useMemo(() => {
@@ -3430,64 +3453,96 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     };
   }, [isGlobalManagement, scopedStudyId]);
 
-  async function createSystemAccount() {
-    const index = accountRows.length + 1;
+  function openSystemAccountCreate() {
     const studyScope = scopedStudyId;
     if (!studyScope) {
       setSystemActionStatus('请先新建或选择 Study，再创建 Study 用户');
       return;
     }
-    const suffix = Date.now().toString().slice(-6);
-    const nextAccount: SystemAccount = {
-      name: `新账户 ${index}`,
-      email: `study-crc-${studyScope.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${suffix}@linzight.com`,
+    setAccountCreateDraft({
+      displayName: '',
+      username: '',
       role: 'STUDY_CRC',
-      roleLabel: '研究 CRC',
-      studyScope,
-      status: 'Pending',
-      lastLogin: '-'
-    };
-    setAccountRows((rows) => [nextAccount, ...rows]);
-    setAccountPage(1);
+      password: '',
+      status: 'active',
+      studyId: studyScope,
+      memberStatus: 'pending'
+    });
+    setSystemActionStatus('请填写用户资料、角色、密码和所属 Study 后提交');
+  }
+
+  async function submitSystemAccountCreate() {
+    if (!accountCreateDraft) return;
+    const username = accountCreateDraft.username.trim();
+    const displayName = accountCreateDraft.displayName.trim();
+    const password = accountCreateDraft.password.trim();
+    const studyId = accountCreateDraft.studyId.trim();
+    if (!username || !displayName || !password || !studyId) {
+      setSystemActionStatus('请完整填写姓名、邮箱、密码和所属 Study');
+      return;
+    }
     setSystemActionStatus('用户账户正在创建并同步 Study 成员...');
     try {
       const user = await createUserAccount({
-        username: nextAccount.email,
-        display_name: nextAccount.name,
-        role: 'STUDY_CRC',
-        password: `LZ${suffix}2026`,
-        status: 'active',
-        study_id: studyScope,
-        member_status: 'pending'
+        username,
+        display_name: displayName,
+        role: accountCreateDraft.role,
+        password,
+        status: accountCreateDraft.status,
+        study_id: studyId,
+        member_status: accountCreateDraft.memberStatus
       });
-      const savedAccount = accountFromApiUser(user, studyScope);
+      const savedAccount = accountFromApiUser(user, studyId);
       setAccountRows((rows) => upsertAccountRow(rows, savedAccount));
+      setAccountCreateDraft(null);
+      setAccountPage(1);
       setSystemActionStatus(`用户账户已创建并加入 Study：${savedAccount.email}`);
     } catch {
-      setSystemActionStatus('后端不可用或当前角色无用户创建权限，账户已保存在本页');
+      setSystemActionStatus('后端不可用、密码不符合策略，或当前角色无用户创建权限');
     }
   }
 
-  async function createSystemStudy() {
+  function openSystemStudyCreate() {
     if (currentUser?.role !== 'LZ_ADMIN') {
       setSystemActionStatus('只有 LZ 系统管理员可以新建 Study');
       return;
     }
-    const suffix = Date.now().toString().slice(-4);
-    const studyId = `RWD-NEW-${suffix}`;
-    setSystemActionStatus(`Study ${studyId} 正在创建...`);
+    setStudyCreateDraft({
+      id: '',
+      code: '',
+      name: '',
+      indication: '',
+      phase: 'RWD',
+      status: 'draft',
+      owner_org: 'LinZight'
+    });
+    setSystemActionStatus('请填写 Study ID、Code、名称和适应症后提交');
+  }
+
+  async function submitSystemStudyCreate() {
+    if (!studyCreateDraft) return;
+    const id = studyCreateDraft.id.trim();
+    const code = studyCreateDraft.code.trim();
+    const name = studyCreateDraft.name.trim();
+    const indication = studyCreateDraft.indication.trim();
+    if (!id || !code || !name || !indication) {
+      setSystemActionStatus('请完整填写 Study ID、Code、Study 名称和适应症');
+      return;
+    }
+    setSystemActionStatus(`Study ${id} 正在创建...`);
     try {
       const study = await createStudy({
-        id: studyId,
-        code: studyId,
-        name: `新建真实世界研究 ${suffix}`,
-        indication: '待配置疾病领域',
-        phase: 'RWD',
-        status: 'draft',
-        owner_org: 'LinZight'
+        id,
+        code,
+        name,
+        indication,
+        phase: studyCreateDraft.phase.trim() || 'RWD',
+        status: studyCreateDraft.status,
+        owner_org: studyCreateDraft.owner_org.trim() || 'LinZight'
       });
       setStudyRows((rows) => [{ ...study, systemAdminCount: 0 }, ...rows.filter((row) => row.id !== study.id)]);
       setSelectedSystemStudyId(study.id);
+      setStudyCreateDraft(null);
       notifyStudiesUpdated();
       setSystemActionStatus(`Study 已创建为草稿：${study.id}。发布前需绑定 CRF、访视计划、知情模板和系统管理员。`);
     } catch {
@@ -4066,7 +4121,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
               />
               <Icon name="microphone" />
             </label>
-            <button className="module-primary-button" type="button" onClick={() => void createSystemAccount()}><Icon name="userPlus" />Create Account<br /><span>{t('新增账户')}</span></button>
+            <button className="module-primary-button" type="button" onClick={openSystemAccountCreate}><Icon name="userPlus" />Create Account<br /><span>{t('新增账户')}</span></button>
           </div>
         </header>
         <div className="system-summary-grid">
@@ -4105,10 +4160,49 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
               <h2>{t('Study Registry | Study 管理')}</h2>
               <span>{t('维护 Study、用户和授权范围；业务数据在单个 Study Workspace 内处理。')}</span>
             </div>
-            <button className="module-primary-button" type="button" onClick={() => void createSystemStudy()}>
+            <button className="module-primary-button" type="button" onClick={openSystemStudyCreate}>
               <Icon name="studies" />Create Study<br /><span>{t('新建 Study')}</span>
             </button>
           </header>
+          {studyCreateDraft ? (
+            <div className="system-create-form" aria-label={t('新建 Study 表单')}>
+              <label>
+                <span>Study ID</span>
+                <input value={studyCreateDraft.id} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, id: event.target.value })} placeholder="LZ-RWS-001" />
+              </label>
+              <label>
+                <span>Study Code</span>
+                <input value={studyCreateDraft.code} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, code: event.target.value })} placeholder="LZ-RWS-001" />
+              </label>
+              <label>
+                <span>{t('Study 名称')}</span>
+                <input value={studyCreateDraft.name} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, name: event.target.value })} placeholder={t('请输入 Study 名称')} />
+              </label>
+              <label>
+                <span>{t('适应症 / 疾病领域')}</span>
+                <input value={studyCreateDraft.indication} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, indication: event.target.value })} placeholder={t('请输入适应症或疾病领域')} />
+              </label>
+              <label>
+                <span>Phase</span>
+                <input value={studyCreateDraft.phase} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, phase: event.target.value })} placeholder="RWD" />
+              </label>
+              <label>
+                <span>{t('状态')}</span>
+                <select value={studyCreateDraft.status} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, status: event.target.value as ApiStudy['status'] })}>
+                  <option value="draft">draft</option>
+                  <option value="active">active</option>
+                </select>
+              </label>
+              <label>
+                <span>Owner Org</span>
+                <input value={studyCreateDraft.owner_org} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, owner_org: event.target.value })} placeholder="LinZight" />
+              </label>
+              <div className="system-create-form__actions">
+                <button className="module-primary-button" type="button" onClick={() => void submitSystemStudyCreate()}>{t('提交新建')}</button>
+                <button className="module-link-button" type="button" onClick={() => setStudyCreateDraft(null)}>{t('取消')}</button>
+              </div>
+            </div>
+          ) : null}
           <div className="module-table-wrap">
             <table className="module-table system-study-registry-table">
               <thead>
@@ -4163,7 +4257,59 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                 <h2>{t('User Accounts & Roles List | 用户账户与角色列表')}</h2>
                 <span>{t('按角色和状态管理研究团队账号')}</span>
               </div>
+              <button className="module-link-button module-link-button--primary" type="button" onClick={openSystemAccountCreate}><Icon name="userPlus" />{t('新增账户')}</button>
             </header>
+            {accountCreateDraft ? (
+              <div className="system-create-form" aria-label={t('新建用户表单')}>
+                <label>
+                  <span>{t('姓名')}</span>
+                  <input value={accountCreateDraft.displayName} onChange={(event) => setAccountCreateDraft({ ...accountCreateDraft, displayName: event.target.value })} placeholder={t('请输入姓名')} />
+                </label>
+                <label>
+                  <span>{t('账号邮箱')}</span>
+                  <input value={accountCreateDraft.username} onChange={(event) => setAccountCreateDraft({ ...accountCreateDraft, username: event.target.value })} placeholder="name@linzight.com" />
+                </label>
+                <label>
+                  <span>{t('角色')}</span>
+                  <select value={accountCreateDraft.role} onChange={(event) => setAccountCreateDraft({ ...accountCreateDraft, role: event.target.value as UserRole })}>
+                    {creatableStudyRoles.map((role) => (
+                      <option value={role} key={role}>{role} | {t(roleLabels[role])}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>{t('密码')}</span>
+                  <input type="password" value={accountCreateDraft.password} onChange={(event) => setAccountCreateDraft({ ...accountCreateDraft, password: event.target.value })} placeholder={t('请输入初始密码')} />
+                </label>
+                <label>
+                  <span>Study ID</span>
+                  <select value={accountCreateDraft.studyId} onChange={(event) => setAccountCreateDraft({ ...accountCreateDraft, studyId: event.target.value })}>
+                    {availableSystemStudies.map((studyId) => (
+                      <option value={studyId} key={studyId}>{studyId}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>{t('账户状态')}</span>
+                  <select value={accountCreateDraft.status} onChange={(event) => setAccountCreateDraft({ ...accountCreateDraft, status: event.target.value as AccountCreateDraft['status'] })}>
+                    <option value="active">active</option>
+                    <option value="disabled">disabled</option>
+                  </select>
+                </label>
+                <label>
+                  <span>{t('Study 成员状态')}</span>
+                  <select value={accountCreateDraft.memberStatus} onChange={(event) => setAccountCreateDraft({ ...accountCreateDraft, memberStatus: event.target.value as AccountCreateDraft['memberStatus'] })}>
+                    <option value="pending">pending</option>
+                    <option value="active">active</option>
+                    <option value="disabled">disabled</option>
+                  </select>
+                </label>
+                <div className="system-create-form__actions">
+                  <button className="module-primary-button" type="button" onClick={() => void submitSystemAccountCreate()}>{t('提交新建')}</button>
+                  <button className="module-link-button" type="button" onClick={() => setAccountCreateDraft(null)}>{t('取消')}</button>
+                </div>
+              </div>
+            ) : null}
             <div className="module-table-wrap">
               <table className="module-table system-account-table">
                 <thead>

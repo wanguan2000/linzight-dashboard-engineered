@@ -65,6 +65,17 @@ const exactEnglish: Record<string, string> = {
   'LZ 管理页不是业务租户；业务操作必须进入单个 Study Workspace。':
     'The LZ admin page is not a business tenant; business operations must enter a single Study Workspace.',
   'Study Registry | Study 管理': 'Study Registry | Study Management',
+  '新建 Study 表单': 'Create Study form',
+  '新建用户表单': 'Create user form',
+  '请输入 Study 名称': 'Enter Study name',
+  '适应症 / 疾病领域': 'Indication / disease area',
+  '请输入适应症或疾病领域': 'Enter indication or disease area',
+  '提交新建': 'Submit create',
+  '请输入姓名': 'Enter name',
+  '角色': 'Role',
+  '请输入初始密码': 'Enter initial password',
+  '账户状态': 'Account status',
+  'Study 成员状态': 'Study member status',
   '维护 Study、用户和授权范围；业务数据在单个 Study Workspace 内处理。':
     'Maintain Studies, users, and authorization scopes; business data is handled inside a single Study Workspace.',
   '授权账号': 'Authorized accounts',

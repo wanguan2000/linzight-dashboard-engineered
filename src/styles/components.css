@@ -6149,6 +6149,67 @@
   font-weight: 700;
 }
 
+.system-create-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid rgba(75, 173, 185, 0.2);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(245, 252, 255, 0.9), rgba(247, 250, 255, 0.78)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.system-create-form label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.system-create-form label span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.system-create-form input,
+.system-create-form select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.94);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.system-create-form input:focus,
+.system-create-form select:focus {
+  border-color: rgba(75, 173, 185, 0.46);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(75, 173, 185, 0.12);
+}
+
+.system-create-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
+.system-create-form__actions .module-primary-button,
+.system-create-form__actions .module-link-button {
+  min-height: 34px;
+  white-space: nowrap;
+}
+
 .system-account-table,
 .system-field-table {
   min-width: 760px;
