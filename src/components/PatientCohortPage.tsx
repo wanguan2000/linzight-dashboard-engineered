@@ -611,11 +611,13 @@ interface PatientCohortPageProps {
   currentUser?: AuthenticatedUser | null;
   onCreatePatient?: () => void;
   onEditPatient?: (patient: PatientRecord) => void;
+  onPatientChange?: (patient: PatientRecord) => void;
   onViewPatient?: (patient: PatientRecord) => void;
 }
 
 export function PatientCohortPage({
   currentUser,
+  onPatientChange = () => undefined,
   onViewPatient = () => undefined
 }: PatientCohortPageProps) {
   const { t } = useI18n();
@@ -792,6 +794,7 @@ export function PatientCohortPage({
         return [saved, ...rows];
       });
       setSearch(saved.name);
+      onPatientChange(saved);
       setEditorMode(null);
       setDraftPatient(null);
       setSaveStatus(editorMode === 'create' ? `患者已创建：${saved.name}` : `患者已保存：${saved.name}`);
@@ -801,6 +804,7 @@ export function PatientCohortPage({
         if (exists) return rows.map((patient) => (patient.id === nextPatient.id || patient.name === nextPatient.name ? nextPatient : patient));
         return [nextPatient, ...rows];
       });
+      onPatientChange(nextPatient);
       setSaveStatus(isPermissionError(error) ? '当前角色没有患者写入权限，变更仅保存在本页' : '后端不可用，患者变更已保存在本页');
     }
   }

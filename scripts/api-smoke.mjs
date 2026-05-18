@@ -297,7 +297,27 @@ async function runSmoke() {
   assert(dataManagerPatients.data[0].hospital_no.includes('****'), 'data manager hospital number should be masked in API view');
 
   const patient = patients.data[0];
+  const createdPatientName = `RJ-SMOKE-${Date.now()}`;
+  const createdPatient = await request('/studies/LZXK-01/patients', {
+    method: 'POST',
+    token: crc.access_token,
+    body: {
+      study_id: 'LZXK-01',
+      name: createdPatientName,
+      hospital_no: `RJ-${Date.now()}`,
+      sex: '女',
+      age: 52,
+      disease_type: 'NSCLC',
+      organs: ['肺'],
+      note: 'consent context smoke',
+      clinical_data: { ECOG评分: 1 },
+    },
+  });
+  assert(createdPatient.status === 201 && createdPatient.data.name === createdPatientName, 'Study CRC should create a scoped patient');
   const consentList = await request('/studies/LZXK-01/consents', { token: crc.access_token });
+  const createdPatientConsent = consentList.data.find((consent) => consent.patient_id === createdPatient.data.id);
+  assert(createdPatientConsent?.patient_name === createdPatientName, 'newly created patient should have a matching pending consent record');
+  assert(createdPatientConsent?.status === '待签署', 'newly created patient consent should start as pending signature');
   const patientConsent = consentList.data.find((consent) => consent.patient_id === patient.id) ?? consentList.data[0];
   assert(patientConsent?.study_id === 'LZXK-01', 'consent list should stay in LZXK-01');
   assert(consentList.data.every((consent) => consent.study_id === 'LZXK-01'), 'consent list leaked another study');

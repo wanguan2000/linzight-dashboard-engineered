@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { quickActions } from '../data/dashboard';
 import { clinicalDataGroups, clinicalFields, crfTemplateFieldCount, crfTemplateVersion, systemCrfFields } from '../data/crfTemplate';
 import {
-  consentRecords,
   formatSampleLibraryId,
   getCompleteness,
   omicsRecords,
@@ -1526,13 +1525,45 @@ function SampleTestingStatTiles({
   );
 }
 
-export function ConsentManagementPage({ currentUser }: { currentUser?: AuthenticatedUser | null } = {}) {
+function consentRecordMatchesPatient(record: ConsentRecord, patient: PatientRecord) {
+  if (record.patientId && patient.id && record.patientId === patient.id) return true;
+  return record.studyId === patient.studyId && (record.patientName === patient.name || record.hospitalNo === patient.hospitalNo);
+}
+
+function pendingConsentRecordForPatient(patient: PatientRecord): ConsentRecord {
+  return {
+    id: `PENDING-CONSENT-${patient.id || patient.studyId || 'STUDY'}-${patient.name}`,
+    studyId: patient.studyId,
+    patientId: patient.id,
+    patientName: patient.name,
+    hospitalNo: patient.hospitalNo,
+    diseaseType: patient.diseaseType,
+    status: '待签署',
+    signedAt: '-',
+    version: consentVersion,
+    method: '-'
+  };
+}
+
+function findConsentRecordForPatient(records: ConsentRecord[], patient?: PatientRecord | null) {
+  if (!patient) return undefined;
+  return records.find((record) => consentRecordMatchesPatient(record, patient));
+}
+
+export function ConsentManagementPage({
+  currentUser,
+  selectedPatient
+}: {
+  currentUser?: AuthenticatedUser | null;
+  selectedPatient?: PatientRecord | null;
+} = {}) {
   const { t } = useI18n();
-  const initialConsentRecords = filterRecordsByCurrentStudyScope(consentRecords);
+  const scopedSelectedPatient = selectedPatient && recordBelongsToCurrentStudyScope(selectedPatient) ? selectedPatient : null;
+  const currentConsentStudyId = getCurrentScopedStudyId();
   const consentUploadInputRef = useRef<globalThis.HTMLInputElement>(null);
-  const emptyConsentRecord: ConsentRecord = {
+  const emptyConsentRecord = useMemo<ConsentRecord>(() => ({
     id: 'NO-SCOPED-CONSENT',
-    studyId: getCurrentScopedStudyId(),
+    studyId: currentConsentStudyId,
     patientId: '',
     patientName: '-',
     hospitalNo: '-',
@@ -1541,9 +1572,9 @@ export function ConsentManagementPage({ currentUser }: { currentUser?: Authentic
     signedAt: '-',
     version: consentVersion,
     method: '电子'
-  };
-  const [selected, setSelected] = useState<ConsentRecord>(initialConsentRecords[0] ?? emptyConsentRecord);
-  const [baseRecords, setBaseRecords] = useState<ConsentRecord[]>(initialConsentRecords);
+  }), [currentConsentStudyId]);
+  const [selected, setSelected] = useState<ConsentRecord>(() => scopedSelectedPatient ? pendingConsentRecordForPatient(scopedSelectedPatient) : emptyConsentRecord);
+  const [baseRecords, setBaseRecords] = useState<ConsentRecord[]>([]);
   const [recordOverrides, setRecordOverrides] = useState<Record<string, Partial<ConsentRecord>>>({});
   const [understoodRecords, setUnderstoodRecords] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState('');
@@ -1555,15 +1586,23 @@ export function ConsentManagementPage({ currentUser }: { currentUser?: Authentic
   const [pendingConsentUploadRecord, setPendingConsentUploadRecord] = useState<ConsentRecord | null>(null);
   const [consentApprovals, setConsentApprovals] = useState<ApiApprovalRequest[]>([]);
   const records = useMemo(() => {
-    return baseRecords.map((record) => ({ ...record, ...recordOverrides[record.id] }));
-  }, [baseRecords, recordOverrides]);
+    const mergedRecords = baseRecords.map((record) => ({ ...record, ...recordOverrides[record.id] }));
+    if (scopedSelectedPatient && !findConsentRecordForPatient(mergedRecords, scopedSelectedPatient)) {
+      return [pendingConsentRecordForPatient(scopedSelectedPatient), ...mergedRecords];
+    }
+    return mergedRecords;
+  }, [baseRecords, recordOverrides, scopedSelectedPatient]);
   const consentStudyOptions = useMemo(() => uniqueOptionalStudyIds(records), [records]);
   const showConsentStudyId = consentStudyOptions.length > 1;
   const studyFilteredRecords = useMemo(
     () => records.filter((record) => studyFilter === '全部 Study' || record.studyId === studyFilter),
     [records, studyFilter]
   );
-  const selectedRecord = records.find((record) => record.id === selected.id) ?? records[0] ?? emptyConsentRecord;
+  const selectedRecord =
+    findConsentRecordForPatient(records, scopedSelectedPatient) ??
+    records.find((record) => record.id === selected.id) ??
+    records[0] ??
+    (scopedSelectedPatient ? pendingConsentRecordForPatient(scopedSelectedPatient) : emptyConsentRecord);
   const statusCounts = useMemo(() => {
     return studyFilteredRecords.reduce<Record<'全部' | ConsentRecord['status'], number>>(
       (acc, record) => {
@@ -1780,21 +1819,28 @@ export function ConsentManagementPage({ currentUser }: { currentUser?: Authentic
   }, [consentStudyOptions, studyFilter]);
 
   useEffect(() => {
+    if (!scopedSelectedPatient) return;
+    const matched = findConsentRecordForPatient(records, scopedSelectedPatient) ?? pendingConsentRecordForPatient(scopedSelectedPatient);
+    setSelected(matched);
+    if (matched.studyId) setStudyFilter(matched.studyId);
+  }, [records, scopedSelectedPatient]);
+
+  useEffect(() => {
     let ignore = false;
 
     void fetchConsentRecords()
       .then((nextRecords) => {
-        if (ignore || !nextRecords.length) return;
+        if (ignore) return;
         setBaseRecords(nextRecords);
         setRecordOverrides({});
-        setSelected(nextRecords[0]);
+        setSelected(findConsentRecordForPatient(nextRecords, scopedSelectedPatient) ?? nextRecords[0] ?? (scopedSelectedPatient ? pendingConsentRecordForPatient(scopedSelectedPatient) : emptyConsentRecord));
       })
       .catch(() => undefined);
 
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [emptyConsentRecord, scopedSelectedPatient]);
 
   useEffect(() => {
     let ignore = false;

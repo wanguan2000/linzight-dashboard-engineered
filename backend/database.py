@@ -1107,6 +1107,16 @@ def migrate_study_schema(conn: sqlite3.Connection) -> None:
         )
     conn.execute(
         """
+        INSERT INTO consents (id, study_id, patient_id, status, version, signed_at, method)
+        SELECT 'CONS-' || p.id, p.study_id, p.id, '待签署', 'V1.0', '-', '-'
+        FROM patients p
+        WHERE NOT EXISTS (
+          SELECT 1 FROM consents c WHERE c.patient_id = p.id
+        )
+        """
+    )
+    conn.execute(
+        """
         UPDATE crf_entries
         SET
           form_id = COALESCE(NULLIF(form_id, ''), module),

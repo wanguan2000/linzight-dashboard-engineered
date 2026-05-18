@@ -29,6 +29,8 @@ Study 配置总表由 `/study-configurations` 和 `/studies/{study_id}/configura
 
 临床数据采集页的“多次随访”表格读取计划/实际 `visits`，同时将 `follow_up_records` 映射为可回显的随访行。新增或编辑随访行时，前端通过 `saveVisitFollowUpRecord()` 写入 `/studies/{study_id}/follow-up-records`；计划访视配置仍由 `study_visit_plans` 管理。
 
+患者队列新建或编辑患者成功后，前端必须把保存后的患者设置为当前患者上下文，并同步给知情同意、临床数据采集和患者旅程等页面。后端 `POST /studies/{study_id}/patients` 在创建患者主档、计划访视和 CRF 草稿的同时，会创建一条 `status=待签署` 的 consent 记录；知情同意页面优先选择当前患者对应的 consent，不允许默认回退到列表第一名患者。
+
 系统管理页的账号创建通过 `POST /users` 执行。前端传入 `username`、`display_name`、`role`、`password`、`study_id` 和 `member_status`；后端创建用户前会执行基础密码策略，密码使用 PBKDF2-HMAC-SHA256 加盐哈希保存。如果是研究级角色，会同步创建当前 Study 的 `study_members` 记录并返回 `study_memberships`。Create Account 按钮必须使用该接口，不应只在前端插入本地账号。
 
 系统管理页的 Study 成员列表通过 `/studies/{study_id}/members` 读取，已有成员启用/停用研究级角色通过同一路径 `POST` upsert。平台级 `LZ_ADMIN` 启用/禁用账号时调用 `PATCH /users/{user_id}/status`，该接口会影响登录生命周期。该响应必须包含 `username` 和 `display_name`，与列表接口一致，前端才能在保存后直接更新账号行。

@@ -2011,9 +2011,19 @@ def create_patient(payload: PatientCreate, path_study_id: str | None = None, aut
             )
             row = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
             created_plan_items = create_planned_visits_for_patient(conn, user, row, data["clinical_data"])
+            consent_id = f"CONS-{patient_id}"
+            conn.execute(
+                """
+                INSERT INTO consents (id, study_id, patient_id, status, version, signed_at, method)
+                VALUES (?, ?, ?, '待签署', 'V1.0', '-', '-')
+                ON CONFLICT(id) DO NOTHING
+                """,
+                (consent_id, data["study_id"], patient_id),
+            )
             insert_audit(conn, user, "create", "patients", patient_id, after=row, study_id=data["study_id"])
             row["generated_visit_count"] = created_plan_items["visits"]
             row["generated_crf_count"] = created_plan_items["crf_entries"]
+            row["generated_consent_count"] = 1
             return apply_field_permissions_to_record(conn, user, row)
     except HTTPException:
         raise

@@ -396,9 +396,9 @@ export default function App() {
 
   function renderActiveModule() {
     if (activeModule === '患者队列管理') {
-      return <PatientCohortPage currentUser={currentUser} onCreatePatient={createPatient} onEditPatient={openClinicalData} onViewPatient={openPatientJourney} />;
+      return <PatientCohortPage currentUser={currentUser} onCreatePatient={createPatient} onEditPatient={openClinicalData} onPatientChange={setSelectedPatient} onViewPatient={openPatientJourney} />;
     }
-    if (activeModule === '知情同意') return <ConsentManagementPage currentUser={currentUser} />;
+    if (activeModule === '知情同意') return <ConsentManagementPage currentUser={currentUser} selectedPatient={selectedPatient} />;
     if (activeModule === '临床数据采集') {
       return <ClinicalDataCapturePage selectedPatient={selectedPatient} onOpenPatientJourney={openPatientJourney} onPatientChange={setSelectedPatient} />;
     }
