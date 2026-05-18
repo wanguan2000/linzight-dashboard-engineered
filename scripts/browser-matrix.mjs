@@ -61,6 +61,7 @@ function startBackend() {
       ...process.env,
       DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-browser-matrix.db')}`,
       LINZIGHT_DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-browser-matrix.db')}`,
+      LINZIGHT_ALLOW_SQLITE_RUNTIME: '1',
       LINZIGHT_UPLOADS_DIR: join(tempDir, 'uploads'),
     },
     stdio: ['ignore', 'pipe', 'pipe'],

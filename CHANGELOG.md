@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project uses Semantic Versioning.
 
+## [1.0.2] - 2026-05-19
+
+### Changed
+
+- Formal backend runtime now rejects `sqlite:///...` database URLs unless `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` is explicitly set for isolated smoke tests or legacy migration tooling.
+- Release, setup, deployment, architecture, API, and handoff docs now state PostgreSQL as the formal GA database and describe SQLite only as a test/export utility.
+
 ## [1.0.1] - 2026-05-18
 
 ### Added

@@ -2,7 +2,7 @@
 
 ## 发布包内容
 
-- `RELEASE_NOTES.md` / `docs/release-notes-v1.0.1.md`
+- `RELEASE_NOTES.md` / `docs/release-notes-v1.0.2.md`
 - `docs/demo-readiness-checklist.md`
 - `docs/07-production-release-candidate-workflows.md`
 - `docs/08-permission-matrix.md`
@@ -18,9 +18,9 @@
 
 | 角色 | 账号 | UAT 链路 |
 | --- | --- | --- |
-| LZ Admin | `admin@demo.linzight` | 全部 Study、患者 Study ID、系统管理、审批、审计 |
-| Lung Study CRC | `lung-crc@demo.linzight` | `LZXK-01` 患者、CRF、eConsent、样本、Journey、数据分析质控转 Query |
-| Lung Study Data Manager | `lung-dm@demo.linzight` | `LZXK-01` 质控、Query、导出、Approval Center、Audit Diff |
+| LZ Admin | configured initial admin | Study 创建/终止/删除、用户与 Study 授权范围、全局系统管理 |
+| Study System Admin | user-created `STUDY_CONFIG_ADMIN` | 本 Study 用户、成员、CRF 配置、访视计划、Query/审批配置 |
+| Study Data Manager | user-created `STUDY_DATA_MANAGER` | 本 Study 质控、Query、导出、Approval Center、Audit Diff |
 
 ## UAT Checklist
 
@@ -36,7 +36,7 @@
 - 导出任务记录 Study、操作者、生成时间和下载行为。
 - 390px 视口可跑患者、CRF、样本、Query、审批、审计主链路。
 - 中英文切换无明显硬编码阻断。
-- Release notes 明确：`v1.0.1` 是 GA 功能测试与测试数据填写版本，不可直接承载真实患者生产数据。
+- Release notes 明确：`v1.0.2` 是 GA 功能测试与测试数据填写版本，不可直接承载真实患者生产数据。
 
 ## 回滚步骤
 
@@ -48,4 +48,4 @@
 
 ## 发布限制声明
 
-当前 `v1.0.1` GA 包用于正式功能测试和用户自行填写测试数据；正式 Docker 启动为空库，仅保留首个 LZ 系统管理员。真实患者生产上线前，必须完成生产 PostgreSQL runtime、集中身份源、真实对象存储、真实病毒扫描、安全审计、备份恢复演练、UAT 签字和合规评估。
+当前 `v1.0.2` GA 包用于正式功能测试和用户自行填写测试数据；正式 Docker 启动为空库，仅保留首个 LZ 系统管理员。正式运行数据库固定为 PostgreSQL，SQLite 只允许隔离 smoke/旧迁移工具显式开启。真实患者生产上线前，必须完成生产 PostgreSQL runtime、集中身份源、真实对象存储、真实病毒扫描、安全审计、备份恢复演练、UAT 签字和合规评估。

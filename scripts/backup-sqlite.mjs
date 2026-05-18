@@ -10,7 +10,7 @@ function resolveProjectPath(path) {
 
 function resolveSqlitePath(databaseUrl) {
   if (!databaseUrl.startsWith('sqlite:///')) {
-    throw new Error(`Only sqlite:/// URLs are supported by this demo backup script: ${databaseUrl}`);
+    throw new Error(`Only sqlite:/// URLs are supported by this legacy SQLite backup script: ${databaseUrl}`);
   }
   return resolveProjectPath(databaseUrl.slice('sqlite:///'.length));
 }
@@ -45,7 +45,7 @@ writeFileSync(
       databaseUrl,
       databasePath,
       uploadsDir,
-      note: 'Demo SQLite/upload backup for local beta validation. Not a production backup solution.',
+      note: 'Legacy SQLite/upload backup for local validation. Not a production backup solution.',
     },
     null,
     2,

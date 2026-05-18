@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-16
 
-This demo runs on FastAPI + PostgreSQL by default, while SQLite remains available for isolated smoke runs, legacy backup scripts, and migration export rehearsal.
+Formal runtime runs on FastAPI + PostgreSQL. SQLite remains available only for isolated smoke runs, legacy backup scripts, and migration export rehearsal with `LINZIGHT_ALLOW_SQLITE_RUNTIME=1`.
 
 ## PostgreSQL Migration
 
@@ -15,7 +15,7 @@ psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/003_constraints.sql
 psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/004_seed_demo.sql
 ```
 
-Use the export package for full demo-data import rehearsal:
+Use the export package for full legacy test-data import rehearsal:
 
 ```bash
 npm run export:postgres-migration
@@ -50,7 +50,7 @@ LINZIGHT_OBJECT_BUCKET=linzight-rws
 LINZIGHT_OBJECT_PREFIX=prod
 ```
 
-The demo object adapter stores bytes under `uploads/object-store/...` but returns `object://bucket/prefix/category/file` URIs, so API behavior matches object-storage semantics without adding a vendor SDK to the demo.
+The local object adapter stores bytes under `uploads/object-store/...` but returns `object://bucket/prefix/category/file` URIs, so API behavior matches object-storage semantics without adding a vendor SDK.
 
 ## Virus Scanning
 
@@ -67,7 +67,7 @@ LINZIGHT_VIRUS_SCAN_PROVIDER=clamav
 LINZIGHT_VIRUS_SCAN_ENDPOINT=tcp://clamav:3310
 ```
 
-The external scanner adapter is deterministic in the demo and still blocks EICAR test files. A real deployment should replace the adapter body with ClamAV, OSS/S3 malware scanning, or a vendor gateway, and keep the `scan_status` / `scan_message` contract unchanged.
+The external scanner adapter is deterministic in local testing and still blocks EICAR test files. A real deployment should replace the adapter body with ClamAV, OSS/S3 malware scanning, or a vendor gateway, and keep the `scan_status` / `scan_message` contract unchanged.
 
 Failure strategy for RC:
 

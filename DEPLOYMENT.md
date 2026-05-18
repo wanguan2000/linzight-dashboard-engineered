@@ -42,7 +42,7 @@ npm run build
 
 ## Docker 部署建议
 
-仓库提供最小 Docker Compose Demo 环境：
+仓库提供最小 Docker Compose PostgreSQL 功能测试环境：
 
 ```bash
 docker compose up --build
@@ -51,7 +51,7 @@ docker compose up --build
 - `Dockerfile.frontend`：Node 22 Alpine 构建 Vite 应用，并用 `vite preview` 暴露 `5173`。
 - `Dockerfile.backend`：Python 3.11 slim，安装 FastAPI 依赖，复制 `backend/` 与 CRF schema，并运行 uvicorn。
 - `docker-compose.yml`：启动 PostgreSQL + backend + frontend，默认后端使用 PostgreSQL volume 和上传 volume `/uploads`。
-- 后端首次启动时会执行 `python -m backend.bootstrap`，在数据库为空时生成三 Study Demo 数据；已有数据不会被重置。
+- 后端首次启动时会执行 `python -m backend.bootstrap`，初始化 PostgreSQL schema，并在用户表为空时只创建首个 LZ 系统管理员；不会自动生成 Study、患者、样本、检测或测试用户。
 
 默认访问地址：
 
@@ -61,7 +61,7 @@ backend:  http://127.0.0.1:8000/
 health:   http://127.0.0.1:8000/health
 ```
 
-本 Compose 文件用于本地 Demo / private beta 验证，不是生产编排。生产环境应替换为正式认证、独立数据库、对象存储、受控 CORS、TLS、日志采集和备份策略。
+本 Compose 文件用于本地 GA 功能测试验证，不是生产编排。生产环境应替换为集中身份源、独立托管 PostgreSQL、对象存储、受控 CORS、TLS、日志采集和备份策略。
 
 ## 环境变量
 
@@ -79,11 +79,11 @@ health:   http://127.0.0.1:8000/health
 
 真实生产密钥应放入部署平台 secret，不要写入仓库。
 
-更完整的环境变量、Nginx 反向代理示例和 Demo SQLite 备份恢复说明见 `docs/deployment-ops.md`。
+更完整的环境变量、Nginx 反向代理示例和旧 SQLite 测试库备份恢复说明见 `docs/deployment-ops.md`。
 
-## Demo 备份恢复
+## 旧 SQLite 测试库备份恢复
 
-本地 private beta 验证可备份 SQLite Demo 数据库和上传目录：
+本地旧 SQLite 测试库可备份 SQLite 数据库和上传目录：
 
 ```bash
 npm run backup:sqlite
@@ -94,8 +94,8 @@ npm run restore:sqlite -- backups/linzight-<timestamp>
 
 ## 生产部署注意事项
 
-- 不要部署 demo token 认证作为生产认证。
-- 不要使用本地 SQLite 作为生产主库；PostgreSQL 数据库 URL 必须放入受控环境变量或 systemd env file，不要写入仓库。
+- 不要把本地签名 Bearer token 当作真实患者生产认证。
+- 不要使用本地 SQLite 作为正式运行数据库；正式版本数据库为 PostgreSQL，数据库 URL 必须放入受控环境变量或 systemd env file，不要写入仓库。
 - 上传目录应使用持久化存储或对象存储。
 - 患者数据和医疗敏感数据必须有脱敏、权限和审计。
 - CORS 只允许可信前端域名。

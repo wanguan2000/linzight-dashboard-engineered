@@ -11,7 +11,7 @@ from urllib.parse import unquote
 
 try:
     import psycopg2
-except ImportError:  # PostgreSQL is optional for local SQLite demo usage.
+except ImportError:  # SQLite is allowed only for isolated smoke/migration tooling.
     psycopg2 = None
 
 try:
@@ -25,6 +25,7 @@ UPLOADS_DIR = Path(os.getenv("LINZIGHT_UPLOADS_DIR", str(DEFAULT_UPLOADS_DIR))).
 SQLITE_DATABASE_URL = f"sqlite:///{DB_PATH}"
 POSTGRES_DATABASE_URL = os.getenv("LINZIGHT_POSTGRES_URL", "postgresql+psycopg2:///linzight_dashboard_engineered")
 DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("LINZIGHT_DATABASE_URL") or POSTGRES_DATABASE_URL
+ALLOW_SQLITE_RUNTIME = os.getenv("LINZIGHT_ALLOW_SQLITE_RUNTIME") == "1"
 
 
 class PostgresRow(dict):
@@ -250,6 +251,12 @@ def utc_now() -> str:
 def connect() -> sqlite3.Connection | PostgresConnection:
     if is_postgres_database_url():
         return PostgresConnection(DATABASE_URL)
+    if not ALLOW_SQLITE_RUNTIME:
+        raise RuntimeError(
+            "Formal LinZight runtime requires PostgreSQL. Set DATABASE_URL or LINZIGHT_DATABASE_URL "
+            "to a postgresql:// URL. Use LINZIGHT_ALLOW_SQLITE_RUNTIME=1 only for isolated smoke tests "
+            "or legacy SQLite migration tooling."
+        )
     db_path = sqlite_database_path()
     if db_path.parent and str(db_path.parent) != ".":
         db_path.parent.mkdir(parents=True, exist_ok=True)

@@ -33,6 +33,7 @@ function startServer() {
       ...process.env,
       DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-performance.db')}`,
       LINZIGHT_DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-performance.db')}`,
+      LINZIGHT_ALLOW_SQLITE_RUNTIME: '1',
       LINZIGHT_UPLOADS_DIR: join(tempDir, 'uploads'),
       LINZIGHT_STORAGE_BACKEND: 'object',
       LINZIGHT_OBJECT_BUCKET: 'performance-smoke',

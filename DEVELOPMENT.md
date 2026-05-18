@@ -42,7 +42,7 @@ python bootstrap.py
 uvicorn main:app --reload --port 8000
 ```
 
-默认后端连接 macOS 本地 PostgreSQL 数据库 `linzight_dashboard_engineered`。`python bootstrap.py` 会初始化 schema，并在数据库为空时生成三个 Demo Study（`LGL-1111`、`RWD-NMO-2026`、`LZXK-01`）、平台级/研究级角色、Study 成员、CRF 版本和按 `study_id` 隔离的患者、CRF、样本、组学、导出、质控、审计数据。`LZXK-01` 是真实世界肺癌耐药研究，默认 20 名患者。
+默认后端连接 macOS 本地 PostgreSQL 数据库 `linzight_dashboard_engineered`。正式运行数据库必须是 PostgreSQL；如果将 `DATABASE_URL` 或 `LINZIGHT_DATABASE_URL` 配置为 `sqlite:///...`，必须显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1`，且只能用于隔离 smoke、旧 SQLite 备份或迁移导出工具。`python bootstrap.py` 会初始化 schema，并在用户表为空时只创建首个 LZ 系统管理员，不会自动生成 Study、患者、样本或测试用户。需要测试 fixture 时，单独运行 `python seed.py`。
 
 ## 构建
 
@@ -77,7 +77,7 @@ docker compose config
 python3 -m compileall -q backend
 ```
 
-如需保留或回滚本地 Demo 数据：
+如需保留或回滚旧 SQLite 测试库数据：
 
 ```bash
 npm run backup:sqlite

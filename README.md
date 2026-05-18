@@ -1,8 +1,8 @@
 # linzight-dashboard-engineered
 
-当前版本：`v1.0.1`
+当前版本：`v1.0.2`
 
-`linzight-dashboard-engineered` 是 LinZight 真实世界研究数据采集与管理系统的工程化 Demo。项目以患者为中心，覆盖研究工作台、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析和系统管理，并提供 FastAPI Demo 后端；默认使用 PostgreSQL，临时 smoke 和备份脚本仍可显式使用 SQLite。登录和写入动作依赖后端认证与 API；部分只读演示数据在后端不可用时仍可回退到本地 mock/seed 数据，适合产品演示、静态 HTML 交付和后续增量开发。
+`linzight-dashboard-engineered` 是 LinZight 真实世界研究数据采集与管理系统的 GA 功能测试版。项目以患者为中心，覆盖研究工作台、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析和系统管理，并提供 FastAPI 后端。正式运行数据库固定为 PostgreSQL；SQLite 仅允许在显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 的隔离 smoke、旧数据备份或迁移导出工具中使用。登录和写入动作依赖后端认证与 API；正式 Docker 首次启动为空库，仅创建首个 LZ 系统管理员，Study、患者和检测数据由用户自行创建或导入。
 
 未来 AI 接手本项目时，请先阅读：
 
@@ -18,23 +18,23 @@
 - 前端：Vite + React + TypeScript
 - 样式：分层 CSS，医疗/科研运营型 dashboard 风格，玻璃拟态侧边栏、卡片、业务表格和状态标签
 - 国际化：项目内轻量 i18n，支持中文和英文，默认中文
-- 后端：FastAPI + Pydantic + SQLite/PostgreSQL Demo API
-- 数据：SLE CRF V0.1 schema + LZXK-01 肺癌耐药字段 + 70 名本地 mock/seed 患者、访视和随访记录
+- 后端：FastAPI + Pydantic + PostgreSQL 正式运行时
+- 数据：SLE CRF V0.1 schema + LZXK-01 肺癌耐药字段；`backend/seed.py` 仅作为显式测试 fixture
 - 静态导出：`npm run export:html` 生成可直接打开的交互式 HTML 页面
 
 ## 目录结构
 
 ```text
 .
-├── backend/                       # FastAPI Demo 后端，默认 PostgreSQL
+├── backend/                       # FastAPI 后端，正式运行默认 PostgreSQL
 ├── docs/                          # 工程文档、协议说明和部署运维说明
 ├── exports/html/                  # npm run export:html 生成的可交互 HTML 页面
 ├── public/                        # Vite 静态资源
 ├── resource/                      # 产品参考资料、截图、模板和历史原型
 ├── scripts/export-html-pages.mjs  # 静态 HTML 导出脚本
 ├── scripts/export-openapi.mjs     # OpenAPI schema 导出脚本
-├── scripts/backup-sqlite.mjs      # Demo SQLite/上传目录备份脚本
-├── scripts/restore-sqlite.mjs     # Demo SQLite/上传目录恢复脚本
+├── scripts/backup-sqlite.mjs      # 旧 SQLite 测试库/上传目录备份脚本
+├── scripts/restore-sqlite.mjs     # 旧 SQLite 测试库/上传目录恢复脚本
 ├── src/                           # React 前端源码
 ├── uploads/.gitkeep               # 本地上传目录占位；真实上传内容不提交
 ├── AGENTS.md                      # Codex/AI 长期项目规则
@@ -44,7 +44,7 @@
 ├── SETUP.md                       # clone 后启动说明
 ├── ROADMAP.md                     # 版本路线图
 ├── CHANGELOG.md                   # Keep a Changelog 风格变更记录
-├── API.md                         # Demo API 与未来 API 规划
+├── API.md                         # API 与未来 API 规划
 ├── DEPLOYMENT.md                  # 部署说明
 ├── SECURITY.md                    # 安全与敏感信息规则
 └── package.json
@@ -63,7 +63,7 @@ Beta 发布前验证与剩余正式化工作见 `docs/05-beta-release-readiness.
 npm install
 ```
 
-后端可选。如需运行 Demo API：
+如需运行后端：
 
 ```bash
 createdb linzight_dashboard_engineered 2>/dev/null || true
@@ -85,20 +85,20 @@ npm run dev
 
 浏览器打开 Vite 输出地址，通常是 `http://localhost:5173/`。如果端口被占用，Vite 会自动切换到下一个可用端口。
 
-默认 Demo 登录账号可在 `src/data/auth.ts` 和 `backend/seed.py` 中查看，默认密码为 `Demo1234!`。前端登录调用后端认证，成功后保存签名 Bearer token；后端不可用或 token 无效时会回到登录页。登录页提供 `Study 研究入口` 和 `LZ 系统管理` 两种入口：Study 入口先认证账号，若账号只授权一个 Study 会直接进入该 Study Workspace，若授权多个 Study 会在认证后选择工作区；LZ 系统管理入口仅用于 Study、成员、权限配置和全局索引，不能直接绕过单个 Study Workspace 执行业务操作。
+正式首次启动会创建配置的首个 LZ 系统管理员。前端登录调用后端认证，成功后保存签名 Bearer token；后端不可用或 token 无效时会回到登录页。登录页提供 `Study 研究入口` 和 `LZ 系统管理` 两种入口：Study 入口先认证账号，若账号只授权一个 Study 会直接进入该 Study Workspace，若授权多个 Study 会在认证后选择工作区；LZ 系统管理入口仅用于 Study、成员、权限配置和全局索引，不能直接绕过单个 Study Workspace 执行业务操作。
 
-## CRF 与 Demo 数据
+## CRF 与测试数据
 
 - `resource/SLE临床数据记录表.csv` 是 SLE 临床数据记录参考模板。
 - `resource/sle-crf-v0.1.schema.json` 是由该 CSV 生成的 CRF V0.1 schema，包含 10 个分组、89 个字段。
 - `src/data/crfTemplate.ts` 将 CRF V0.1 schema 接入前端临床数据采集和系统管理字段配置。
-- `backend/seed.py` 读取同一份 schema，生成 70 名测试患者、210 条访视、140 条随访记录、210 条 CRF 记录及关联样本/组学/知情同意数据；其中 `LZXK-01` 为真实世界肺癌耐药研究，默认 20 名患者。
+- `backend/seed.py` 读取同一份 schema，可显式生成 70 名测试患者、210 条访视、140 条随访记录、210 条 CRF 记录及关联样本/组学/知情同意数据；正式 Docker 首次启动不会自动执行该测试 seed。
 - `study_visit_plans` 为每个 Study 独立配置 V1/V2/V3 访视计划、时间窗、必填 CRF 表单和样本要求；`visits.visit_plan_id` 关联配置，新建患者时后端自动生成计划访视和 CRF 草稿。
 - `study_configurations` 是 Study 配置总表，绑定 `study_id -> disease_area -> active_crf_version_id -> visit_plan -> consent_template -> testing_profile`。新建患者必须使用当前 Study 的 published CRF；如果该 Study 没有 published CRF，后端拒绝创建，不再回退到默认 LGL。
 - `follow_up_records` 隶属于患者信息，绑定 `study_id + patient_id`，可选关联 `visit_id`，记录随访方式、随访人、生存/疾病状态、疗效、转移、不良事件、生活质量和失访原因。
 - `LZXK-01` 发布独立 Study CRF V1.0，使用 15 个肺癌耐药字段，不继承 SLE CRF 字段；已录入数据保留各自 `crf_version_id`。
-- SQLite 使用 JSONB（二进制 JSON）优先保存 CRF：`patients.clinical_data_jsonb` 与 `crf_entries.payload_jsonb` 为 BLOB，同时保留 `*_version` 与 `*_format` 供 API 和迁移校验。
-- PostgreSQL runtime 默认通过 `DATABASE_URL`、`LINZIGHT_DATABASE_URL` 或 `LINZIGHT_POSTGRES_URL` 配置，当前保持应用层 Study 过滤；生产级 RLS 仍需在 PostgreSQL 策略层补齐。
+- PostgreSQL runtime 默认通过 `DATABASE_URL`、`LINZIGHT_DATABASE_URL` 或 `LINZIGHT_POSTGRES_URL` 配置；如果配置成 `sqlite:///...` 且未显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1`，后端会拒绝启动。
+- SQLite 仅用于隔离 smoke、旧测试库备份和迁移导出；正式功能测试和后续 GA 部署均以 PostgreSQL 为数据库。
 - 当前 CSV 中 `免疫制剂2` 出现两次，V0.1 schema 将第二个字段规范为 `免疫制剂2（第2项）`，避免 JSON payload 字段覆盖。
 
 ## Study 权限与隔离
@@ -108,14 +108,14 @@ npm run dev
 - LZ 管理页不是业务租户，只保留两个入口：`全局患者索引` 和 `Study 系统管理`。全局患者索引只调用 `/global/patient-index`，展示脱敏患者索引、Study 信息、状态和更新时间，点击患者后会进入其所属 Study Workspace 再执行后续管理操作。
 - LZ 全局态的 `Study 系统管理` 只管理 Study、用户和授权范围；不直接显示或编辑 CRF、样本、随访、导出、审批、Query、审计等业务数据。进入单个 Study Workspace 后，才显示该 Study 内的 CRF 配置、质控、审批和审计能力。
 - `LZ_ADMIN` 可通过 Study Registry 新建、终止和软删除 Study，并可管理平台级角色的授权 Study scope；`STUDY_CONFIG_ADMIN` 是本 Study 系统管理员，可创建/修改本 Study 研究级用户、启停成员角色并分配本 Study 系统管理员。`terminated` 或 `deleted` Study 会拒绝患者、CRF、访视、随访、样本、组学、文件、质控和导出等业务写入。
-- 当前 Demo 阶段先使用后端应用层过滤；生产 PostgreSQL 版本应在同一租户边界上补 Row Level Security（RLS）。
-- 当前 Demo seed 包含 `LGL-1111`、`RWD-NMO-2026` 和 `LZXK-01` 三个 Study，并生成 Study 成员、平台授权范围和独立 CRF 版本。
+- 当前版本先使用后端应用层过滤；真实患者生产上线前应在 PostgreSQL 同一租户边界上补 Row Level Security（RLS）。
+- 显式测试 seed 包含 `LGL-1111`、`RWD-NMO-2026` 和 `LZXK-01` 三个 Study，并生成 Study 成员、平台授权范围和独立 CRF 版本。
 - 平台角色使用 `LZ_ADMIN`、`LZ_CRC`、`LZ_CRF_ADMIN`、`LZ_DATA_MANAGER`、`LZ_AUDITOR`。
 - 研究角色使用 `STUDY_PI`、`STUDY_CRC`、`STUDY_CONFIG_ADMIN`、`STUDY_DATA_MANAGER`。
 - 样本检测项目编号字段为 `testing_project_id`，与 RWD EDC Study 概念分离。
 - 详细设计见 `docs/04-study-permissions.md`。
 
-常用 Demo 账号：
+测试 seed 账号：
 
 | 账号 | 角色 | Study 范围 |
 | --- | --- | --- |
@@ -209,15 +209,15 @@ npm run deploy:staging
 npm test
 ```
 
-Docker Compose 一键 Demo 环境：
+Docker Compose 一键功能测试环境：
 
 ```bash
 docker compose up --build
 ```
 
-Compose 会构建 `Dockerfile.backend` 和 `Dockerfile.frontend`，启动 PostgreSQL、backend 和 frontend；backend 首次启动会在 PostgreSQL volume 中初始化三 Study Demo 数据。前端通过 `http://localhost:8000` 访问后端，避免和本机可能存在的 `127.0.0.1:8000` 开发服务冲突。浏览器打开 `http://127.0.0.1:5173/`。
+Compose 会构建 `Dockerfile.backend` 和 `Dockerfile.frontend`，启动 PostgreSQL、backend 和 frontend；backend 首次启动会在 PostgreSQL volume 中初始化 schema，并在用户表为空时只创建首个 LZ 系统管理员，不会自动创建 Study、患者、样本或测试用户。前端通过 `http://localhost:8000` 访问后端，避免和本机可能存在的 `127.0.0.1:8000` 开发服务冲突。浏览器打开 `http://127.0.0.1:5173/`。
 
-Demo SQLite / 上传目录备份恢复：
+旧 SQLite 测试库 / 上传目录备份恢复：
 
 ```bash
 npm run backup:sqlite
@@ -256,11 +256,12 @@ cp backend/.env.example backend/.env
 | 变量 | 作用 |
 | --- | --- |
 | `VITE_API_BASE_URL` | 前端优先访问的 API 地址；为空时依次尝试本地 8000/8001 |
-| `DATABASE_URL` | 后端数据库 URL，优先级最高；macOS 本地默认使用 `postgresql+psycopg2:///linzight_dashboard_engineered`，临时 smoke 可显式设为 `sqlite:///...` |
+| `DATABASE_URL` | 后端数据库 URL，优先级最高；正式运行必须为 `postgresql://` 或 `postgresql+psycopg2://` |
 | `LINZIGHT_DATABASE_URL` | 后端数据库 URL；未设置 `DATABASE_URL` 时使用 |
 | `LINZIGHT_POSTGRES_URL` | PostgreSQL 配置参考值 |
+| `LINZIGHT_ALLOW_SQLITE_RUNTIME` | 仅隔离 smoke、旧 SQLite 备份或迁移导出可设为 `1`；正式运行不要设置 |
 | `LINZIGHT_UPLOADS_DIR` | 后端本地上传目录 |
-| `LINZIGHT_BACKUP_DIR` | Demo SQLite 备份目录，默认 `./backups` |
+| `LINZIGHT_BACKUP_DIR` | 旧 SQLite 测试库备份目录，默认 `./backups` |
 | `LINZIGHT_STORAGE_BACKEND` | 文件存储适配器，`local` 或 Demo `object` |
 | `LINZIGHT_OBJECT_BUCKET` | Demo object storage bucket 名称 |
 | `LINZIGHT_OBJECT_PREFIX` | Demo object storage 路径前缀 |
@@ -277,7 +278,7 @@ cp backend/.env.example backend/.env
 
 ### 前端没有后端是否能运行？
 
-可以。`src/services/api.ts` 会优先访问 `VITE_API_BASE_URL`、`http://127.0.0.1:8000`、`http://127.0.0.1:8001`，失败后页面会使用本地 Demo 数据。
+可以启动前端外壳。正式功能测试应连接 PostgreSQL 后端；API 不可用时页面只能作为静态/开发预览，不应作为正式数据状态判断依据。
 
 ### 静态 HTML 为什么还会有 `assets/`？
 
@@ -285,7 +286,7 @@ cp backend/.env.example backend/.env
 
 ### 后端数据库文件是否提交？
 
-不提交。`backend/linzight_demo.db` 是本地生成文件，已被 `.gitignore` 排除。需要数据时运行 `python backend/seed.py`。
+不提交。`backend/linzight_demo.db` 是旧 SQLite 测试库文件，已被 `.gitignore` 排除。正式运行使用 PostgreSQL；如需测试 fixture，显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 后再运行测试 seed。
 
 ## 后续开发入口
 

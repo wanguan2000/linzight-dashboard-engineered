@@ -3,10 +3,10 @@
 ## 运行配置
 
 - 开发默认：macOS 本地 PostgreSQL，`DATABASE_URL=postgresql+psycopg2:///linzight_dashboard_engineered`
-- SQLite 仅用于隔离 smoke、备份恢复和迁移导出脚本，可显式设置 `DATABASE_URL=sqlite:///./backend/linzight_demo.db`
+- SQLite 仅用于隔离 smoke、旧测试库备份恢复和迁移导出脚本，必须显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 后才可使用 `DATABASE_URL=sqlite:///./backend/linzight_demo.db`
 - 本地文件目录：`LINZIGHT_UPLOADS_DIR=./uploads`
 
-当前后端运行时默认使用 PostgreSQL；SQLite 版本支持 `jsonb()` 时，CRF payload 会以 JSONB（二进制 JSON）BLOB 保存，不支持时自动回退到 TEXT JSON。PostgreSQL runtime 当前以兼容 JSON 文本保存。API 层统一解码为 JSON object，因此前端不需要直接处理底层存储格式。
+当前后端正式运行时使用 PostgreSQL；显式 SQLite 测试库支持 `jsonb()` 时，CRF payload 会以 JSONB（二进制 JSON）BLOB 保存，不支持时自动回退到 TEXT JSON。PostgreSQL runtime 当前以兼容 JSON 文本保存。API 层统一解码为 JSON object，因此前端不需要直接处理底层存储格式。
 
 ## 核心实体
 
@@ -68,7 +68,7 @@
 - `uploaded_files` 可关联患者、样本、组学记录或知情同意记录，文件实体统一落本地 `uploads` 目录。
 - `export_jobs.file_id` 指向导出文件元数据，便于数据分析页展示导出状态。
 - `audit_logs` 记录所有关键实体变更，保留 `before_json` 与 `after_json` 便于后续审计追溯。
-- 当前 seed 包含 `LZXK-01` 真实世界肺癌耐药研究，默认 20 名患者，并生成独立 Study 成员、CRF V1.0、组织/胸水样本和 `TP-LUNG-RESIST-OMICS` 检测项目记录。
+- 显式测试 seed 包含 `LZXK-01` 真实世界肺癌耐药研究，默认 20 名患者，并生成独立 Study 成员、CRF V1.0、组织/胸水样本和 `TP-LUNG-RESIST-OMICS` 检测项目记录；正式空库不会自动创建这些数据。
 
 ## CRF JSONB 存储
 

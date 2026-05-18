@@ -15,7 +15,7 @@ function resolveProjectPath(path) {
 
 function resolveSqlitePath(databaseUrl) {
   if (!databaseUrl.startsWith('sqlite:///')) {
-    fail(`Only sqlite:/// URLs are supported by this demo restore script: ${databaseUrl}`);
+    fail(`Only sqlite:/// URLs are supported by this legacy SQLite restore script: ${databaseUrl}`);
   }
   return resolveProjectPath(databaseUrl.slice('sqlite:///'.length));
 }

@@ -26,7 +26,7 @@ cp .env.example .env.local
 cp backend/.env.example backend/.env
 ```
 
-如果只看前端 Demo，可以不创建环境变量文件。前端会自动尝试本地 API，并在不可用时回退到 mock 数据。
+如果只看前端外壳，可以不创建环境变量文件。正式功能测试应连接 PostgreSQL 后端；API 不可用时只能作为静态/开发预览。
 
 ## 第一次启动步骤
 
@@ -40,13 +40,13 @@ cp backend/.env.example backend/.env
 
 ## Docker Compose 启动
 
-如果本机已安装 Docker，可以直接启动前后端 Demo：
+如果本机已安装 Docker，可以直接启动前后端 PostgreSQL 功能测试环境：
 
 ```bash
 docker compose up --build
 ```
 
-首次启动会在 Docker PostgreSQL volume 中 seed Demo 数据。前端地址为 `http://127.0.0.1:5173/`，后端健康检查为 `http://127.0.0.1:8000/health`。
+首次启动会在 Docker PostgreSQL volume 中初始化 schema，并在用户表为空时只创建首个 LZ 系统管理员，不会自动 seed Study、患者、样本、检测或测试用户。前端地址为 `http://127.0.0.1:5173/`，后端健康检查为 `http://127.0.0.1:8000/health`。
 
 ## 常见启动失败原因
 
@@ -75,23 +75,17 @@ docker compose config
 - 中 / EN 语言切换可用。
 - 登录后能进入首页工作台。
 - 侧边栏可切换八个模块。
-- 后端未启动时页面仍能展示 Demo 数据。
+- 正式数据状态以 PostgreSQL 后端返回为准；后端未启动时只验证前端外壳，不作为正式数据状态判断。
 
 后端运行后确认：
 
 ```bash
 curl http://127.0.0.1:8000/health
-curl -X POST http://127.0.0.1:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"crc@demo.linzight","password":"Demo1234!"}'
-curl -X POST http://127.0.0.1:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"lung-crc@demo.linzight","password":"Demo1234!"}'
 ```
 
-患者、CRF、样本、导出和审计接口都需要 Bearer token，并会按当前用户的 `study_id` 授权范围过滤。`lung-crc@demo.linzight` 只访问 `LZXK-01` 的 20 名肺癌耐药研究患者。常用 Demo 账号见 `README.md` 和 `src/data/auth.ts`。
+患者、CRF、样本、导出和审计接口都需要 Bearer token，并会按当前用户的 `study_id` 授权范围过滤。正式空库只有首个 LZ 系统管理员；如需测试账号和三 Study fixture，显式运行 `python backend/seed.py`。
 
-## Demo 数据备份恢复
+## 旧 SQLite 测试库备份恢复
 
 ```bash
 npm run backup:sqlite

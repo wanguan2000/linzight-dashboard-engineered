@@ -60,6 +60,7 @@ function startServer() {
       ...process.env,
       DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-crf-semantics.db')}`,
       LINZIGHT_DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-crf-semantics.db')}`,
+      LINZIGHT_ALLOW_SQLITE_RUNTIME: '1',
       LINZIGHT_UPLOADS_DIR: join(tempDir, 'uploads'),
     },
     stdio: ['ignore', 'pipe', 'pipe'],

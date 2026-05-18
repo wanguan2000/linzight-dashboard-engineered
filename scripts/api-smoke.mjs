@@ -30,6 +30,7 @@ function startServer() {
       ...process.env,
       DATABASE_URL: databaseUrl,
       LINZIGHT_DATABASE_URL: databaseUrl,
+      LINZIGHT_ALLOW_SQLITE_RUNTIME: '1',
       LINZIGHT_UPLOADS_DIR: uploadsDir,
       LINZIGHT_STORAGE_BACKEND: 'object',
       LINZIGHT_OBJECT_BUCKET: 'smoke-bucket',
