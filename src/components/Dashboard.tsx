@@ -249,6 +249,12 @@ export function Dashboard({ currentUser, selectedModule, selectedPatient, onNavi
         onMore={() => onNavigate('系统管理')}
         onSelectAction={(label) => onNavigate(quickActionModuleMap[label] ?? '首页工作台')}
       />
+
+      <footer className="site-record-footer" aria-label="网站备案信息">
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
+          沪ICP备2026020480号
+        </a>
+      </footer>
     </div>
   );
 }
