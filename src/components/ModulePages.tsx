@@ -53,6 +53,7 @@ import {
   fetchApprovalRequests,
   fetchAuditLogs,
   filterRecordsByCurrentStudyScope,
+  fetchPermissionMatrix,
   fetchQualityIssues,
   fetchStudies,
   fetchUsers,
@@ -80,7 +81,7 @@ import {
   upsertStudyMember,
   uploadFileToBackend
 } from '../services/api';
-import type { ApiApprovalRequest, ApiAuditLog, ApiDataQuery, ApiExportJob, ApiQualityIssue, ApiSiteUser, ApiStudy, ApiStudyMember, ApiStudySite, ApiUser } from '../services/contracts';
+import type { ApiApprovalRequest, ApiAuditLog, ApiDataQuery, ApiExportJob, ApiPermissionMatrixRow, ApiQualityIssue, ApiSiteUser, ApiStudy, ApiStudyMember, ApiStudySite, ApiUser } from '../services/contracts';
 import type { CrfMigrationApprovalRecord, CrfMigrationPreview, StudyCrfVersionRecord } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
@@ -2941,6 +2942,18 @@ type AccountCreateDraft = {
   memberStatus: 'active' | 'pending' | 'disabled';
 };
 
+type AccountEditDraft = {
+  userId?: string;
+  originalEmail: string;
+  displayName: string;
+  role: UserRole;
+  studyScopeIds: string[];
+  originalStudyScopeIds: string[];
+  status: SystemAccount['status'];
+  memberStatus: 'active' | 'pending' | 'disabled';
+  password: string;
+};
+
 function userIdForEmail(email: string) {
   return demoUsers.find((user) => user.username === email)?.id;
 }
@@ -2998,12 +3011,21 @@ function studyMemberStatusFromAccountStatus(status: SystemAccount['status']) {
   return 'pending';
 }
 
+function userStatusFromAccountStatus(status: SystemAccount['status']) {
+  return status === 'Disabled' ? 'disabled' : 'active';
+}
+
 function upsertAccountRow(rows: SystemAccount[], account: SystemAccount) {
   const matches = (row: SystemAccount) =>
     row.studyScope === account.studyScope && ((account.userId && row.userId === account.userId) || row.email === account.email);
   const exists = rows.some(matches);
   if (!exists) return [account, ...rows];
   return rows.map((row) => (matches(row) ? { ...row, ...account } : row));
+}
+
+function replaceAccountRowsForUser(rows: SystemAccount[], originalEmail: string, account: SystemAccount) {
+  const matches = (row: SystemAccount) => (account.userId && row.userId === account.userId) || row.email === originalEmail;
+  return [account, ...rows.filter((row) => !matches(row))];
 }
 
 type SystemField = {
@@ -3054,30 +3076,42 @@ const systemFields: SystemField[] = [
 ];
 const systemVisitPlans: StudyVisitPlanRecord[] = studyVisitPlans;
 
-const permissionRows: PermissionRow[] = [
-  { action: '跨 Study 访问 / Cross-study scope', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_CRF_ADMIN: true, LZ_DATA_MANAGER: true, LZ_AUDITOR: true } },
-  { action: '新建研究 / Create Study', values: { LZ_ADMIN: true } },
-  { action: '研究成员管理 / Study Members', values: { LZ_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
-  { action: '患者查看 / View Patients', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_DATA_MANAGER: true, LZ_AUDITOR: true, STUDY_PI: true, STUDY_CRC: true, STUDY_DATA_MANAGER: true } },
-  { action: '患者与 CRF 录入 / Enter Patient & CRF Data', values: { LZ_ADMIN: true, LZ_CRC: true, STUDY_CRC: true } },
-  { action: 'Study CRF 配置 / Study CRF Config', values: { LZ_ADMIN: true, LZ_CRF_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
-  { action: '访视计划配置 / Study Visit Plan Config', values: { LZ_ADMIN: true, LZ_CRF_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
-  { action: 'CRF 版本发布 / Publish CRF Version', values: { LZ_ADMIN: true, LZ_CRF_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
-  { action: 'Query 与质控 / Query & QC', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_DATA_MANAGER: true, STUDY_DATA_MANAGER: true } },
-  { action: '导出与分析 / Export & Analytics', values: { LZ_ADMIN: true, LZ_DATA_MANAGER: true, STUDY_PI: true, STUDY_DATA_MANAGER: true } },
-  { action: '审计日志 / Audit Logs', values: { LZ_ADMIN: true, LZ_AUDITOR: true, LZ_DATA_MANAGER: true, STUDY_CONFIG_ADMIN: true, STUDY_DATA_MANAGER: true } }
-];
-
 const permissionColumns: Array<{ key: UserRole; label: string }> = [
   { key: 'LZ_ADMIN', label: 'LZ Admin' },
   { key: 'LZ_CRC', label: 'LZ CRC' },
   { key: 'LZ_CRF_ADMIN', label: 'CRF Admin' },
   { key: 'LZ_DATA_MANAGER', label: 'LZ DM' },
+  { key: 'LZ_AUDITOR', label: 'LZ Auditor' },
   { key: 'STUDY_PI', label: 'Study PI' },
   { key: 'STUDY_CRC', label: 'Study CRC' },
   { key: 'STUDY_CONFIG_ADMIN', label: 'Config Admin' },
   { key: 'STUDY_DATA_MANAGER', label: 'Study DM' }
 ];
+
+const editableAccountRoles = permissionColumns.map((column) => column.key);
+
+const fallbackPermissionRows: PermissionRow[] = [
+  { action: 'Study Configuration / Read Study configuration', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_CRF_ADMIN: true, LZ_DATA_MANAGER: true, LZ_AUDITOR: true, STUDY_PI: true, STUDY_CRC: true, STUDY_CONFIG_ADMIN: true, STUDY_DATA_MANAGER: true } },
+  { action: 'LZ System Management / Create, update, terminate, or delete Studies', values: { LZ_ADMIN: true } },
+  { action: 'Account and Study Members / Create or update users and Study members', values: { LZ_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
+  { action: 'Patient Cohort / Read patient records', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_CRF_ADMIN: true, LZ_DATA_MANAGER: true, LZ_AUDITOR: true, STUDY_PI: true, STUDY_CRC: true, STUDY_CONFIG_ADMIN: true, STUDY_DATA_MANAGER: true } },
+  { action: 'Patient Cohort / Create or update patient records', values: { LZ_ADMIN: true, LZ_CRC: true, STUDY_CRC: true } },
+  { action: 'Clinical Data Capture / Write CRF entries', values: { LZ_ADMIN: true, LZ_CRC: true, STUDY_CRC: true } },
+  { action: 'System Management / Configure CRF versions, fields, visit plans, and sites', values: { LZ_ADMIN: true, LZ_CRF_ADMIN: true, STUDY_CONFIG_ADMIN: true } },
+  { action: 'Data Management / Run quality checks and create Query', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_DATA_MANAGER: true, STUDY_DATA_MANAGER: true } },
+  { action: 'Data Management / Export and download data', values: { LZ_ADMIN: true, LZ_DATA_MANAGER: true, STUDY_DATA_MANAGER: true } },
+  { action: 'Audit / Read audit logs', values: { LZ_ADMIN: true, LZ_DATA_MANAGER: true, LZ_AUDITOR: true, STUDY_CONFIG_ADMIN: true, STUDY_DATA_MANAGER: true } }
+];
+
+function permissionRowsFromMatrix(matrixRows: ApiPermissionMatrixRow[]): PermissionRow[] {
+  return matrixRows.map((row) => ({
+    action: `${row.module} / ${row.operation}`,
+    values: row.allowed_roles.reduce<PermissionRow['values']>((values, role) => {
+      if (editableAccountRoles.includes(role as UserRole)) values[role as UserRole] = true;
+      return values;
+    }, {})
+  }));
+}
 
 const roleTone: Record<UserRole, string> = {
   LZ_ADMIN: 'admin',
@@ -3204,6 +3238,8 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [auditRows, setAuditRows] = useState<ApiAuditLog[]>([]);
   const [studyCreateDraft, setStudyCreateDraft] = useState<StudyCreateDraft | null>(null);
   const [accountCreateDraft, setAccountCreateDraft] = useState<AccountCreateDraft | null>(null);
+  const [accountEditDraft, setAccountEditDraft] = useState<AccountEditDraft | null>(null);
+  const [permissionMatrixRows, setPermissionMatrixRows] = useState<PermissionRow[]>(fallbackPermissionRows);
   const [systemActionStatus, setSystemActionStatus] = useState('等待系统管理操作');
   const normalizedQuery = systemQuery.trim().toLowerCase();
   const visibleAccounts = useMemo(() => {
@@ -3291,6 +3327,11 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     () => auditRows.filter((entry) => !scopedStudyId || entry.study_id === scopedStudyId).filter((entry) => entry.diff?.length).slice(0, 4),
     [auditRows, scopedStudyId]
   );
+  const editableRoleOptions = currentUser?.role === 'LZ_ADMIN' ? editableAccountRoles : creatableStudyRoles;
+  const editedRolePermissions = useMemo(() => {
+    if (!accountEditDraft) return [];
+    return permissionMatrixRows.filter((row) => row.values[accountEditDraft.role]).map((row) => row.action);
+  }, [accountEditDraft, permissionMatrixRows]);
   const studyRegistryRows = useMemo(() => {
     return studyRows.filter((study) => availableSystemStudies.includes(study.id)).map((study) => {
       const studyId = study.id;
@@ -3323,6 +3364,18 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
             systemAdminCount: rows.find((row) => row.id === study.id)?.systemAdminCount ?? 0
           }))
         );
+      })
+      .catch(() => undefined);
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    void fetchPermissionMatrix()
+      .then((rows) => {
+        if (!ignore && rows.length) setPermissionMatrixRows(permissionRowsFromMatrix(rows));
       })
       .catch(() => undefined);
     return () => {
@@ -3550,6 +3603,96 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     }
   }
 
+  function openSystemAccountEdit(account: SystemAccount) {
+    const studyScopeIds = studyScopeToIds(account.studyScope, allSystemStudyIds);
+    const fallbackStudyId = scopedStudyId || selectedSystemStudyId || availableSystemStudies[0] || '';
+    setAccountCreateDraft(null);
+    setAccountEditDraft({
+      userId: account.userId ?? userIdForEmail(account.email),
+      originalEmail: account.email,
+      displayName: account.name,
+      role: account.role,
+      studyScopeIds: account.studyScope === '全部 Study' ? availableSystemStudies : studyScopeIds.length ? studyScopeIds : fallbackStudyId ? [fallbackStudyId] : [],
+      originalStudyScopeIds: studyScopeIds,
+      status: account.status,
+      memberStatus: studyMemberStatusFromAccountStatus(account.status),
+      password: ''
+    });
+    setSystemActionStatus(`正在编辑账户：${account.email}`);
+  }
+
+  function patchAccountEditDraft(patch: Partial<AccountEditDraft>) {
+    setAccountEditDraft((draft) => (draft ? { ...draft, ...patch } : draft));
+  }
+
+  async function saveSystemAccountEdit() {
+    if (!accountEditDraft) return;
+    const userId = accountEditDraft.userId;
+    const displayName = accountEditDraft.displayName.trim();
+    const selectedStudyIds = accountEditDraft.role === 'LZ_ADMIN'
+      ? availableSystemStudies
+      : accountEditDraft.studyScopeIds.filter(Boolean);
+    if (!userId) {
+      setSystemActionStatus('缺少用户 ID，无法同步账户编辑');
+      return;
+    }
+    if (!displayName) {
+      setSystemActionStatus('请填写用户姓名');
+      return;
+    }
+    if (accountEditDraft.role !== 'LZ_ADMIN' && selectedStudyIds.length === 0) {
+      setSystemActionStatus('请为用户选择 Study Scope');
+      return;
+    }
+
+    setSystemActionStatus(`账户 ${accountEditDraft.originalEmail} 正在同步角色、状态和 Study Scope...`);
+    try {
+      const basePayload = {
+        display_name: displayName,
+        ...(accountEditDraft.password.trim() ? { password: accountEditDraft.password.trim() } : {})
+      };
+      let savedAccount: SystemAccount;
+      if (accountEditDraft.role.startsWith('STUDY_')) {
+        await updateUserAccount(userId, {
+          ...basePayload,
+          ...(currentUser?.role === 'LZ_ADMIN' ? { role: accountEditDraft.role } : {})
+        }, selectedStudyIds[0]);
+        const member = await upsertStudyMember(selectedStudyIds[0], {
+          userId,
+          studyRole: accountEditDraft.role as ApiStudyMember['study_role'],
+          status: accountEditDraft.memberStatus
+        });
+        await Promise.all(
+          accountEditDraft.originalStudyScopeIds
+            .filter((studyId) => studyId !== selectedStudyIds[0])
+            .map((studyId) =>
+              upsertStudyMember(studyId, {
+                userId,
+                studyRole: accountEditDraft.role as ApiStudyMember['study_role'],
+                status: 'disabled'
+              }).catch(() => undefined)
+            )
+        );
+        savedAccount = accountFromStudyMember(member);
+      } else {
+        const updatedUser = await updateUserAccount(userId, {
+          ...basePayload,
+          role: accountEditDraft.role,
+          status: userStatusFromAccountStatus(accountEditDraft.status)
+        });
+        const scopedUser = accountEditDraft.role === 'LZ_ADMIN'
+          ? updatedUser
+          : await updateGlobalRoleStudyScope(userId, selectedStudyIds);
+        savedAccount = accountFromApiUser(scopedUser, selectedStudyIds[0] ?? '全部 Study');
+      }
+      setAccountRows((rows) => replaceAccountRowsForUser(rows, accountEditDraft.originalEmail, savedAccount));
+      setAccountEditDraft(null);
+      setSystemActionStatus(`账户权限已同步：${savedAccount.email} -> ${savedAccount.role} / ${savedAccount.studyScope}`);
+    } catch {
+      setSystemActionStatus('后端不可用、密码不符合策略，或当前角色无账户权限修改权限');
+    }
+  }
+
   async function terminateSystemStudy(studyId: string) {
     setSystemActionStatus(`Study ${studyId} 正在终止，终止后业务写入会被后端拒绝...`);
     try {
@@ -3572,25 +3715,6 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       setSystemActionStatus(`Study 已标记为 deleted：${study.id}`);
     } catch {
       setSystemActionStatus('后端不可用或当前角色无 Study 删除权限');
-    }
-  }
-
-  async function editSystemAccount(account: SystemAccount) {
-    setSystemQuery(account.email);
-    const userId = account.userId ?? userIdForEmail(account.email);
-    if (!userId) {
-      setSystemActionStatus(`已定位账户 ${account.email}，但缺少用户 ID，无法同步修改`);
-      return;
-    }
-    const nextName = account.name.endsWith('（已更新）') ? account.name.replace('（已更新）', '') : `${account.name}（已更新）`;
-    setSystemActionStatus(`账户 ${account.email} 正在同步显示名修改...`);
-    try {
-      const user = await updateUserAccount(userId, { display_name: nextName }, scopedStudyId);
-      const savedAccount = accountFromApiUser(user, scopedStudyId ?? account.studyScope);
-      setAccountRows((rows) => upsertAccountRow(rows, savedAccount));
-      setSystemActionStatus(`账户资料已同步：${savedAccount.email}`);
-    } catch {
-      setSystemActionStatus(`后端不可用或当前角色无账户资料修改权限，已定位账户 ${account.email}`);
     }
   }
 
@@ -4310,6 +4434,104 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                 </div>
               </div>
             ) : null}
+            {accountEditDraft ? (
+              <div className="system-create-form system-create-form--edit" aria-label={t('编辑用户表单')}>
+                <label>
+                  <span>{t('姓名')}</span>
+                  <input value={accountEditDraft.displayName} onChange={(event) => patchAccountEditDraft({ displayName: event.target.value })} placeholder={t('请输入姓名')} />
+                </label>
+                <label>
+                  <span>{t('账号邮箱')}</span>
+                  <input value={accountEditDraft.originalEmail} disabled />
+                </label>
+                <label>
+                  <span>{t('角色')}</span>
+                  <select value={accountEditDraft.role} onChange={(event) => {
+                    const role = event.target.value as UserRole;
+                    const studyScopeIds = role === 'LZ_ADMIN'
+                      ? availableSystemStudies
+                      : accountEditDraft.studyScopeIds.length
+                        ? accountEditDraft.studyScopeIds
+                        : scopedStudyId
+                          ? [scopedStudyId]
+                          : availableSystemStudies.slice(0, 1);
+                    patchAccountEditDraft({ role, studyScopeIds });
+                  }}>
+                    {editableRoleOptions.map((role) => (
+                      <option value={role} key={role}>{role} | {t(roleLabels[role])}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Study Scope</span>
+                  {accountEditDraft.role === 'LZ_ADMIN' ? (
+                    <select value="全部 Study" disabled>
+                      <option value="全部 Study">{t('全部 Study')}</option>
+                    </select>
+                  ) : accountEditDraft.role.startsWith('LZ_') ? (
+                    <select
+                      multiple
+                      value={accountEditDraft.studyScopeIds}
+                      onChange={(event) => patchAccountEditDraft({
+                        studyScopeIds: Array.from(event.target.selectedOptions).map((option) => option.value)
+                      })}
+                    >
+                      {availableSystemStudies.map((studyId) => (
+                        <option value={studyId} key={studyId}>{studyId}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value={accountEditDraft.studyScopeIds[0] ?? ''}
+                      onChange={(event) => patchAccountEditDraft({ studyScopeIds: event.target.value ? [event.target.value] : [] })}
+                    >
+                      {availableSystemStudies.map((studyId) => (
+                        <option value={studyId} key={studyId}>{studyId}</option>
+                      ))}
+                    </select>
+                  )}
+                </label>
+                <label>
+                  <span>{t('账户状态')}</span>
+                  <select value={accountEditDraft.status} onChange={(event) => patchAccountEditDraft({ status: event.target.value as AccountEditDraft['status'] })}>
+                    <option value="Active">{t('Active')}</option>
+                    <option value="Pending">{t('Pending')}</option>
+                    <option value="Disabled">{t('Disabled')}</option>
+                  </select>
+                </label>
+                <label>
+                  <span>{t('Study 成员状态')}</span>
+                  <select
+                    value={accountEditDraft.memberStatus}
+                    disabled={!accountEditDraft.role.startsWith('STUDY_')}
+                    onChange={(event) => patchAccountEditDraft({ memberStatus: event.target.value as AccountEditDraft['memberStatus'] })}
+                  >
+                    <option value="pending">pending</option>
+                    <option value="active">active</option>
+                    <option value="disabled">disabled</option>
+                  </select>
+                </label>
+                <label>
+                  <span>{t('修改密码')}</span>
+                  <input type="password" value={accountEditDraft.password} onChange={(event) => patchAccountEditDraft({ password: event.target.value })} placeholder={t('留空则不修改密码')} />
+                </label>
+                <div className="system-role-permissions">
+                  <strong>{t('具体权限')}</strong>
+                  <span>{accountEditDraft.role} | {t(roleLabels[accountEditDraft.role])}</span>
+                  <ul>
+                    {editedRolePermissions.length ? editedRolePermissions.map((permission) => (
+                      <li key={permission}>{t(permission)}</li>
+                    )) : (
+                      <li>{t('当前角色没有矩阵授权项')}</li>
+                    )}
+                  </ul>
+                </div>
+                <div className="system-create-form__actions">
+                  <button className="module-primary-button" type="button" onClick={() => void saveSystemAccountEdit()}>{t('保存调整')}</button>
+                  <button className="module-link-button" type="button" onClick={() => setAccountEditDraft(null)}>{t('取消')}</button>
+                </div>
+              </div>
+            ) : null}
             <div className="module-table-wrap">
               <table className="module-table system-account-table">
                 <thead>
@@ -4339,7 +4561,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                       <td>{account.lastLogin}</td>
                       <td>
                         <div className="module-table-actions">
-                          <button className="module-link-button" type="button" onClick={() => editSystemAccount(account)}>{t('Edit')}</button>
+                          <button className="module-link-button" type="button" onClick={() => openSystemAccountEdit(account)}>{t('Edit')}</button>
 	                          <button
 	                            className="module-link-button module-link-button--danger"
 	                            type="button"
@@ -4736,7 +4958,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                   </tr>
                 </thead>
                 <tbody>
-                  {permissionRows.map((row) => (
+                  {permissionMatrixRows.map((row) => (
                     <tr key={row.action}>
                       <td>{t(row.action)}</td>
                       {permissionColumns.map((column) => (

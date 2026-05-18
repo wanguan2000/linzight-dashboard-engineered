@@ -19,6 +19,7 @@ import type {
   ApiPasswordResetConfirm,
   ApiPasswordResetRequest,
   ApiPatient,
+  ApiPermissionMatrixRow,
   ApiQualityIssue,
   ApiSample,
   ApiCrfMigrationPreview,
@@ -525,6 +526,10 @@ export async function createUserAccount(payload: ApiUserCreate): Promise<ApiUser
 export async function fetchUsers(studyId?: string): Promise<ApiUser[]> {
   const query = studyId ? `?study_id=${encodeURIComponent(studyId)}` : '';
   return getJson<ApiUser[]>(`/users${query}`);
+}
+
+export async function fetchPermissionMatrix(): Promise<ApiPermissionMatrixRow[]> {
+  return getJson<ApiPermissionMatrixRow[]>('/permissions/matrix');
 }
 
 export async function updateUserAccount(userId: string, payload: ApiUserUpdate, studyId?: string): Promise<ApiUser> {

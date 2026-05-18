@@ -45,6 +45,15 @@ export type ApiUserUpdate = {
   status?: 'active' | 'disabled';
 };
 
+export type ApiPermissionMatrixRow = {
+  module: string;
+  operation: string;
+  resource: string;
+  action: string;
+  endpoints: string[];
+  allowed_roles: ApiUserRole[];
+};
+
 export type ApiStudy = {
   id: string;
   code: string;
