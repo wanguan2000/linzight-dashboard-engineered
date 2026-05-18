@@ -1,6 +1,6 @@
 # 权限矩阵
 
-本矩阵是 release candidate 的正式权限口径。后端安全边界由 `backend/permissions.py` 的 `role_can()` 和 `/permissions/matrix` 输出执行；前端菜单、按钮和 tooltip 只能作为体验层说明，不能作为安全边界。
+本矩阵是 `v0.2.0-production-demo` 的正式 Demo 权限口径。后端安全边界由 `backend/permissions.py` 的 `role_can()` 和 `/permissions/matrix` 输出执行；前端菜单、按钮和 tooltip 只能作为体验层说明，不能作为安全边界。
 
 ## 角色
 

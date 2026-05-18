@@ -1,14 +1,13 @@
 # ROADMAP.md
 
-## v0.0.1-beta.0 当前范围
+## v0.2.0-production-demo 当前范围
 
-- 整理 private GitHub beta 仓库。
-- 补齐 README、AGENTS、AI handoff、架构、开发、部署、安全和 API 文档。
-- 保留当前 Vite + React dashboard 和可选 FastAPI Demo 后端。
-- 保留八个模块的静态 HTML 导出能力。
-- 明确 `.gitignore`、`.env.example`、敏感信息和生成目录规则。
+- 从 `v0.2.0-production-demo-rc2` 收口为正式 Demo 发布版本。
+- 保留 Vite + React dashboard、可选 FastAPI + SQLite Demo 后端、Docker Compose Demo、OpenAPI 导出和八个模块静态 HTML 导出能力。
+- 固化三 Study 数据口径、Study CRF 版本、访视计划、随访记录、患者旅程和导出产物的一致性校验。
+- 明确 `.gitignore`、`.env.example`、敏感信息、生成目录和 release gate 规则。
 
-## v0.0.2-beta.0 建议计划
+## v0.2.x 建议计划
 
 - 增加 GitHub Actions：install、lint、build、backend compile；当前已加入 CI 工作流并覆盖 API smoke、OpenAPI 导出、静态导出、UI smoke、release gate 与静态 HTML artifact 上传。
 - 增加基础测试脚本和 smoke tests；当前已加入 `npm test`、`npm run smoke:api`、`npm run export:openapi`、`npm run smoke:ui` 和 `npm run release:check`，覆盖临时后端、Study 隔离、权限、CRF、样本、组学、导出、审计、OpenAPI 契约和发布文件卫生。
@@ -19,7 +18,7 @@
 - 补充 OpenAPI 或 API schema 导出；当前已加入 `npm run export:openapi` 并生成 `docs/openapi.json`，CI/release gate 会检查契约快照。
 - 继续扩展当前 `study_id` 权限 Demo 的后端 API smoke tests；CI artifact 与 release gate 已建立，后续可增加分支保护状态检查。
 - 补齐跨 Study 管理视角的 `Study ID` 可见性；患者队列、CRF 摘要、知情同意、样本/检测、患者旅程和导出已进入第一轮收口，页面数据与 CRF 一致性审计见 `docs/page-data-crf-consistency-audit.md`。
-- 进入 production release candidate 收口后按 8 条并行工作流推进：Study/CRF 冻结、权限矩阵、Query/质控/访视窗口、eConsent、生产基础设施、审计合规、前端发布质量、发布工程与 UAT。正式清单见 `docs/07-production-release-candidate-workflows.md`。
+- 正式 Demo 发布后继续按 8 条工作流推进：Study/CRF 冻结、权限矩阵、Query/质控/访视窗口、eConsent、生产基础设施、审计合规、前端发布质量、发布工程与 UAT。正式清单见 `docs/07-production-release-candidate-workflows.md`。
 - 正式权限矩阵已沉淀到 `docs/08-permission-matrix.md`，后端通过 `/permissions/matrix` 导出，`npm run smoke:api` 会校验关键角色和操作不漂移。
 - UAT 发布包已沉淀到 `docs/09-uat-release-package.md`，覆盖三角色固定链路、已知限制、回滚步骤和 Demo/private beta 声明。
 

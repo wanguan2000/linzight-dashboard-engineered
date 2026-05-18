@@ -1,8 +1,8 @@
-# LinZight Beta Release Checklist
+# LinZight Release Checklist
 
-Use this checklist before publishing a private beta branch, tag, or release artifact.
+Use this checklist before publishing a Demo release branch, tag, or release artifact.
 
-Current candidate: `v0.2.0-production-demo-rc1`.
+Current release: `v0.2.0-production-demo`.
 
 ## Required Local Gates
 
@@ -34,10 +34,10 @@ git status --short --branch
 
 ## Version And Release Notes
 
-- Confirm `package.json` version matches the planned beta tag.
+- Confirm `package.json` version matches the planned release tag.
 - Update `CHANGELOG.md` before creating a tag or GitHub release.
-- Suggested private beta tag format: `v0.0.1-beta.0` or the next SemVer prerelease.
-- Release notes should call out that this is a Demo/private beta, not a production clinical deployment.
+- Suggested Demo tag format: `v0.2.0-production-demo` or the next SemVer prerelease/final Demo tag.
+- Release notes should call out that this is a Demo/internal pilot package, not a production clinical deployment.
 - Rollback path for the static frontend is the previous `dist/` or `exports/html/` artifact; rollback path for the Demo backend is the previous source tag plus a verified SQLite/upload backup.
 
 ## What `npm run release:check` Verifies

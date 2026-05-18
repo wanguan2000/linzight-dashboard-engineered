@@ -1,12 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolvePython } from './python-runner.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..');
-const pythonFromVenv = join(repoRoot, 'backend', '.venv', 'bin', 'python');
-const python = existsSync(pythonFromVenv) ? pythonFromVenv : 'python3';
+const python = resolvePython(repoRoot);
 const outputPath = process.argv[2] ?? 'docs/openapi.json';
 
 const result = spawnSync(python, ['-m', 'backend.export_openapi', outputPath], {

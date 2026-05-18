@@ -13,4 +13,4 @@ For the full 70-patient demo dataset, run:
 npm run export:postgres-migration -- exports/postgres-migration
 ```
 
-Then load the generated CSV/JSON package into a staging PostgreSQL database after reviewing JSONB columns and row counts. The runtime still uses SQLite in this demo branch; these SQL files are release-candidate staging artifacts, not a production cutover by themselves.
+Then load the generated CSV/JSON package into a staging PostgreSQL database after reviewing JSONB columns and row counts. The runtime still uses SQLite in this demo branch; these SQL files are Demo release staging artifacts, not a production cutover by themselves.

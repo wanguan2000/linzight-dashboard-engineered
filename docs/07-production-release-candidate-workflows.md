@@ -1,8 +1,8 @@
-# Production Release Candidate 收口工作流
+# Production Demo Release 收口工作流
 
 ## 发布目标
 
-本轮目标是把当前工程化 Demo 收口到 release candidate：可客户演示、可内部试点、不可直接承载真实患者生产数据。真实患者生产上线仍必须另行完成生产数据库、集中身份源、生产文件存储、安全审计、备份恢复和 UAT。锁库和脱敏审批先排除在本轮客户演示正式发布范围外，仅保留为内部治理能力。
+本轮目标是把当前工程化 Demo 收口到正式 Demo 发布版本：可客户演示、可内部试点、不可直接承载真实患者生产数据。真实患者生产上线仍必须另行完成生产数据库、集中身份源、生产文件存储、安全审计、备份恢复和 UAT。锁库和脱敏审批先排除在本轮客户演示正式发布范围外，仅保留为内部治理能力。
 
 ## 并行工作流
 
@@ -22,7 +22,7 @@
 - 所有 Study 业务语义从 `study_configurations` 读取或派生，核心字段为 `study_id -> disease_area -> active_crf_version_id -> visit_plan -> consent_template -> testing_profile`。
 - 新增患者必须绑定当前 Study 的 published CRF；如果当前 Study 没有 published CRF，后端直接拒绝，不再回退到默认 LGL。
 - 前端隐藏只用于体验，安全边界以后端 `backend/permissions.py` 与 API 403 为准。
-- 静态 HTML 可继续作为演示交付，但 release candidate gate 必须同时覆盖 API smoke、CRF 语义 smoke、静态导出 runtime smoke、UI smoke、browser matrix、demo E2E、performance smoke 和 staging deploy dry-run。
+- 静态 HTML 可继续作为演示交付，但 release gate 必须同时覆盖 API smoke、CRF 语义 smoke、静态导出 runtime smoke、UI smoke、browser matrix、demo E2E、performance smoke 和 staging deploy dry-run。
 
 ## 不进入本轮正式发布范围
 

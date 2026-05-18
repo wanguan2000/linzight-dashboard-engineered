@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { resolvePython } from './python-runner.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const reportDir = resolve(repoRoot, 'reports');
@@ -13,8 +14,7 @@ const frontendUrl = process.env.PLAYWRIGHT_FRONTEND_URL || `http://127.0.0.1:${f
 const backendPort = process.env.PLAYWRIGHT_BACKEND_PORT || String(20000 + Math.floor(Math.random() * 1000));
 const backendUrl = process.env.PLAYWRIGHT_API_BASE_URL || `http://127.0.0.1:${backendPort}`;
 const tempDir = process.env.PLAYWRIGHT_API_BASE_URL ? null : mkdtempSync(join(tmpdir(), 'linzight-playwright-'));
-const pythonFromVenv = join(repoRoot, 'backend', '.venv', 'bin', 'python');
-const python = existsSync(pythonFromVenv) ? pythonFromVenv : 'python3';
+const python = resolvePython(repoRoot);
 let backendStderr = '';
 
 function writeReport(status, details) {

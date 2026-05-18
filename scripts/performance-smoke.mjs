@@ -1,16 +1,16 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolvePython } from './python-runner.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const tempDir = mkdtempSync(join(tmpdir(), 'linzight-performance-smoke-'));
 const reportDir = join(repoRoot, 'reports');
 const reportPath = join(reportDir, 'performance-smoke.json');
-const pythonFromVenv = join(repoRoot, 'backend', '.venv', 'bin', 'python');
-const python = existsSync(pythonFromVenv) ? pythonFromVenv : 'python3';
+const python = resolvePython(repoRoot);
 const port = 25080 + Math.floor(Math.random() * 1000);
 const baseUrl = `http://127.0.0.1:${port}`;
 

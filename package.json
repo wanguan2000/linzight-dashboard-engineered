@@ -1,7 +1,7 @@
 {
   "name": "linzight-dashboard-engineered",
   "private": true,
-  "version": "0.2.0-production-demo-rc1",
+  "version": "0.2.0-production-demo",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",

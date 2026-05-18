@@ -1,4 +1,4 @@
--- LinZight RWD EDC PostgreSQL release-candidate constraints.
+-- LinZight RWD EDC PostgreSQL Demo release constraints.
 
 DO $$
 BEGIN

@@ -1,6 +1,6 @@
 # linzight-dashboard-engineered
 
-当前版本：`v0.2.0-production-demo-rc1`
+当前版本：`v0.2.0-production-demo`
 
 `linzight-dashboard-engineered` 是 LinZight 真实世界研究数据采集与管理系统的工程化 Demo。项目以患者为中心，覆盖研究工作台、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析和系统管理，并提供 FastAPI + SQLite Demo 后端。登录和写入动作依赖后端认证与 API；部分只读演示数据在后端不可用时仍可回退到本地 mock/seed 数据，适合产品演示、静态 HTML 交付和后续增量开发。
 
@@ -52,7 +52,7 @@
 
 Beta 发布前验证与剩余正式化工作见 `docs/05-beta-release-readiness.md`。
 客户演示前检查口径见 `docs/demo-readiness-checklist.md`。
-生产发布收口的八条并行工作流见 `docs/07-production-release-candidate-workflows.md`。
+正式 Demo 发布收口的八条工作流见 `docs/07-production-release-candidate-workflows.md`。
 正式权限矩阵见 `docs/08-permission-matrix.md`。
 
 ## 本地安装

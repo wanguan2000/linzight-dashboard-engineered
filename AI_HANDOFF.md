@@ -2,11 +2,11 @@
 
 ## 当前版本
 
-`v0.0.1-beta.0`
+`v0.2.0-production-demo`
 
 ## 当前状态
 
-项目处于可上传 GitHub private 仓库的 beta 整理阶段。前端为 Vite + React + TypeScript dashboard，后端为可选 FastAPI + SQLite Demo API。前端在 API 不可用时会回退到本地 Demo 数据；`npm run export:html` 可生成八个可直接打开的交互式 HTML 页面。
+项目已推进到 `v0.2.0-production-demo` 正式 Demo 发布口径。前端为 Vite + React + TypeScript dashboard，后端为可选 FastAPI + SQLite Demo API。前端在 API 不可用时会回退到本地 Demo 数据；`npm run export:html` 可生成八个可直接打开的交互式 HTML 页面。当前版本适合客户演示、内部试点和工程继续迭代，不可直接承载真实患者生产数据。
 
 ## 已实现功能
 

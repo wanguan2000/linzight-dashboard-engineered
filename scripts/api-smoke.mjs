@@ -1,16 +1,16 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolvePython } from './python-runner.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..');
 const tempDir = mkdtempSync(join(tmpdir(), 'linzight-api-smoke-'));
 const uploadsDir = join(tempDir, 'uploads');
 const databaseUrl = `sqlite:///${join(tempDir, 'linzight-smoke.db')}`;
-const pythonFromVenv = join(repoRoot, 'backend', '.venv', 'bin', 'python');
-const python = existsSync(pythonFromVenv) ? pythonFromVenv : 'python3';
+const python = resolvePython(repoRoot);
 const port = 18080 + Math.floor(Math.random() * 1000);
 const baseUrl = `http://127.0.0.1:${port}`;
 

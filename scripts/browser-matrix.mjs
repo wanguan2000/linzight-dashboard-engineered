@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import { resolvePython } from './python-runner.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const reportDir = resolve(repoRoot, 'reports');
@@ -13,8 +14,7 @@ const frontendUrl = process.env.BROWSER_MATRIX_FRONTEND_URL || `http://127.0.0.1
 const backendPort = process.env.BROWSER_MATRIX_BACKEND_PORT || String(20100 + Math.floor(Math.random() * 1000));
 const backendUrl = process.env.BROWSER_MATRIX_API_BASE_URL || `http://127.0.0.1:${backendPort}`;
 const tempDir = process.env.BROWSER_MATRIX_API_BASE_URL ? null : mkdtempSync(join(tmpdir(), 'linzight-browser-matrix-'));
-const pythonFromVenv = join(repoRoot, 'backend', '.venv', 'bin', 'python');
-const python = existsSync(pythonFromVenv) ? pythonFromVenv : 'python3';
+const python = resolvePython(repoRoot);
 
 const roles = [
   { username: 'admin@demo.linzight', entry: 'admin', expected: ['全部 Study', '70'] },

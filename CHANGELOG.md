@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project uses Semantic Versioning.
 
+## [0.2.0-production-demo] - 2026-05-18
+
+### Changed
+
+- Promoted the release line from `v0.2.0-production-demo-rc2` to the formal `v0.2.0-production-demo` Demo release.
+- Refreshed package and release documentation to remove release-candidate version drift while keeping the Demo/private-pilot safety boundary explicit.
+- Preserved the RC2 CRF semantics gate as the formal release baseline: `LZXK-01` uses its independent 15-field lung cancer resistance CRF, visit plan, consent template and testing profile without SLE/immune-field leakage.
+
+### Verified
+
+- Release validation includes lint, TypeScript/Vite build, static HTML export, backend compile, API smoke, CRF semantics smoke, OpenAPI export, UI/static-runtime smoke, performance smoke, release hygiene and git diff checks.
+
 ## [0.2.0-production-demo-rc1] - 2026-05-12
 
 ### Added

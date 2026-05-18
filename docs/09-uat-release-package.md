@@ -2,7 +2,7 @@
 
 ## 发布包内容
 
-- `RELEASE_NOTES.md` / `docs/release-notes-v0.2.0-production-demo-rc1.md`
+- `RELEASE.md` / `docs/release-notes-v0.2.0-production-demo.md`
 - `docs/demo-readiness-checklist.md`
 - `docs/07-production-release-candidate-workflows.md`
 - `docs/08-permission-matrix.md`
@@ -48,4 +48,4 @@
 
 ## 发布限制声明
 
-当前 release candidate 仅用于客户演示和内部试点。真实患者生产上线前，必须完成生产 PostgreSQL runtime、集中身份源、真实对象存储、真实病毒扫描、安全审计、备份恢复演练、UAT 签字和合规评估。
+当前正式 Demo 发布包仅用于客户演示和内部试点。真实患者生产上线前，必须完成生产 PostgreSQL runtime、集中身份源、真实对象存储、真实病毒扫描、安全审计、备份恢复演练、UAT 签字和合规评估。
