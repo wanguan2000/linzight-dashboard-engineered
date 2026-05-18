@@ -2,7 +2,7 @@
 
 Last updated: 2026-05-16
 
-This demo still runs on FastAPI + SQLite by default, but the production-facing adapter points are now explicit.
+This demo runs on FastAPI + PostgreSQL by default, while SQLite remains available for isolated smoke runs, legacy backup scripts, and migration export rehearsal.
 
 ## PostgreSQL Migration
 

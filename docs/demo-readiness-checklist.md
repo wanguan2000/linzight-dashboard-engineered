@@ -60,6 +60,6 @@ Study CRC does not open System Management by design. Its customer-facing Query p
 
 ## Demo 口径
 
-- 这是工程化 RWD EDC Demo/private beta，不是可承载真实患者数据的生产临床系统。
+- 这是 `v1.0.0` GA 功能测试版本，可用于演示和填写测试数据；真实患者生产上线前仍需完成生产身份源、对象存储、数据库安全策略、备份恢复和合规签字。
 - 演示重点是 Study 隔离、Study 绑定 CRF、患者中心数据链路、质量到 Query、eConsent 审批和审计闭环。
 - 如被问到“正式上线还差什么”，使用上面的正式产品未完成清单，不要把 Demo 适配点说成已生产落地。

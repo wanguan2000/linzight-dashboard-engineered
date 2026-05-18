@@ -21,25 +21,33 @@
 | 模块 | 操作 | API endpoint | 允许角色 |
 | --- | --- | --- | --- |
 | Study Configuration | 读取 Study 配置 | `GET /studies`, `GET /study-configurations`, `GET /studies/{study_id}/configuration` | 全部角色按 Study scope 读取 |
-| Account and Study Members | 创建/更新账号与 Study 成员 | `POST /users`, `GET/POST /studies/{study_id}/members` | `LZ_ADMIN`, `STUDY_CONFIG_ADMIN` |
-| Patient Cohort | 读取患者 | `GET /patients`, `GET /patients/{patient_id}`, `GET /patients/{patient_id}/panorama` | 全部角色按 Study scope 读取 |
-| Patient Cohort | 新增/修改/删除患者 | `POST /patients`, `PUT /patients/{patient_id}`, `DELETE /patients/{patient_id}` | `LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC` |
-| Clinical Data Capture | 读取 CRF/访视 | `GET /crf`, `GET /visits`, `GET /patients/{patient_id}/journey` | 全部角色按 Study scope 读取 |
-| Clinical Data Capture | 写入 CRF | `POST /crf`, `PUT /crf/{entry_id}` | `LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC` |
-| Clinical Data Capture | 写入随访记录 | `POST /follow-up-records`, `PUT /follow-up-records/{record_id}` | `LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC` |
+| LZ System Management | 新建/终止/删除 Study | `POST /studies`, `PATCH /studies/{study_id}`, `DELETE /studies/{study_id}` | `LZ_ADMIN` |
+| Account and Study Members | 创建/更新账号、平台授权范围与 Study 成员 | `GET/PATCH/POST /users`, `PATCH /users/{user_id}/study-scope`, `GET/POST /studies/{study_id}/members` | `LZ_ADMIN`, `STUDY_CONFIG_ADMIN`；平台授权范围仅 `LZ_ADMIN` |
+| Global Patient Index | 读取全局患者索引 | `GET /global/patient-index` | `LZ_ADMIN` 可读全部；其他角色按授权 Study 过滤 |
+| Patient Cohort | 读取患者 | `GET /studies/{study_id}/patients`, `GET /patients/{patient_id}`, `GET /patients/{patient_id}/panorama` | 全部角色按 Study scope 读取 |
+| Patient Cohort | 新增/修改/删除患者 | `POST /studies/{study_id}/patients`, `PUT /patients/{patient_id}`, `DELETE /patients/{patient_id}` | `LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC` |
+| Clinical Data Capture | 读取 CRF/访视 | `GET /studies/{study_id}/crf`, `GET /studies/{study_id}/visits`, `GET /patients/{patient_id}/journey` | 全部角色按 Study scope 读取 |
+| Clinical Data Capture | 写入 CRF | `POST /studies/{study_id}/crf`, `PUT /crf/{entry_id}` | `LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC` |
+| Clinical Data Capture | 写入随访记录 | `POST /studies/{study_id}/follow-up-records`, `PUT /follow-up-records/{record_id}` | `LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC` |
 | System Management | 配置 CRF/访视计划/site | `POST/PUT /studies/{study_id}/crf-*`, `POST/PUT /studies/{study_id}/visit-plans`, `POST /studies/{study_id}/sites*` | `LZ_ADMIN`, `LZ_CRF_ADMIN`, `STUDY_CONFIG_ADMIN` |
-| Informed Consent | 读取知情同意 | `GET /consents` | 全部角色按 Study scope 读取 |
+| Informed Consent | 读取知情同意 | `GET /studies/{study_id}/consents` | 全部角色按 Study scope 读取 |
 | Informed Consent | 更新知情同意/发起撤回重签 | `PUT /consents/{consent_id}`, `POST /consents/{consent_id}/withdrawal-request`, `POST /consents/{consent_id}/resign-request` | `LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC` |
-| Samples and Testing | 写入样本 | `POST /samples`, `PUT /samples/{sample_id}` | `LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC` |
-| Samples and Testing | 写入组学检测 | `POST /omics`, `PUT /omics/{omics_id}` | `LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC` |
+| Samples and Testing | 写入样本 | `POST /studies/{study_id}/samples`, `PUT /samples/{sample_id}` | `LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC` |
+| Samples and Testing | 写入组学检测 | `POST /studies/{study_id}/omics`, `PUT /omics/{omics_id}` | `LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC` |
 | Files | 上传/下载/归档文件 | `POST /files`, `GET /files/{file_id}/download`, `POST /files/{file_id}/archive` | 写入：`LZ_ADMIN`, `LZ_CRC`, `STUDY_CRC`; 下载按文件 Study scope 和扫描状态校验 |
-| Data Management | 运行质控和创建 Query | `POST /quality/run`, `POST /queries` | `LZ_ADMIN`, `LZ_CRC`, `LZ_DATA_MANAGER`, `STUDY_DATA_MANAGER` |
-| Data Management | 导出和下载数据 | `POST /exports`, `GET /exports/{export_id}/download` | `LZ_ADMIN`, `LZ_DATA_MANAGER`, `STUDY_DATA_MANAGER` |
+| Data Management | 运行质控和创建 Query | `POST /studies/{study_id}/quality/run`, `POST /queries` | `LZ_ADMIN`, `LZ_CRC`, `LZ_DATA_MANAGER`, `STUDY_DATA_MANAGER` |
+| Data Management | 导出和下载数据 | `POST /exports`, `GET /studies/{study_id}/exports`, `GET /exports/{export_id}/download` | `LZ_ADMIN`, `LZ_DATA_MANAGER`, `STUDY_DATA_MANAGER` |
 | Approval Center | 审批提交/批准/拒绝/取消/完成 | `POST /approvals*` | `LZ_ADMIN`, `LZ_DATA_MANAGER`, `STUDY_DATA_MANAGER`; 提交人不能自批 |
-| Audit | 读取审计日志 | `GET /audit-logs` | `LZ_ADMIN`, `LZ_DATA_MANAGER`, `LZ_AUDITOR`, `STUDY_CONFIG_ADMIN`, `STUDY_DATA_MANAGER` |
+| Audit | 读取审计日志 | `GET /studies/{study_id}/audit-logs` | `LZ_ADMIN`, `LZ_DATA_MANAGER`, `LZ_AUDITOR`, `STUDY_CONFIG_ADMIN`, `STUDY_DATA_MANAGER` |
 
 ## UI 规则
 
+- Study Workspace 是唯一业务租户边界；除 LZ 全局配置和索引页外，业务模块必须存在一个 active Study。
+- LZ 全局患者列表只能作为索引；点击患者后应进入其所属 Study Workspace，并重新按该 Study 权限校验后续操作。
+- LZ 全局导航只保留 `全局患者索引` 与 `Study 系统管理`。全局态的 `Study 系统管理` 只展示 Study registry、用户账户和授权范围矩阵，不展示 CRF、样本、随访、导出、审批、Query 或审计业务面板。
+- Study 生命周期状态为 `terminated` 或 `deleted` 时，后端必须拒绝患者、CRF、访视、随访、样本、组学、文件、质控和导出等业务写入；系统管理和审计读取仍保留。
+- `STUDY_CONFIG_ADMIN` 是本 Study 系统管理员：可管理本 Study 研究级成员和本 Study 配置，不能新建/终止/删除 Study，也不能配置平台级角色的跨 Study scope。
+- 当前 Demo 阶段先使用后端应用层过滤；生产 PostgreSQL 版本应在相同 Study 边界上补 RLS。
 - 有权限：按钮可点击，成功/失败必须给出状态反馈。
 - 无权限：按钮保持可见时必须 `disabled`，并用 `title`/tooltip 说明需要的角色或审批状态。
 - 隐藏菜单只是减少噪音；所有写操作必须继续由后端独立校验并返回 403。

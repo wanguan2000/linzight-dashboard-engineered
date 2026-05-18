@@ -55,6 +55,7 @@ export interface NavItem {
   icon: IconName;
   active?: boolean;
   hasChildren?: boolean;
+  routeLabel?: string;
 }
 
 export interface QuickPrompt {

@@ -22,7 +22,7 @@ const roleScenarios = [
     entry: 'admin',
     studyId: null,
     canOpenSystemManagement: true,
-    homeChecks: ['全部 Study', '70'],
+    homeChecks: ['Study 系统管理', 'Study Registry'],
     patientChecks: ['Study ID', 'LGL-1111', 'LZXK-01'],
     lungChecks: false,
   },
@@ -67,6 +67,7 @@ function startBackend() {
     cwd: repoRoot,
     env: {
       ...process.env,
+      DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-demo-e2e.db')}`,
       LINZIGHT_DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-demo-e2e.db')}`,
       LINZIGHT_UPLOADS_DIR: join(tempDir, 'uploads'),
     },
@@ -127,18 +128,36 @@ async function clickNav(page, label) {
   await page.waitForLoadState('networkidle');
 }
 
+async function clickAnyNav(page, labels) {
+  for (const label of labels) {
+    const nav = page.locator('nav button').filter({ hasText: label });
+    if (await nav.count()) {
+      await nav.first().click();
+      await page.waitForLoadState('networkidle');
+      return label;
+    }
+  }
+  throw new Error(`Navigation not found: ${labels.join(' / ')}`);
+}
+
 async function login(page, role) {
   await page.goto(`${frontendUrl}/?locale=zh-CN`, { waitUntil: 'networkidle' });
   if (role.entry === 'admin') {
     await page.getByRole('button', { name: /LZ 系统管理|LZ System/i }).click();
   }
-  if (role.studyId) {
-    await page.getByLabel(/研究编号|study_id/i).selectOption(role.studyId);
-  }
   await page.getByLabel(/角色账号|Role account/i).selectOption(role.username);
   await page.getByLabel(/密码|password/i).fill('Demo1234!');
   await page.getByRole('button', { name: /进入系统|Enter system/i }).click();
-  await page.getByRole('button', { name: /首页工作台|Home/i }).waitFor({ timeout: 10000 });
+  const studySelector = page.getByLabel(/选择 Study Workspace|Select Study Workspace/i);
+  if (role.studyId && await studySelector.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await studySelector.selectOption(role.studyId);
+    await page.getByRole('button', { name: /进入 Study Workspace|Enter Study Workspace/i }).click();
+  }
+  if (role.entry === 'admin') {
+    await page.getByText('Study 系统管理', { exact: false }).first().waitFor({ timeout: 10000 });
+  } else {
+    await page.getByRole('button', { name: /首页工作台|Home/i }).waitFor({ timeout: 10000 });
+  }
   await page.waitForLoadState('networkidle');
 }
 
@@ -162,7 +181,7 @@ async function runQualityAndCreateQuery(page, role) {
 }
 
 async function verifySystemLoop(page, role) {
-  const systemNav = page.locator('nav button').filter({ hasText: '系统管理' });
+  const systemNav = page.locator('nav button').filter({ hasText: role.entry === 'admin' ? 'Study 系统管理' : '系统管理' });
   const systemNavCount = await systemNav.count();
   if (!role.canOpenSystemManagement) {
     if (systemNavCount !== 0) throw new Error(`${role.username} should not see System Management nav`);
@@ -171,6 +190,10 @@ async function verifySystemLoop(page, role) {
   if (systemNavCount !== 1) throw new Error(`${role.username} should see exactly one System Management nav`);
   await systemNav.click();
   await page.waitForLoadState('networkidle');
+  if (role.entry === 'admin') {
+    await assertVisibleTextIncludes(page, ['Study Registry', 'User Accounts', 'Create Study'], 'global system management');
+    return { restricted: false, global: true };
+  }
   await assertVisibleTextIncludes(page, ['Query Management', 'Approval Center', 'Audit Diff'], 'system management closed loop');
   if (role.studyId) {
     await assertVisibleTextIncludes(page, [role.studyId], 'system management study scope');
@@ -186,6 +209,14 @@ async function runScenario(browser, role) {
   try {
     await login(page, role);
     for (const text of role.homeChecks) checks.push(await expectVisible(page, text, `home ${text}`));
+
+    if (role.entry === 'admin') {
+      await clickAnyNav(page, ['全局患者索引']);
+      await assertVisibleTextIncludes(page, role.patientChecks, 'global patient index study id');
+      const systemLoop = await verifySystemLoop(page, role);
+      await context.close();
+      return { role: role.username, status: 'passed', checks, systemLoop };
+    }
 
     await clickNav(page, '患者队列管理');
     await expectVisible(page, '患者搜索', 'patient queue search');

@@ -31,6 +31,7 @@ function startServer() {
     cwd: repoRoot,
     env: {
       ...process.env,
+      DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-performance.db')}`,
       LINZIGHT_DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-performance.db')}`,
       LINZIGHT_UPLOADS_DIR: join(tempDir, 'uploads'),
       LINZIGHT_STORAGE_BACKEND: 'object',
@@ -92,10 +93,10 @@ async function run() {
     await waitForHealth();
     await request('/seed', { method: 'POST' });
     const token = await login();
-    const patients = await request('/patients', { headers: { Authorization: `Bearer ${token}` } });
+    const patients = await request('/global/patient-index', { headers: { Authorization: `Bearer ${token}` } });
     details.patientListMs = patients.elapsedMs;
     details.patientCount = patients.data.length;
-    assert(patients.data.length === 70, `expected 70 demo patients, got ${patients.data.length}`);
+    assert(patients.data.length === 70, `expected 70 demo patient index rows, got ${patients.data.length}`);
     assert(patients.elapsedMs < 2000, `patient list too slow: ${patients.elapsedMs}ms`);
 
     const exportJob = await request('/exports', {

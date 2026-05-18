@@ -28,6 +28,7 @@ function startServer() {
     cwd: repoRoot,
     env: {
       ...process.env,
+      DATABASE_URL: databaseUrl,
       LINZIGHT_DATABASE_URL: databaseUrl,
       LINZIGHT_UPLOADS_DIR: uploadsDir,
       LINZIGHT_STORAGE_BACKEND: 'object',
@@ -201,6 +202,7 @@ async function runSmoke() {
   const lglCrc = await login('crc@demo.linzight');
   const pi = await login('lung-pi@demo.linzight');
   const dataManager = await login('lung-dm@demo.linzight');
+  const lzDataManager = await login('lz-dm@demo.linzight');
   const lzAdmin = await login('admin@demo.linzight');
 
   assert(configAdmin.user.role === 'STUDY_CONFIG_ADMIN', 'config admin role mismatch');
@@ -210,7 +212,7 @@ async function runSmoke() {
   const currentUser = await request('/auth/me', { token: crc.access_token });
   assert(currentUser.data.id === crc.user.id, 'auth/me should return the current signed-token user');
   await request('/auth/me', { expectedStatus: 401 });
-  await request('/patients?study_id=LZXK-01', { token: 'invalid-token', expectedStatus: 401 });
+  await request('/studies/LZXK-01/patients', { token: 'invalid-token', expectedStatus: 401 });
 
   const lungConfiguration = await request('/studies/LZXK-01/configuration', { token: crc.access_token });
   assert(lungConfiguration.data.study_id === 'LZXK-01', 'lung Study configuration should be scoped to LZXK-01');
@@ -223,28 +225,80 @@ async function runSmoke() {
   const adminConfigurations = await request('/study-configurations', { token: lzAdmin.access_token });
   assert(adminConfigurations.data.length >= 3, 'LZ_ADMIN should see all Study configurations');
   assert(adminConfigurations.data.every((row) => row.study_id && row.active_crf_version_id && row.consent_template), 'Study configuration rows must be complete');
+  const smokeStudyId = `SMOKE-STUDY-${Date.now().toString().slice(-5)}`;
+  const createdStudy = await request('/studies', {
+    method: 'POST',
+    token: lzAdmin.access_token,
+    body: {
+      id: smokeStudyId,
+      code: smokeStudyId,
+      name: 'Smoke Lifecycle Study',
+      indication: 'smoke',
+      phase: 'RWD',
+      status: 'draft',
+      owner_org: 'LinZight',
+    },
+  });
+  assert(createdStudy.status === 201 && createdStudy.data.status === 'draft', 'LZ_ADMIN should create a draft Study');
+  await request('/studies', {
+    method: 'POST',
+    token: configAdmin.access_token,
+    body: {
+      id: `${smokeStudyId}-BLOCKED`,
+      code: `${smokeStudyId}-BLOCKED`,
+      name: 'Blocked Study',
+      indication: 'smoke',
+    },
+    expectedStatus: 403,
+  });
+  const terminatedStudy = await request(`/studies/${smokeStudyId}`, {
+    method: 'PATCH',
+    token: lzAdmin.access_token,
+    body: { status: 'terminated' },
+  });
+  assert(terminatedStudy.data.status === 'terminated', 'LZ_ADMIN should terminate a Study');
+  await request(`/studies/${smokeStudyId}/patients`, {
+    method: 'POST',
+    token: lzAdmin.access_token,
+    body: {
+      study_id: smokeStudyId,
+      name: `Smoke Terminated Patient ${Date.now()}`,
+      hospital_no: `TERM-${Date.now()}`,
+      sex: '女',
+      age: 45,
+      disease_type: 'NSCLC',
+      organs: [],
+      note: 'blocked',
+      clinical_data: {},
+    },
+    expectedStatus: 409,
+  });
+  const deletedStudy = await request(`/studies/${smokeStudyId}`, { method: 'DELETE', token: lzAdmin.access_token });
+  assert(deletedStudy.data.status === 'deleted', 'Study delete should soft-delete lifecycle status');
 
-  const patients = await request('/patients?study_id=LZXK-01', { token: crc.access_token });
+  await request('/patients', { token: lzAdmin.access_token, expectedStatus: 400 });
+  const patients = await request('/studies/LZXK-01/patients', { token: crc.access_token });
   assert(patients.data.length > 0, 'LZXK-01 patients should be visible to lung CRC');
   assert(patients.data.every((patient) => patient.study_id === 'LZXK-01'), 'patient list leaked another study');
-  await request('/patients?study_id=LGL-1111', { token: crc.access_token, expectedStatus: 403 });
-  const adminPatients = await request('/patients', { token: lzAdmin.access_token });
+  await request('/studies/LGL-1111/patients', { token: crc.access_token, expectedStatus: 403 });
+  const adminPatients = await request('/global/patient-index', { token: lzAdmin.access_token });
   const adminPatientStudies = new Set(adminPatients.data.map((patient) => patient.study_id));
-  assert(adminPatientStudies.size >= 3, 'LZ_ADMIN should see all seeded Study patient cohorts');
-  assert(adminPatients.data.every((patient) => patient.study_id), 'admin patient list must include study_id for every patient');
-  const lglPatient = adminPatients.data.find((row) => row.study_id === 'LGL-1111');
-  assert(lglPatient, 'seeded admin view should include an LGL-1111 patient');
-  const dataManagerPatients = await request('/patients?study_id=LZXK-01', { token: dataManager.access_token });
+  assert(adminPatientStudies.size >= 3, 'LZ_ADMIN should see all seeded Study patient indexes');
+  assert(adminPatients.data.every((patient) => patient.study_id && patient.masked_subject_code && patient.last_updated), 'admin patient index must include minimal global fields');
+  const lglIndexPatient = adminPatients.data.find((row) => row.study_id === 'LGL-1111');
+  const lglPatient = { id: lglIndexPatient?.patient_id, study_id: lglIndexPatient?.study_id, name: lglIndexPatient?.masked_subject_code, hospital_no: 'GLOBAL-INDEX' };
+  assert(lglPatient.id, 'seeded admin view should include an LGL-1111 patient');
+  const dataManagerPatients = await request('/studies/LZXK-01/patients', { token: dataManager.access_token });
   assert(dataManagerPatients.data.length > 0, 'data manager should see scoped patients');
   assert(dataManagerPatients.data[0].name.includes('**'), 'data manager patient name should be masked');
   assert(dataManagerPatients.data[0].hospital_no.includes('****'), 'data manager hospital number should be masked in API view');
 
   const patient = patients.data[0];
-  const consentList = await request('/consents?study_id=LZXK-01', { token: crc.access_token });
+  const consentList = await request('/studies/LZXK-01/consents', { token: crc.access_token });
   const patientConsent = consentList.data.find((consent) => consent.patient_id === patient.id) ?? consentList.data[0];
   assert(patientConsent?.study_id === 'LZXK-01', 'consent list should stay in LZXK-01');
   assert(consentList.data.every((consent) => consent.study_id === 'LZXK-01'), 'consent list leaked another study');
-  await request('/consents?study_id=LGL-1111', { token: crc.access_token, expectedStatus: 403 });
+  await request('/studies/LGL-1111/consents', { token: crc.access_token, expectedStatus: 403 });
   const consentFile = await uploadConsentFile(crc.access_token, patientConsent.id, patientConsent.patient_id);
   assert(consentFile.category === 'consent', 'uploaded consent file should use consent category');
   assert(consentFile.consent_id === patientConsent.id, 'uploaded consent file should link consent_id');
@@ -252,13 +306,13 @@ async function runSmoke() {
   assert(consentFile.storage_backend === 'object', 'file upload should use configured object storage adapter');
   assert(consentFile.storage_path.startsWith('object://smoke-bucket/'), 'object storage path should use object URI');
   assert(consentFile.scan_message.includes('clamav'), 'file upload should use configured virus scanner adapter');
-  const scopedFiles = await request('/files?study_id=LZXK-01', { token: crc.access_token });
+  const scopedFiles = await request('/studies/LZXK-01/files', { token: crc.access_token });
   assert(scopedFiles.data.some((row) => row.id === consentFile.id), 'scoped file list should include uploaded consent file');
   assert(scopedFiles.data.every((row) => row.study_id === 'LZXK-01'), 'file list leaked another study');
-  await request('/files?study_id=LGL-1111', { token: crc.access_token, expectedStatus: 403 });
+  await request('/studies/LGL-1111/files', { token: crc.access_token, expectedStatus: 403 });
   await downloadBlob(`/files/${consentFile.id}/download`, crc.access_token);
   await downloadBlob(`/files/${consentFile.id}/download`, lglCrc.access_token, 403);
-  const lglSamplesForMismatch = await request('/samples?study_id=LGL-1111', { token: lzAdmin.access_token });
+  const lglSamplesForMismatch = await request('/studies/LGL-1111/samples', { token: lzAdmin.access_token });
   const lglSampleForMismatch = lglSamplesForMismatch.data[0];
   assert(lglSampleForMismatch?.study_id === 'LGL-1111', 'LGL sample required for file mismatch smoke');
   const mismatchedFileBody = new globalThis.FormData();
@@ -287,7 +341,7 @@ async function runSmoke() {
   });
   assert(consentWithdrawal.status === 201, 'eConsent withdrawal approval request should return 201');
   assert(consentWithdrawal.data.approval_type === 'econsent_withdrawal', 'eConsent withdrawal approval type mismatch');
-  const consentPendingWithdrawal = await request(`/consents?study_id=LZXK-01`, { token: crc.access_token });
+  const consentPendingWithdrawal = await request(`/studies/LZXK-01/consents`, { token: crc.access_token });
   assert(consentPendingWithdrawal.data.find((row) => row.id === patientConsent.id)?.status === '撤回审批中', 'withdrawal request should set pending consent status');
   await request(`/approvals/${consentWithdrawal.data.id}/approve`, {
     method: 'POST',
@@ -307,7 +361,7 @@ async function runSmoke() {
     body: { comment: 'Applied eConsent withdrawal' },
   });
   assert(completedConsentWithdrawal.data.status === 'completed', 'eConsent withdrawal should complete');
-  const consentAfterWithdrawal = await request(`/consents?study_id=LZXK-01`, { token: crc.access_token });
+  const consentAfterWithdrawal = await request(`/studies/LZXK-01/consents`, { token: crc.access_token });
   const withdrawnConsent = consentAfterWithdrawal.data.find((row) => row.id === patientConsent.id);
   assert(withdrawnConsent?.status === '已撤回', 'completed eConsent withdrawal should update consent status');
   const consentResign = await request(`/consents/${patientConsent.id}/resign-request`, {
@@ -316,7 +370,7 @@ async function runSmoke() {
     body: { comment: 'Smoke re-sign request' },
   });
   assert(consentResign.data.approval_type === 'econsent_resign', 'eConsent re-sign approval type mismatch');
-  const consentPendingResign = await request(`/consents?study_id=LZXK-01`, { token: crc.access_token });
+  const consentPendingResign = await request(`/studies/LZXK-01/consents`, { token: crc.access_token });
   assert(consentPendingResign.data.find((row) => row.id === patientConsent.id)?.status === '重签审批中', 're-sign request should set pending consent status');
   await request(`/approvals/${consentResign.data.id}/approve`, {
     method: 'POST',
@@ -328,7 +382,7 @@ async function runSmoke() {
     token: lzAdmin.access_token,
     body: { comment: 'Applied eConsent re-sign' },
   });
-  const consentAfterResign = await request(`/consents?study_id=LZXK-01`, { token: crc.access_token });
+  const consentAfterResign = await request(`/studies/LZXK-01/consents`, { token: crc.access_token });
   assert(consentAfterResign.data.find((row) => row.id === patientConsent.id)?.status === '已重签', 'completed eConsent re-sign should update consent status');
 
   const createdUser = await request('/users', {
@@ -346,6 +400,28 @@ async function runSmoke() {
   });
   assert(createdUser.status === 201, 'user create should return 201');
   assert(createdUser.data.study_memberships.some((member) => member.study_id === 'LZXK-01' && member.study_role === 'STUDY_CRC'), 'created user should be linked to LZXK-01');
+  const updatedUser = await request(`/users/${createdUser.data.id}?study_id=LZXK-01`, {
+    method: 'PATCH',
+    token: configAdmin.access_token,
+    body: { display_name: 'Smoke CRC Updated' },
+  });
+  assert(updatedUser.data.display_name === 'Smoke CRC Updated', 'Study config admin should update a Study member display name');
+  const promotedMember = await request('/studies/LZXK-01/members', {
+    method: 'POST',
+    token: lzAdmin.access_token,
+    body: { user_id: createdUser.data.id, study_role: 'STUDY_CONFIG_ADMIN', status: 'active' },
+  });
+  assert(promotedMember.data.study_role === 'STUDY_CONFIG_ADMIN', 'LZ_ADMIN should assign Study system admin role');
+  const scopedUsers = await request('/users?study_id=LZXK-01', { token: lzAdmin.access_token });
+  assert(scopedUsers.data.some((user) => user.id === createdUser.data.id), 'Study user list should include newly created member');
+  const scopedPlatformUser = await request(`/users/${lzDataManager.user.id}/study-scope`, {
+    method: 'PATCH',
+    token: lzAdmin.access_token,
+    body: { study_ids: ['LZXK-01'] },
+  });
+  assert(scopedPlatformUser.data.study_scope.studyIds.includes('LZXK-01'), 'LZ_ADMIN should update platform role Study scope');
+  await request('/studies/RWD-NMO-2026/patients', { token: lzDataManager.access_token, expectedStatus: 403 });
+  await request('/studies/LZXK-01/patients', { token: lzDataManager.access_token });
   await request('/users', {
     method: 'POST',
     token: configAdmin.access_token,
@@ -480,11 +556,11 @@ async function runSmoke() {
   const publishedVersion = crfVersionsAfterApply.data.find((version) => version.id === draftVersion.data.id);
   assert(publishedVersion?.status === 'published', 'approved CRF migration should publish the target version');
   assert(publishedVersion.published_at, 'published CRF version should have published_at');
-  const scopedCrfEntries = await request('/crf?study_id=LZXK-01', { token: crc.access_token });
+  const scopedCrfEntries = await request('/studies/LZXK-01/crf', { token: crc.access_token });
   assert(scopedCrfEntries.data.length > 0, 'scoped CRF entries should not be empty');
   assert(scopedCrfEntries.data.every((row) => row.study_id === 'LZXK-01'), 'CRF entry list leaked another study');
-  await request('/crf?study_id=LGL-1111', { token: crc.access_token, expectedStatus: 403 });
-  await request('/crf', {
+  await request('/studies/LGL-1111/crf', { token: crc.access_token, expectedStatus: 403 });
+  await request('/studies/LGL-1111/crf', {
     method: 'POST',
     token: crc.access_token,
     body: {
@@ -503,7 +579,7 @@ async function runSmoke() {
     expectedStatus: 403,
   });
 
-  const sample = await request('/samples', {
+  const sample = await request('/studies/LZXK-01/samples', {
     method: 'POST',
     token: crc.access_token,
     body: {
@@ -520,11 +596,11 @@ async function runSmoke() {
   });
   assert(sample.status === 201, 'sample create should return 201');
   assert(sample.data.study_id === 'LZXK-01', 'sample should inherit patient study_id');
-  const scopedSamples = await request('/samples?study_id=LZXK-01', { token: crc.access_token });
+  const scopedSamples = await request('/studies/LZXK-01/samples', { token: crc.access_token });
   assert(scopedSamples.data.length > 0, 'scoped sample list should not be empty');
   assert(scopedSamples.data.every((row) => row.study_id === 'LZXK-01'), 'sample list leaked another study');
-  await request('/samples?study_id=LGL-1111', { token: crc.access_token, expectedStatus: 403 });
-  await request('/samples', {
+  await request('/studies/LGL-1111/samples', { token: crc.access_token, expectedStatus: 403 });
+  await request('/studies/LGL-1111/samples', {
     method: 'POST',
     token: crc.access_token,
     body: {
@@ -541,7 +617,7 @@ async function runSmoke() {
     expectedStatus: 403,
   });
 
-  const omics = await request('/omics', {
+  const omics = await request('/studies/LZXK-01/omics', {
     method: 'POST',
     token: crc.access_token,
     body: {
@@ -561,10 +637,10 @@ async function runSmoke() {
   });
   assert(omics.status === 201, 'omics create should return 201');
   assert(omics.data.study_id === 'LZXK-01', 'omics should inherit patient study_id');
-  const scopedOmics = await request('/omics?study_id=LZXK-01', { token: crc.access_token });
+  const scopedOmics = await request('/studies/LZXK-01/omics', { token: crc.access_token });
   assert(scopedOmics.data.length > 0, 'scoped omics list should not be empty');
   assert(scopedOmics.data.every((row) => row.study_id === 'LZXK-01'), 'omics list leaked another study');
-  await request('/omics?study_id=LGL-1111', { token: crc.access_token, expectedStatus: 403 });
+  await request('/studies/LGL-1111/omics', { token: crc.access_token, expectedStatus: 403 });
 
   const query = await request('/queries', {
     method: 'POST',
@@ -580,11 +656,11 @@ async function runSmoke() {
     },
   });
   assert(query.status === 201, 'query create should return 201');
-  const scopedQueries = await request('/queries?study_id=LZXK-01', { token: dataManager.access_token });
+  const scopedQueries = await request('/studies/LZXK-01/queries', { token: dataManager.access_token });
   assert(scopedQueries.data.some((row) => row.id === query.data.id), 'scoped query list should include created query');
   assert(scopedQueries.data.every((row) => row.study_id === 'LZXK-01'), 'query list leaked another study');
-  await request('/queries?study_id=LGL-1111', { token: dataManager.access_token, expectedStatus: 403 });
-  await request(`/queries?patient_id=${encodeURIComponent(lglPatient.id)}`, { token: dataManager.access_token, expectedStatus: 403 });
+  await request('/studies/LGL-1111/queries', { token: dataManager.access_token, expectedStatus: 403 });
+  await request(`/queries?patient_id=${encodeURIComponent(lglPatient.id)}`, { token: dataManager.access_token, expectedStatus: 400 });
   await request('/queries', {
     method: 'POST',
     token: dataManager.access_token,
@@ -627,9 +703,9 @@ async function runSmoke() {
     body: { status: 'open', response: 'Reopened for source verification.' },
   });
   assert(reopenedQuery.data.status === 'open' && !reopenedQuery.data.closed_at, 'reopened query should clear closed_at');
-  const filteredQueries = await request(`/queries?study_id=LZXK-01&status=open&field_name=${encodeURIComponent('治疗线数')}&assigned_to=${encodeURIComponent(crc.user.id)}`, { token: dataManager.access_token });
+  const filteredQueries = await request(`/studies/LZXK-01/queries?status=open&field_name=${encodeURIComponent('治疗线数')}&assigned_to=${encodeURIComponent(crc.user.id)}`, { token: dataManager.access_token });
   assert(filteredQueries.data.some((row) => row.id === query.data.id), 'query filters should find reopened query by status, field, and assignee');
-  const visits = await request(`/visits?study_id=LZXK-01&patient_id=${encodeURIComponent(patient.id)}`, { token: dataManager.access_token });
+  const visits = await request(`/studies/LZXK-01/visits?patient_id=${encodeURIComponent(patient.id)}`, { token: dataManager.access_token });
   const plannedFollowUpVisit = visits.data.find((visit) => visit.visit_plan_code === 'V2') ?? visits.data.find((visit) => visit.visit_plan_id);
   assert(plannedFollowUpVisit, 'planned visit required for visit-window smoke');
   const shiftedVisit = await request(`/visits/${plannedFollowUpVisit.id}`, {
@@ -638,9 +714,9 @@ async function runSmoke() {
     body: { visit_date: '2027-12-31' },
   });
   assert(shiftedVisit.data.visit_date === '2027-12-31', 'visit update should persist date for window smoke');
-  const qualityResult = await request('/quality/run?study_id=LZXK-01', { method: 'POST', token: dataManager.access_token });
+  const qualityResult = await request('/studies/LZXK-01/quality/run', { method: 'POST', token: dataManager.access_token });
   assert(qualityResult.data.status === 'completed', 'quality run should complete for scoped data manager');
-  const qualityIssues = await request('/quality/issues?study_id=LZXK-01', { token: dataManager.access_token });
+  const qualityIssues = await request('/studies/LZXK-01/quality/issues', { token: dataManager.access_token });
   assert(qualityIssues.data.every((row) => row.study_id === 'LZXK-01'), 'quality issue list leaked another study');
   assert(qualityIssues.data.some((row) => row.source_table === 'visits' && row.field_name === 'visit_date'), 'visit-window quality issue should be generated');
   const visitWindowIssue = qualityIssues.data.find((row) => row.source_table === 'visits' && row.field_name === 'visit_date');
@@ -659,8 +735,8 @@ async function runSmoke() {
     },
   });
   assert(visitDateQuery.status === 201, 'visit_date quality issue should be convertible to a Query');
-  await request('/quality/run?study_id=LGL-1111', { method: 'POST', token: dataManager.access_token, expectedStatus: 403 });
-  await request('/quality/issues?study_id=LGL-1111', { token: dataManager.access_token, expectedStatus: 403 });
+  await request('/studies/LGL-1111/quality/run', { method: 'POST', token: dataManager.access_token, expectedStatus: 403 });
+  await request('/studies/LGL-1111/quality/issues', { token: dataManager.access_token, expectedStatus: 403 });
 
   await request('/exports', {
     method: 'POST',
@@ -684,10 +760,10 @@ async function runSmoke() {
   assert(exportJob.status === 201, 'export create should return 201');
   assert(exportJob.data.study_id === 'LZXK-01', 'export should be scoped to LZXK-01');
   assert(exportJob.data.status === 'ready', 'export should be ready in demo backend');
-  const scopedExports = await request('/exports?study_id=LZXK-01', { token: dataManager.access_token });
+  const scopedExports = await request('/studies/LZXK-01/exports', { token: dataManager.access_token });
   assert(scopedExports.data.some((row) => row.id === exportJob.data.id), 'scoped export list should include created export');
   assert(scopedExports.data.every((row) => row.study_id === 'LZXK-01'), 'export list leaked another study');
-  await request('/exports?study_id=LGL-1111', { token: dataManager.access_token, expectedStatus: 403 });
+  await request('/studies/LGL-1111/exports', { token: dataManager.access_token, expectedStatus: 403 });
   await request('/exports', {
     method: 'POST',
     token: dataManager.access_token,
@@ -727,10 +803,10 @@ async function runSmoke() {
   });
   assert(exportApproval.status === 201, 'export approval create should return 201');
   assert(exportApproval.data.status === 'submitted', 'approval should start submitted');
-  const scopedApprovals = await request('/approvals?study_id=LZXK-01', { token: dataManager.access_token });
+  const scopedApprovals = await request('/studies/LZXK-01/approvals', { token: dataManager.access_token });
   assert(scopedApprovals.data.some((row) => row.id === exportApproval.data.id), 'scoped approvals should include export approval');
   assert(scopedApprovals.data.every((row) => row.study_id === 'LZXK-01'), 'approval list leaked another study');
-  await request('/approvals?study_id=LGL-1111', { token: dataManager.access_token, expectedStatus: 403 });
+  await request('/studies/LGL-1111/approvals', { token: dataManager.access_token, expectedStatus: 403 });
   await request('/approvals', {
     method: 'POST',
     token: dataManager.access_token,
@@ -785,16 +861,15 @@ async function runSmoke() {
   });
   assert(rejectedCrfPublish.data.status === 'rejected', 'CRF publish approval should reject');
 
-  const audits = await request('/audit-logs?study_id=LZXK-01&entity_type=study_crf_versions', { token: configAdmin.access_token });
+  const audits = await request('/studies/LZXK-01/audit-logs?entity_type=study_crf_versions', { token: configAdmin.access_token });
   assert(audits.data.some((entry) => entry.action === 'update_crf_field'), 'CRF update audit log missing');
   const crfFieldAudit = audits.data.find((entry) => entry.action === 'update_crf_field');
   assert(Array.isArray(crfFieldAudit?.diff) && crfFieldAudit.diff.some((change) => change.field === 'required'), 'audit log should include structured before/after diff');
   assert(audits.data.every((entry) => entry.study_id === 'LZXK-01'), 'audit log list leaked another study');
-  const dataManagerAudits = await request('/audit-logs?study_id=LZXK-01', { token: dataManager.access_token });
+  const dataManagerAudits = await request('/studies/LZXK-01/audit-logs', { token: dataManager.access_token });
   assert(dataManagerAudits.data.every((entry) => entry.study_id === 'LZXK-01'), 'data manager audit list leaked another study');
-  await request('/audit-logs?study_id=LGL-1111', { token: dataManager.access_token, expectedStatus: 403 });
-  const adminAudits = await request('/audit-logs', { token: lzAdmin.access_token });
-  assert(adminAudits.data.every((entry) => entry.study_id), 'admin audit logs must include study_id');
+  await request('/studies/LGL-1111/audit-logs', { token: dataManager.access_token, expectedStatus: 403 });
+  await request('/audit-logs', { token: lzAdmin.access_token, expectedStatus: 400 });
   const logout = await request('/auth/logout', { method: 'POST', token: crc.access_token });
   assert(logout.data.status === 'logged_out', 'logout should acknowledge the signed-token session');
 

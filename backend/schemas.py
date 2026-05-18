@@ -76,6 +76,17 @@ class UserStatusUpdate(BaseModel):
     status: Literal["active", "disabled"]
 
 
+class UserUpdate(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1)
+    role: UserRole | None = None
+    password: str | None = Field(default=None, min_length=8)
+    status: Literal["active", "disabled"] | None = None
+
+
+class GlobalRoleStudyScopeUpdate(BaseModel):
+    study_ids: list[str] = Field(default_factory=list)
+
+
 class PatientBase(BaseModel):
     study_id: str = "LGL-1111"
     name: str
@@ -386,8 +397,17 @@ class StudyCreate(BaseModel):
     name: str
     indication: str
     phase: str = "RWD"
-    status: str = "active"
+    status: Literal["draft", "active", "terminated", "deleted"] = "active"
     owner_org: str = "LinZight"
+
+
+class StudyUpdate(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    indication: str | None = None
+    phase: str | None = None
+    status: Literal["draft", "active", "terminated", "deleted"] | None = None
+    owner_org: str | None = None
 
 
 class StudyMemberCreate(BaseModel):

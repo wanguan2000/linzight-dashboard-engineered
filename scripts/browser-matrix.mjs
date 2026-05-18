@@ -17,7 +17,7 @@ const pythonFromVenv = join(repoRoot, 'backend', '.venv', 'bin', 'python');
 const python = existsSync(pythonFromVenv) ? pythonFromVenv : 'python3';
 
 const roles = [
-  { username: 'admin@demo.linzight', entry: 'admin', expected: ['全部 Study', '70'] },
+  { username: 'admin@demo.linzight', entry: 'admin', expected: ['Study 系统管理', 'Study Registry'] },
   { username: 'lung-crc@demo.linzight', entry: 'study', study: 'LZXK-01', expected: ['LZXK-01', '20'] },
   { username: 'crc@demo.linzight', entry: 'study', study: 'LGL-1111', expected: ['LGL-1111', '36'] },
   { username: 'lung-dm@demo.linzight', entry: 'study', study: 'LZXK-01', expected: ['LZXK-01'] },
@@ -59,6 +59,7 @@ function startBackend() {
     cwd: repoRoot,
     env: {
       ...process.env,
+      DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-browser-matrix.db')}`,
       LINZIGHT_DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-browser-matrix.db')}`,
       LINZIGHT_UPLOADS_DIR: join(tempDir, 'uploads'),
     },
@@ -95,13 +96,19 @@ async function login(page, role) {
   if (role.entry === 'admin') {
     await page.getByRole('button', { name: /LZ 系统管理|LZ System/i }).click();
   }
-  if (role.study) {
-    await page.getByLabel(/研究编号|study_id/i).selectOption(role.study);
-  }
   await page.getByLabel(/角色账号|Role account/i).selectOption(role.username);
   await page.getByLabel(/密码|password/i).fill('Demo1234!');
   await page.getByRole('button', { name: /进入系统|Enter system/i }).click();
-  await page.getByRole('button', { name: /首页工作台|Home/i }).waitFor({ timeout: 10000 });
+  const studySelector = page.getByLabel(/选择 Study Workspace|Select Study Workspace/i);
+  if (role.study && await studySelector.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await studySelector.selectOption(role.study);
+    await page.getByRole('button', { name: /进入 Study Workspace|Enter Study Workspace/i }).click();
+  }
+  if (role.entry === 'admin') {
+    await page.getByText('Study 系统管理', { exact: false }).first().waitFor({ timeout: 10000 });
+  } else {
+    await page.getByRole('button', { name: /首页工作台|Home/i }).waitFor({ timeout: 10000 });
+  }
 }
 
 async function run() {

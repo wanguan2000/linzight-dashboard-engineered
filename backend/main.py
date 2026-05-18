@@ -52,7 +52,7 @@ try:
     )
     from .permissions import can_access_study, first_accessible_study_id, get_user_study_scope, permission_matrix, role_can, user_role
     from .security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, VisitUpdate
+    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, UserUpdate, VisitUpdate
     from .seed import seed_database
 except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from database import (
@@ -92,7 +92,7 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
     )
     from permissions import can_access_study, first_accessible_study_id, get_user_study_scope, permission_matrix, role_can, user_role
     from security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, VisitUpdate
+    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, UserUpdate, VisitUpdate
     from seed import seed_database
 
 app = FastAPI(title="LinZight RWS Demo API", version="1.0.0")
@@ -107,6 +107,19 @@ LEGACY_ROLE_BY_ROLE_CODE = {
     "STUDY_CRC": "crc",
     "STUDY_CONFIG_ADMIN": "project_admin",
     "STUDY_DATA_MANAGER": "data_manager",
+}
+
+BUSINESS_WRITE_RESOURCES = {
+    "patients",
+    "consents",
+    "crf",
+    "visits",
+    "follow_up_records",
+    "samples",
+    "omics",
+    "files",
+    "quality",
+    "exports",
 }
 
 app.add_middleware(
@@ -269,6 +282,10 @@ def authorize(authorization: str | None, resource: str, action: str = "write", s
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission denied")
         if study_id and not can_access_study(active_conn, user, study_id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="study access denied")
+        if study_id and action == "write" and resource in BUSINESS_WRITE_RESOURCES:
+            study = fetch_one(active_conn, "SELECT status FROM studies WHERE id = ?", (study_id,))
+            if study["status"] in {"terminated", "deleted"}:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study is terminated or deleted; business writes are disabled")
         return user
 
     if conn is not None:
@@ -295,6 +312,39 @@ def append_study_filter(conn: Any, user: dict[str, Any], where: list[str], param
     placeholders = ", ".join("?" for _ in study_ids)
     where.append(f"{column} IN ({placeholders})")
     params.extend(study_ids)
+
+
+def require_study_context(study_id: str | None, resource: str) -> str:
+    if not study_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"study_id is required for {resource}; use /global/patient-index for LZ global index",
+        )
+    return study_id
+
+
+def enrich_user_record(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
+    user["study_scope"] = get_user_study_scope(conn, user)
+    user["study_memberships"] = [
+        row_to_study_member(row)
+        for row in conn.execute(
+            """
+            SELECT id, study_id, user_id, study_role, status, created_at, updated_at
+            FROM study_members
+            WHERE user_id = ?
+            ORDER BY study_id
+            """,
+            (user["id"],),
+        ).fetchall()
+    ]
+    return user
+
+
+def scoped_study_id(path_study_id: str | None, query_study_id: str | None, resource: str) -> str:
+    study_id = path_study_id or query_study_id
+    if path_study_id and query_study_id and path_study_id != query_study_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match query study_id")
+    return require_study_context(study_id, resource)
 
 
 def mask_sensitive_value(value: Any, rule: str) -> Any:
@@ -1023,6 +1073,121 @@ def update_user_status(user_id: str, payload: UserStatusUpdate, authorization: s
         return after
 
 
+@app.get("/users")
+def list_users(study_id: str | None = None, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    with connect() as conn:
+        actor = authorize(authorization, "studies", "read", study_id=study_id, conn=conn)
+        if user_role(actor) != "LZ_ADMIN" and not role_can(user_role(actor), "study_members", "read"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission denied")
+        params: list[Any] = []
+        if user_role(actor) == "LZ_ADMIN" and not study_id:
+            rows = conn.execute("SELECT * FROM users ORDER BY display_name").fetchall()
+        elif study_id:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT u.*
+                FROM users u
+                LEFT JOIN study_members sm ON sm.user_id = u.id AND sm.study_id = ?
+                LEFT JOIN global_role_study_scope grs ON grs.user_id = u.id AND grs.study_id = ?
+                WHERE sm.study_id IS NOT NULL OR grs.study_id IS NOT NULL OR u.role_code = 'LZ_ADMIN'
+                ORDER BY u.display_name
+                """,
+                (study_id, study_id),
+            ).fetchall()
+        else:
+            study_ids = get_user_study_scope(conn, actor).get("studyIds") or []
+            if not study_ids:
+                return []
+            placeholders = ", ".join("?" for _ in study_ids)
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT u.*
+                FROM users u
+                LEFT JOIN study_members sm ON sm.user_id = u.id
+                LEFT JOIN global_role_study_scope grs ON grs.user_id = u.id
+                WHERE sm.study_id IN ({placeholders}) OR grs.study_id IN ({placeholders})
+                ORDER BY u.display_name
+                """,
+                [*study_ids, *study_ids],
+            ).fetchall()
+        return [enrich_user_record(conn, row_to_user(row)) for row in rows]
+
+
+@app.patch("/users/{user_id}")
+def update_user(user_id: str, payload: UserUpdate, study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    with connect() as conn:
+        actor = authorize(authorization, "studies", "write", study_id=study_id, conn=conn)
+        before = row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,)))
+        if user_role(actor) != "LZ_ADMIN":
+            if not study_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="study_id is required for Study-scoped user updates")
+            member = conn.execute(
+                "SELECT 1 FROM study_members WHERE study_id = ? AND user_id = ?",
+                (study_id, user_id),
+            ).fetchone()
+            if not member:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="target user is not a member of this Study")
+            if data.get("role") is not None or data.get("status") is not None:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can change global user role or login status")
+
+        columns: list[str] = []
+        values: list[Any] = []
+        if data.get("display_name") is not None:
+            columns.append("display_name = ?")
+            values.append(data["display_name"])
+        if data.get("role") is not None:
+            if data["role"].startswith("LZ_") and user_role(actor) != "LZ_ADMIN":
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can assign platform roles")
+            columns.extend(["role = ?", "role_code = ?"])
+            values.extend([LEGACY_ROLE_BY_ROLE_CODE.get(data["role"], "investigator"), data["role"]])
+        if data.get("password") is not None:
+            if not password_meets_policy(data["password"]):
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=PASSWORD_POLICY_MESSAGE)
+            columns.append("password_hash = ?")
+            values.append(hash_password(data["password"]))
+        if data.get("status") is not None:
+            columns.append("status = ?")
+            values.append(data["status"])
+        if not columns:
+            return enrich_user_record(conn, before)
+        columns.append("updated_at = ?")
+        values.append(utc_now())
+        values.append(user_id)
+        conn.execute(f"UPDATE users SET {', '.join(columns)} WHERE id = ?", values)
+        after = enrich_user_record(conn, row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,))))
+        insert_audit(conn, actor, "update", "users", user_id, before=before, after=after, study_id=study_id or first_accessible_study_id(conn, actor) or "LGL-1111")
+        return after
+
+
+@app.patch("/users/{user_id}/study-scope")
+def update_global_role_study_scope(user_id: str, payload: GlobalRoleStudyScopeUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with connect() as conn:
+        actor = authorize(authorization, "studies", "write", conn=conn)
+        if user_role(actor) != "LZ_ADMIN":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can manage platform role Study scope")
+        target = row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,)))
+        if not target["role"].startswith("LZ_") or target["role"] == "LZ_ADMIN":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Study scope is only editable for non-admin platform roles")
+        unique_study_ids = sorted(set(payload.study_ids))
+        for scoped_study_id in unique_study_ids:
+            fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (scoped_study_id,))
+        before = enrich_user_record(conn, target.copy())
+        conn.execute("DELETE FROM global_role_study_scope WHERE user_id = ?", (user_id,))
+        now = utc_now()
+        for scoped_study_id in unique_study_ids:
+            conn.execute(
+                """
+                INSERT INTO global_role_study_scope (id, user_id, study_id, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (f"GRS-{uuid4().hex[:10].upper()}", user_id, scoped_study_id, now),
+            )
+        after = enrich_user_record(conn, row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,))))
+        insert_audit(conn, actor, "update_study_scope", "global_role_study_scope", user_id, before=before, after=after, study_id=first_accessible_study_id(conn, actor) or "LGL-1111")
+        return after
+
+
 @app.get("/field-permissions")
 def list_field_permissions(resource: str = "patients", authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
     with connect() as conn:
@@ -1059,6 +1224,28 @@ def get_permission_matrix(authorization: str | None = Header(default=None)) -> l
         return permission_matrix()
 
 
+@app.post("/studies", status_code=status.HTTP_201_CREATED)
+def create_study(payload: StudyCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    now = utc_now()
+    with connect() as conn:
+        actor = authorize(authorization, "studies", "write", conn=conn)
+        if user_role(actor) != "LZ_ADMIN":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can create Studies")
+        if conn.execute("SELECT 1 FROM studies WHERE id = ? OR code = ?", (data["id"], data["code"])).fetchone():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study id or code already exists")
+        conn.execute(
+            """
+            INSERT INTO studies (id, code, name, indication, phase, status, owner_org, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (data["id"], data["code"], data["name"], data["indication"], data["phase"], data["status"], data["owner_org"], now, now),
+        )
+        study = row_to_study(fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (data["id"],)))
+        insert_audit(conn, actor, "create", "studies", study["id"], after=study, study_id=study["id"])
+        return study
+
+
 @app.get("/studies")
 def list_studies(authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
     with connect() as conn:
@@ -1071,6 +1258,45 @@ def list_studies(authorization: str | None = Header(default=None)) -> list[dict[
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY id"
         return [row_to_study(row) for row in conn.execute(sql, params).fetchall()]
+
+
+@app.patch("/studies/{study_id}")
+def update_study(study_id: str, payload: StudyUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    data = dump_model(payload)
+    with connect() as conn:
+        actor = authorize(authorization, "studies", "write", study_id=study_id, conn=conn)
+        if user_role(actor) != "LZ_ADMIN":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can update Study lifecycle")
+        before = row_to_study(fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,)))
+        columns: list[str] = []
+        values: list[Any] = []
+        for key in ("code", "name", "indication", "phase", "status", "owner_org"):
+            if data.get(key) is not None:
+                columns.append(f"{key} = ?")
+                values.append(data[key])
+        if not columns:
+            return before
+        columns.append("updated_at = ?")
+        values.append(utc_now())
+        values.append(study_id)
+        conn.execute(f"UPDATE studies SET {', '.join(columns)} WHERE id = ?", values)
+        after = row_to_study(fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,)))
+        insert_audit(conn, actor, "update_lifecycle", "studies", study_id, before=before, after=after, study_id=study_id)
+        return after
+
+
+@app.delete("/studies/{study_id}")
+def delete_study(study_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with connect() as conn:
+        actor = authorize(authorization, "studies", "write", study_id=study_id, conn=conn)
+        if user_role(actor) != "LZ_ADMIN":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can delete Studies")
+        before = row_to_study(fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,)))
+        now = utc_now()
+        conn.execute("UPDATE studies SET status = 'deleted', updated_at = ? WHERE id = ?", (now, study_id))
+        after = row_to_study(fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,)))
+        insert_audit(conn, actor, "delete_soft", "studies", study_id, before=before, after=after, study_id=study_id)
+        return after
 
 
 @app.get("/study-configurations")
@@ -1647,19 +1873,70 @@ def update_study_crf_field(study_id: str, field_id: str, payload: StudyCrfFieldU
         return after
 
 
+@app.get("/global/patient-index")
+def global_patient_index(
+    q: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
+) -> list[dict[str, Any]]:
+    sql = """
+        SELECT
+          p.id AS patient_id,
+          p.study_id,
+          s.name AS study_name,
+          p.name AS subject_code,
+          p.disease_type,
+          p.updated_at AS last_updated,
+          COALESCE(c.status, '未签署') AS status
+        FROM patients p
+        JOIN studies s ON s.id = p.study_id
+        LEFT JOIN (
+          SELECT patient_id, MAX(status) AS status
+          FROM consents
+          GROUP BY patient_id
+        ) c ON c.patient_id = p.id
+    """
+    params: list[Any] = []
+    where: list[str] = []
+    with connect() as conn:
+        user = authorize(authorization, "patients", "read", conn=conn)
+        append_study_filter(conn, user, where, params, "p.study_id")
+        if q:
+            where.append("(p.name LIKE ? OR p.study_id LIKE ? OR s.name LIKE ? OR p.disease_type LIKE ?)")
+            params.extend([f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"])
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY p.updated_at DESC"
+        rows = conn.execute(sql, params).fetchall()
+        return [
+            {
+                "patient_id": row["patient_id"],
+                "masked_subject_code": mask_sensitive_value(row["subject_code"], "name"),
+                "study_id": row["study_id"],
+                "study_name": row["study_name"],
+                "disease_type": row["disease_type"],
+                "status": row["status"],
+                "last_updated": row["last_updated"],
+            }
+            for row in rows
+        ]
+
+
+@app.get("/studies/{path_study_id}/patients")
 @app.get("/patients")
 def list_patients(
+    path_study_id: str | None = None,
     q: str | None = Query(default=None),
     disease_type: str | None = None,
     study_id: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "patients")
     sql = "SELECT * FROM patients"
     params: list[Any] = []
     where: list[str] = []
     with connect() as conn:
-        user = authorize(authorization, "patients", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        user = authorize(authorization, "patients", "read", study_id=requested_study_id, conn=conn)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         if q:
             where.append("(name LIKE ? OR hospital_no LIKE ? OR disease_type LIKE ?)")
             params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
@@ -1673,9 +1950,14 @@ def list_patients(
         return apply_field_permissions_to_records(conn, user, patients)
 
 
+@app.post("/studies/{path_study_id}/patients", status_code=status.HTTP_201_CREATED)
 @app.post("/patients", status_code=status.HTTP_201_CREATED)
-def create_patient(payload: PatientCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def create_patient(payload: PatientCreate, path_study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     data = dump_model(payload)
+    if path_study_id:
+        if data.get("study_id") and data["study_id"] != path_study_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match payload study_id")
+        data["study_id"] = path_study_id
     patient_id = data.pop("id") or f"PAT-{uuid4().hex[:8].upper()}"
     now = utc_now()
     try:
@@ -1772,18 +2054,21 @@ def delete_patient(patient_id: str, authorization: str | None = Header(default=N
             raise not_found()
 
 
+@app.get("/studies/{path_study_id}/samples")
 @app.get("/samples")
 def list_samples(
+    path_study_id: str | None = None,
     patient_id: str | None = None,
     study_id: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "samples")
     sql = "SELECT * FROM samples"
     params: list[Any] = []
     where: list[str] = []
     with connect() as conn:
-        user = authorize(authorization, "samples", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        user = authorize(authorization, "samples", "read", study_id=requested_study_id, conn=conn)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         if patient_id:
             patient_scope = patient_study_id(conn, patient_id)
             if not can_access_study(conn, user, patient_scope):
@@ -1797,13 +2082,16 @@ def list_samples(
         return apply_field_permissions_to_records(conn, user, rows)
 
 
+@app.post("/studies/{path_study_id}/samples", status_code=status.HTTP_201_CREATED)
 @app.post("/samples", status_code=status.HTTP_201_CREATED)
-def create_sample(payload: SampleCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def create_sample(payload: SampleCreate, path_study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     data = dump_model(payload)
     sample_id = data.pop("id") or f"SPL-{uuid4().hex[:10].upper()}"
     now = utc_now()
     with connect() as conn:
         study_id = patient_study_id(conn, data["patient_id"])
+        if path_study_id and path_study_id != study_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match patient")
         user = authorize(authorization, "samples", "write", study_id=study_id, conn=conn)
         try:
             conn.execute(
@@ -1888,12 +2176,15 @@ def delete_sample(sample_id: str, authorization: str | None = Header(default=Non
             raise not_found()
 
 
+@app.get("/studies/{path_study_id}/visits")
 @app.get("/visits")
 def list_visits(
+    path_study_id: str | None = None,
     patient_id: str | None = None,
     study_id: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "visits")
     sql = """
         SELECT
           v.id,
@@ -1920,8 +2211,8 @@ def list_visits(
     params: list[Any] = []
     where: list[str] = []
     with connect() as conn:
-        user = authorize(authorization, "visits", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "v.study_id", study_id)
+        user = authorize(authorization, "visits", "read", study_id=requested_study_id, conn=conn)
+        append_study_filter(conn, user, where, params, "v.study_id", requested_study_id)
         if patient_id:
             patient_scope = patient_study_id(conn, patient_id)
             if not can_access_study(conn, user, patient_scope):
@@ -1987,12 +2278,15 @@ def update_visit(visit_id: str, payload: VisitUpdate, authorization: str | None 
         return after
 
 
+@app.get("/studies/{path_study_id}/follow-up-records")
 @app.get("/follow-up-records")
 def list_follow_up_records(
+    path_study_id: str | None = None,
     patient_id: str | None = None,
     study_id: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "follow_up_records")
     sql = """
         SELECT
           f.*,
@@ -2003,8 +2297,8 @@ def list_follow_up_records(
     params: list[Any] = []
     where: list[str] = []
     with connect() as conn:
-        user = authorize(authorization, "follow_up_records", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "f.study_id", study_id)
+        user = authorize(authorization, "follow_up_records", "read", study_id=requested_study_id, conn=conn)
+        append_study_filter(conn, user, where, params, "f.study_id", requested_study_id)
         if patient_id:
             patient_scope = patient_study_id(conn, patient_id)
             if not can_access_study(conn, user, patient_scope):
@@ -2018,13 +2312,16 @@ def list_follow_up_records(
         return apply_field_permissions_to_records(conn, user, rows)
 
 
+@app.post("/studies/{path_study_id}/follow-up-records", status_code=status.HTTP_201_CREATED)
 @app.post("/follow-up-records", status_code=status.HTTP_201_CREATED)
-def create_follow_up_record(payload: FollowUpRecordCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def create_follow_up_record(payload: FollowUpRecordCreate, path_study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     data = dump_model(payload)
     record_id = data.pop("id") or f"FUP-{uuid4().hex[:10].upper()}"
     now = utc_now()
     with connect() as conn:
         study_id = patient_study_id(conn, data["patient_id"])
+        if path_study_id and path_study_id != study_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match patient")
         if data.get("study_id") and data["study_id"] != study_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="study_id does not match patient")
         if data.get("visit_id"):
@@ -2136,20 +2433,23 @@ def update_follow_up_record(record_id: str, payload: FollowUpRecordUpdate, autho
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/studies/{path_study_id}/omics")
 @app.get("/omics")
 def list_omics(
+    path_study_id: str | None = None,
     patient_id: str | None = None,
     sample_id: str | None = None,
     study_id: str | None = None,
     testing_project_id: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "omics")
     sql = "SELECT * FROM omics_records"
     params: list[Any] = []
     where: list[str] = []
     with connect() as conn:
-        user = authorize(authorization, "omics", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        user = authorize(authorization, "omics", "read", study_id=requested_study_id, conn=conn)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         if patient_id:
             patient_scope = patient_study_id(conn, patient_id)
             if not can_access_study(conn, user, patient_scope):
@@ -2169,13 +2469,16 @@ def list_omics(
         return apply_field_permissions_to_records(conn, user, rows)
 
 
+@app.post("/studies/{path_study_id}/omics", status_code=status.HTTP_201_CREATED)
 @app.post("/omics", status_code=status.HTTP_201_CREATED)
-def create_omics(payload: OmicsCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def create_omics(payload: OmicsCreate, path_study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     data = dump_model(payload)
     record_id = data.pop("id") or f"OMX-{uuid4().hex[:8].upper()}"
     now = utc_now()
     with connect() as conn:
         study_id = patient_study_id(conn, data["patient_id"])
+        if path_study_id and path_study_id != study_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match patient")
         user = authorize(authorization, "omics", "write", study_id=study_id, conn=conn)
         try:
             conn.execute(
@@ -2258,13 +2561,16 @@ def delete_omics(record_id: str, authorization: str | None = Header(default=None
             raise not_found()
 
 
+@app.get("/studies/{path_study_id}/consents")
 @app.get("/consents")
 def list_consents(
+    path_study_id: str | None = None,
     q: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     study_id: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "consents")
     sql = """
         SELECT
           c.id,
@@ -2283,8 +2589,8 @@ def list_consents(
     params: list[Any] = []
     where: list[str] = []
     with connect() as conn:
-        user = authorize(authorization, "consents", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "c.study_id", study_id)
+        user = authorize(authorization, "consents", "read", study_id=requested_study_id, conn=conn)
+        append_study_filter(conn, user, where, params, "c.study_id", requested_study_id)
         if q:
             where.append("(p.name LIKE ? OR p.hospital_no LIKE ? OR p.disease_type LIKE ?)")
             params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
@@ -2381,20 +2687,23 @@ def request_consent_resign(consent_id: str, payload: ApprovalActionCreate, autho
     return create_econsent_approval(consent_id, "econsent_resign", payload.comment or "Request eConsent re-sign", authorization)
 
 
+@app.get("/studies/{path_study_id}/crf")
 @app.get("/crf")
 def list_crf_entries(
+    path_study_id: str | None = None,
     patient_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
     study_id: str | None = None,
     crf_version_id: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "crf")
     sql = "SELECT * FROM crf_entries"
     params: list[Any] = []
     where: list[str] = []
     with connect() as conn:
-        user = authorize(authorization, "crf", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        user = authorize(authorization, "crf", "read", study_id=requested_study_id, conn=conn)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         if patient_id:
             patient_scope = patient_study_id(conn, patient_id)
             if not can_access_study(conn, user, patient_scope):
@@ -2413,13 +2722,16 @@ def list_crf_entries(
         return [row_to_crf_entry(row) for row in conn.execute(sql, params).fetchall()]
 
 
+@app.post("/studies/{path_study_id}/crf", status_code=status.HTTP_201_CREATED)
 @app.post("/crf", status_code=status.HTTP_201_CREATED)
-def create_crf_entry(payload: CrfEntryCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def create_crf_entry(payload: CrfEntryCreate, path_study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     data = dump_model(payload)
     entry_id = data.pop("id") or f"CRF-{uuid4().hex[:8].upper()}"
     now = utc_now()
     with connect() as conn:
         study_id = patient_study_id(conn, data["patient_id"])
+        if path_study_id and path_study_id != study_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match patient")
         user = authorize(authorization, "crf", "write", study_id=study_id, conn=conn)
         try:
             crf_version_id = data["crf_version_id"] or conn.execute(
@@ -2494,18 +2806,21 @@ def update_crf_entry(entry_id: str, payload: CrfEntryUpdate, authorization: str 
         return after
 
 
+@app.get("/studies/{path_study_id}/files")
 @app.get("/files")
 def list_files(
+    path_study_id: str | None = None,
     patient_id: str | None = None,
     study_id: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "files")
     sql = "SELECT * FROM uploaded_files"
     params: list[Any] = []
     where: list[str] = []
     with connect() as conn:
-        user = authorize(authorization, "files", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        user = authorize(authorization, "files", "read", study_id=requested_study_id, conn=conn)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         if patient_id:
             patient_scope = patient_study_id(conn, patient_id)
             if not can_access_study(conn, user, patient_scope):
@@ -2694,8 +3009,10 @@ def assign_site_user(study_id: str, site_id: str, payload: SiteUserAssign, autho
         return site_user
 
 
+@app.get("/studies/{path_study_id}/queries")
 @app.get("/queries")
 def list_data_queries(
+    path_study_id: str | None = None,
     study_id: str | None = None,
     patient_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
@@ -2703,12 +3020,13 @@ def list_data_queries(
     assigned_to: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "queries")
     sql = "SELECT * FROM data_queries"
     where: list[str] = []
     params: list[Any] = []
     with connect() as conn:
-        user = authorize(authorization, "quality", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        user = authorize(authorization, "quality", "read", study_id=requested_study_id, conn=conn)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         if patient_id:
             patient_scope = patient_study_id(conn, patient_id)
             if not can_access_study(conn, user, patient_scope):
@@ -2782,13 +3100,15 @@ def update_data_query(query_id: str, payload: DataQueryUpdate, authorization: st
         return after
 
 
+@app.get("/studies/{path_study_id}/analytics/summary")
 @app.get("/analytics/summary")
-def analytics_summary(study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def analytics_summary(path_study_id: str | None = None, study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "analytics")
     with connect() as conn:
-        user = authorize(authorization, "patients", "read", conn=conn)
+        user = authorize(authorization, "patients", "read", study_id=requested_study_id, conn=conn)
         where: list[str] = []
         params: list[Any] = []
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         patient_filter = " WHERE " + " AND ".join(where) if where else ""
         patient_rows = [row_to_patient(row) for row in conn.execute(f"SELECT * FROM patients{patient_filter}", params).fetchall()]
         patient_ids = [patient["id"] for patient in patient_rows]
@@ -2844,19 +3164,22 @@ def analytics_summary(study_id: str | None = None, authorization: str | None = H
         }
 
 
+@app.get("/studies/{path_study_id}/quality/issues")
 @app.get("/quality/issues")
 def list_quality_issues(
+    path_study_id: str | None = None,
     patient_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
     study_id: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "quality_issues")
     sql = "SELECT * FROM data_quality_issues"
     params: list[Any] = []
     where: list[str] = []
     with connect() as conn:
-        user = authorize(authorization, "quality", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        user = authorize(authorization, "quality", "read", study_id=requested_study_id, conn=conn)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         if patient_id:
             patient_scope = patient_study_id(conn, patient_id)
             if not can_access_study(conn, user, patient_scope):
@@ -2872,15 +3195,17 @@ def list_quality_issues(
         return [row_to_quality_issue(row) for row in conn.execute(sql, params).fetchall()]
 
 
+@app.post("/studies/{path_study_id}/quality/run")
 @app.post("/quality/run")
-def run_quality_checks(study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def run_quality_checks(path_study_id: str | None = None, study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "quality_run")
     now = utc_now()
     issue_rows: list[tuple[Any, ...]] = []
     with connect() as conn:
-        user = authorize(authorization, "quality", "write", conn=conn)
+        user = authorize(authorization, "quality", "write", study_id=requested_study_id, conn=conn)
         where: list[str] = []
         params: list[Any] = []
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         sql = "SELECT * FROM patients"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -3010,7 +3335,7 @@ def run_quality_checks(study_id: str | None = None, authorization: str | None = 
                 )
         delete_where = ["status = 'open'"]
         delete_params: list[Any] = []
-        append_study_filter(conn, user, delete_where, delete_params, "study_id", study_id)
+        append_study_filter(conn, user, delete_where, delete_params, "study_id", requested_study_id)
         conn.execute("DELETE FROM data_quality_issues WHERE " + " AND ".join(delete_where), delete_params)
         conn.executemany(
             """
@@ -3027,7 +3352,7 @@ def run_quality_checks(study_id: str | None = None, authorization: str | None = 
             """,
             (
                 f"AUD-{uuid4().hex[:10].upper()}",
-                study_id or first_accessible_study_id(conn, user) or "LGL-1111",
+                requested_study_id,
                 user["id"],
                 user_role(user),
                 "quality_run",
@@ -3053,7 +3378,7 @@ def create_export_job(payload: ExportJobCreate, authorization: str | None = Head
     export_path = export_dir / f"{export_id}.csv"
     with connect() as conn:
         temp_user = authorize(authorization, "exports", "write", conn=conn)
-        requested_study_id = str(data["scope"].get("study_id") or first_accessible_study_id(conn, temp_user) or "LGL-1111")
+        requested_study_id = require_study_context(str(data["scope"].get("study_id") or ""), "exports")
         user = authorize(authorization, "exports", "write", study_id=requested_study_id, conn=conn)
         patient_rows = [
             apply_field_permissions_to_record(conn, user, row_to_patient(row), mode="export")
@@ -3113,17 +3438,20 @@ def create_export_job(payload: ExportJobCreate, authorization: str | None = Head
         return job
 
 
+@app.get("/studies/{path_study_id}/approvals")
 @app.get("/approvals")
 def list_approvals(
+    path_study_id: str | None = None,
     study_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "approvals")
     with connect() as conn:
-        user = authorize(authorization, "studies", "read", conn=conn)
+        user = authorize(authorization, "studies", "read", study_id=requested_study_id, conn=conn)
         where: list[str] = []
         params: list[Any] = []
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         if status_filter:
             where.append("status = ?")
             params.append(status_filter)
@@ -3245,13 +3573,15 @@ def complete_approval(approval_id: str, payload: ApprovalActionCreate, authoriza
         return after
 
 
+@app.get("/studies/{path_study_id}/exports")
 @app.get("/exports")
-def list_export_jobs(study_id: str | None = None, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+def list_export_jobs(path_study_id: str | None = None, study_id: str | None = None, authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "exports")
     with connect() as conn:
-        user = authorize(authorization, "exports", "read", conn=conn)
+        user = authorize(authorization, "exports", "read", study_id=requested_study_id, conn=conn)
         where: list[str] = []
         params: list[Any] = []
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         sql = "SELECT * FROM export_jobs"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -3365,19 +3695,22 @@ async def import_patients(
     return {"status": "imported", "count": imported}
 
 
+@app.get("/studies/{path_study_id}/audit-logs")
 @app.get("/audit-logs")
 def list_audit_logs(
+    path_study_id: str | None = None,
     entity_type: str | None = None,
     entity_id: str | None = None,
     study_id: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
+    requested_study_id = scoped_study_id(path_study_id, study_id, "audit_logs")
     sql = "SELECT * FROM audit_logs"
     params: list[Any] = []
     where: list[str] = []
     with connect() as conn:
-        user = authorize(authorization, "audit", "read", conn=conn)
-        append_study_filter(conn, user, where, params, "study_id", study_id)
+        user = authorize(authorization, "audit", "read", study_id=requested_study_id, conn=conn)
+        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         if entity_type:
             where.append("entity_type = ?")
             params.append(entity_type)

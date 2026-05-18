@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 from urllib.parse import unquote
+
+try:
+    import psycopg2
+except ImportError:  # PostgreSQL is optional for local SQLite demo usage.
+    psycopg2 = None
 
 try:
     from .permissions import ROLE_VALUES, normalize_role_code
@@ -17,24 +23,233 @@ DB_PATH = Path(__file__).with_name("linzight_demo.db")
 DEFAULT_UPLOADS_DIR = Path(__file__).resolve().parent.parent / "uploads"
 UPLOADS_DIR = Path(os.getenv("LINZIGHT_UPLOADS_DIR", str(DEFAULT_UPLOADS_DIR))).expanduser()
 SQLITE_DATABASE_URL = f"sqlite:///{DB_PATH}"
-POSTGRES_DATABASE_URL = os.getenv("LINZIGHT_POSTGRES_URL", "postgresql://linzight:linzight@localhost:5432/linzight")
-DATABASE_URL = os.getenv("LINZIGHT_DATABASE_URL", SQLITE_DATABASE_URL)
+POSTGRES_DATABASE_URL = os.getenv("LINZIGHT_POSTGRES_URL", "postgresql+psycopg2:///linzight_dashboard_engineered")
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("LINZIGHT_DATABASE_URL") or POSTGRES_DATABASE_URL
+
+
+class PostgresRow(dict):
+    def __getitem__(self, key: str | int) -> Any:
+        if isinstance(key, int):
+            return list(self.values())[key]
+        return super().__getitem__(key)
+
+
+class StaticCursor:
+    def __init__(self, rows: list[dict[str, Any]] | None = None, rowcount: int = -1):
+        self._rows = [PostgresRow(row) for row in rows or []]
+        self.rowcount = rowcount
+
+    def fetchone(self) -> PostgresRow | None:
+        if not self._rows:
+            return None
+        return self._rows[0]
+
+    def fetchall(self) -> list[PostgresRow]:
+        return self._rows
+
+
+class PostgresCursor:
+    def __init__(self, cursor: Any):
+        self._cursor = cursor
+
+    @property
+    def rowcount(self) -> int:
+        return self._cursor.rowcount
+
+    def fetchone(self) -> PostgresRow | None:
+        row = self._cursor.fetchone()
+        if row is None:
+            return None
+        names = [column.name for column in self._cursor.description or []]
+        return PostgresRow(dict(zip(names, row)))
+
+    def fetchall(self) -> list[PostgresRow]:
+        rows = self._cursor.fetchall()
+        names = [column.name for column in self._cursor.description or []]
+        return [PostgresRow(dict(zip(names, row))) for row in rows]
+
+
+class PostgresConnection:
+    def __init__(self, database_url: str):
+        if psycopg2 is None:
+            raise RuntimeError("PostgreSQL runtime requires psycopg2-binary. Install backend requirements first.")
+        self._conn = psycopg2.connect(normalize_postgres_url(database_url))
+        self.row_factory = None
+
+    def __enter__(self) -> "PostgresConnection":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        if exc_type is None:
+            self.commit()
+        else:
+            self.rollback()
+        self.close()
+
+    def execute(self, query: str, params: Iterable[Any] | None = None) -> PostgresCursor | StaticCursor:
+        special = self._execute_special(query, params)
+        if special is not None:
+            return special
+        translated = translate_runtime_sql(query)
+        cursor = self._conn.cursor()
+        cursor.execute(translated, tuple(params or ()))
+        return PostgresCursor(cursor)
+
+    def executemany(self, query: str, params_seq: Iterable[Iterable[Any]]) -> StaticCursor:
+        translated = translate_runtime_sql(query)
+        total = 0
+        with self._conn.cursor() as cursor:
+            for params in params_seq:
+                cursor.execute(translated, tuple(params))
+                if cursor.rowcount > 0:
+                    total += cursor.rowcount
+        return StaticCursor(rowcount=total)
+
+    def executescript(self, script: str) -> None:
+        statements = split_sql_script(script)
+        with self._conn.cursor() as cursor:
+            for statement in statements:
+                translated = translate_schema_sql(statement)
+                if translated:
+                    cursor.execute(translated)
+
+    def commit(self) -> None:
+        self._conn.commit()
+
+    def rollback(self) -> None:
+        self._conn.rollback()
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def _execute_special(self, query: str, params: Iterable[Any] | None) -> StaticCursor | None:
+        normalized = " ".join(query.strip().split())
+        if normalized.upper() == "PRAGMA FOREIGN_KEYS = ON":
+            return StaticCursor()
+        table_info = re.fullmatch(r"PRAGMA\s+table_info\(([\w_]+)\)", query.strip(), flags=re.IGNORECASE)
+        if table_info:
+            table = table_info.group(1)
+            return self.execute(
+                """
+                SELECT column_name AS name, data_type AS type
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = ?
+                ORDER BY ordinal_position
+                """,
+                (table,),
+            )
+        return None
 
 
 def sqlite_database_path(database_url: str = DATABASE_URL) -> Path:
     if not database_url.startswith("sqlite:///"):
         raise RuntimeError(
-            "Only SQLite is active in the demo runtime. "
-            "Set LINZIGHT_DATABASE_URL to sqlite:///... or use LINZIGHT_POSTGRES_URL as the retained PostgreSQL config."
+            "Database URL must start with sqlite:/// for SQLite runtime."
         )
     raw_path = unquote(database_url.replace("sqlite:///", "", 1))
     return Path(raw_path).expanduser()
+
+
+def is_postgres_database_url(database_url: str = DATABASE_URL) -> bool:
+    return database_url.startswith(("postgresql://", "postgresql+psycopg2://"))
+
+
+def normalize_postgres_url(database_url: str) -> str:
+    return database_url.replace("postgresql+psycopg2://", "postgresql://", 1)
+
+
+def is_postgres_connection(conn: Any) -> bool:
+    return isinstance(conn, PostgresConnection)
+
+
+def replace_qmark_placeholders(query: str) -> str:
+    output: list[str] = []
+    in_single = False
+    in_double = False
+    index = 0
+    while index < len(query):
+        char = query[index]
+        next_char = query[index + 1] if index + 1 < len(query) else ""
+        if char == "'" and not in_double:
+            output.append(char)
+            if in_single and next_char == "'":
+                output.append(next_char)
+                index += 2
+                continue
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            output.append(char)
+            in_double = not in_double
+        elif char == "?" and not in_single and not in_double:
+            output.append("%s")
+        else:
+            output.append(char)
+        index += 1
+    return "".join(output)
+
+
+def translate_insert_or_ignore(query: str) -> str:
+    if not re.search(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", query, flags=re.IGNORECASE):
+        return query
+    translated = re.sub(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT INTO", query, count=1, flags=re.IGNORECASE)
+    if re.search(r"\bON\s+CONFLICT\b", translated, flags=re.IGNORECASE):
+        return translated
+    return f"{translated.rstrip().rstrip(';')} ON CONFLICT DO NOTHING"
+
+
+def translate_runtime_sql(query: str) -> str:
+    translated = translate_insert_or_ignore(query)
+    translated = re.sub(r"\bBLOB\b", "TEXT", translated, flags=re.IGNORECASE)
+    return replace_qmark_placeholders(translated)
+
+
+def split_sql_script(script: str) -> list[str]:
+    statements: list[str] = []
+    current: list[str] = []
+    in_single = False
+    in_double = False
+    for char in script:
+        if char == "'" and not in_double:
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            in_double = not in_double
+        if char == ";" and not in_single and not in_double:
+            statement = "".join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
+            continue
+        current.append(char)
+    statement = "".join(current).strip()
+    if statement:
+        statements.append(statement)
+    return statements
+
+
+def translate_schema_sql(statement: str) -> str:
+    lines: list[str] = []
+    for raw_line in statement.splitlines():
+        if re.search(r"\bFOREIGN\s+KEY\b", raw_line, flags=re.IGNORECASE):
+            continue
+        line = re.sub(
+            r"\s+REFERENCES\s+[\w_]+\s*\([^)]*\)(?:\s+ON\s+DELETE\s+\w+)?",
+            "",
+            raw_line,
+            flags=re.IGNORECASE,
+        )
+        line = re.sub(r"\bBLOB\b", "TEXT", line, flags=re.IGNORECASE)
+        lines.append(line)
+    translated = "\n".join(lines)
+    translated = re.sub(r",\s*\)", "\n)", translated)
+    return translate_runtime_sql(translated)
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def connect() -> sqlite3.Connection:
+def connect() -> sqlite3.Connection | PostgresConnection:
+    if is_postgres_database_url():
+        return PostgresConnection(DATABASE_URL)
     db_path = sqlite_database_path()
     if db_path.parent and str(db_path.parent) != ".":
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -674,6 +889,8 @@ def encode_json(value: Any) -> str:
 
 
 def sqlite_supports_jsonb(conn: sqlite3.Connection) -> bool:
+    if is_postgres_connection(conn):
+        return False
     try:
         return conn.execute("SELECT typeof(jsonb('{}'))").fetchone()[0] == "blob"
     except sqlite3.Error:
@@ -728,6 +945,29 @@ def migrate_json_storage(conn: sqlite3.Connection) -> None:
         ],
     )
     ensure_columns(conn, "audit_logs", [("diff_json", "TEXT")])
+
+    if is_postgres_connection(conn):
+        conn.execute(
+            """
+            UPDATE patients
+            SET
+              clinical_data_jsonb = clinical_data_json,
+              clinical_data_format = 'json',
+              clinical_data_version = COALESCE(clinical_data_version, 'legacy')
+            WHERE clinical_data_jsonb IS NULL
+            """
+        )
+        conn.execute(
+            """
+            UPDATE crf_entries
+            SET
+              payload_jsonb = payload_json,
+              payload_format = 'json',
+              payload_version = COALESCE(payload_version, 'legacy')
+            WHERE payload_jsonb IS NULL
+            """
+        )
+        return
 
     if sqlite_supports_jsonb(conn):
         conn.execute(

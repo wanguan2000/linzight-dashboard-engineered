@@ -9,6 +9,7 @@ const exactEnglish: Record<string, string> = {
   '账号或密码不正确': 'Incorrect account or password',
   '账号或密码不正确，或账号已被禁用。': 'Incorrect account or password, or the account has been disabled.',
   'LinZight 登录': 'LinZight login',
+  '沪ICP备2026020480号': '沪ICP备2026020480号',
   '真实世界研究工作台': 'Real-world study workspace',
   '登录后进入患者队列、CRF 录入、样本登记、多组学检测、Patient Journey 与数据分析主链路。':
     'Sign in to access patient cohorts, CRF entry, sample registration, multi-omics testing, Patient Journey, and analytics workflows.',
@@ -17,6 +18,11 @@ const exactEnglish: Record<string, string> = {
   '主链路': 'Primary workflow',
   '登录': 'Login',
   '患者列表': 'Patient list',
+  '患者索引': 'Patient index',
+  '全局患者索引': 'Global Patient Index',
+  'Study 系统管理': 'Study System Management',
+  'Study 名称': 'Study name',
+  '进入 Study': 'Enter Study',
   '样本': 'Samples',
   '组学': 'Omics',
   '上传': 'Upload',
@@ -27,10 +33,48 @@ const exactEnglish: Record<string, string> = {
   '入口类型': 'Entry type',
   'Study 研究入口': 'Study entry',
   'LZ 系统管理': 'LZ System Admin',
+  'Study Workspace': 'Study Workspace',
+  '选择 Study Workspace': 'Select Study Workspace',
+  '登录后如账号只授权一个 Study，将直接进入；多个 Study 时再选择工作区。':
+    'After sign-in, accounts with one authorized Study enter directly; accounts with multiple Studies choose a workspace.',
+  '平台级账号仅管理 Study、成员、权限配置和全局索引；业务操作需进入单个 Study Workspace。':
+    'Platform accounts manage Studies, members, permission configuration, and global indexes only; business actions must enter a single Study Workspace.',
+  'LZ 系统管理入口仅支持平台级账号。': 'The LZ System Admin entry only supports platform-level accounts.',
+  '当前账号没有可进入的 Study。': 'This account has no Study workspace access.',
+  '工作区边界': 'Workspace boundary',
+  '登录后选择或自动进入单个 Study': 'Choose or automatically enter one Study after sign-in',
+  'LZ 系统管理 · 全局配置与索引': 'LZ System Admin · Global configuration and index',
+  '进入 Study Workspace': 'Enter Study Workspace',
   '研究编号 / study_id': 'Study ID / study_id',
   '平台级账号，可跨 Study 管理研究、成员、CRF、质控、导出和审计。':
     'Platform accounts can manage studies, members, CRF, quality, exports, and audit across Studies.',
   '管理入口': 'Admin entry',
+  '全局管理': 'Global admin',
+  'LZ 全局管理': 'LZ Global Admin',
+  'LZ 全局层只展示患者索引；业务管理必须进入单个 Study Workspace。':
+    'The LZ global layer only shows the patient index; business management must enter a single Study Workspace.',
+  '管理 Study、用户和授权范围；不直接编辑 CRF、样本、随访或导出数据。':
+    'Manage Studies, users, and authorization scopes; do not directly edit CRF, samples, follow-up, or export data.',
+  '搜索患者索引、Study ID 或状态...': 'Search patient index, Study ID, or status...',
+  '询问 Study、用户、角色或授权范围...': 'Ask about Studies, users, roles, or authorization scopes...',
+  'LZ 全局层只管理 Study、用户和授权范围，不直接编辑业务数据。':
+    'The LZ global layer only manages Studies, users, and authorization scopes; it does not directly edit business data.',
+  'Search studies, users, roles, or authorization scopes...': 'Search studies, users, roles, or authorization scopes...',
+  'LZ 管理页不是业务租户；业务操作必须进入单个 Study Workspace。':
+    'The LZ admin page is not a business tenant; business operations must enter a single Study Workspace.',
+  'Study Registry | Study 管理': 'Study Registry | Study Management',
+  '维护 Study、用户和授权范围；业务数据在单个 Study Workspace 内处理。':
+    'Maintain Studies, users, and authorization scopes; business data is handled inside a single Study Workspace.',
+  '授权账号': 'Authorized accounts',
+  '平台角色': 'Platform roles',
+  '研究角色': 'Study roles',
+  '边界': 'Boundary',
+  '业务操作进入 Study Workspace': 'Business operations enter the Study Workspace',
+  '全局患者列表仅作为索引；请先进入单个 Study Workspace': 'The global patient list is index-only; enter a single Study Workspace first.',
+  '全局患者列表仅作为索引；请通过患者链接进入所属 Study 后再管理':
+    'The global patient list is index-only; use the patient link to enter the owning Study before managing it.',
+  '全局患者列表不能直接写入；请先进入单个 Study Workspace':
+    'The global patient list cannot be written directly; enter a single Study Workspace first.',
   'LZ 系统管理 · 全部或授权 Study': 'LZ System Admin · All or assigned Studies',
   '角色账号': 'Role account',
   '密码': 'Password',

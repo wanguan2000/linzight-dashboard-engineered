@@ -31,11 +31,13 @@ import {
   createOmicsRecord,
   createSampleRecord,
   createExportJob,
+  createStudy,
   createStudyCrfField,
   createStudySite,
   createStudyCrfVersion,
   createStudyVisitPlan,
   createUserAccount,
+  deleteStudy,
   downloadExportJob,
   fetchConsentRecords,
   fetchDemoDataset,
@@ -52,6 +54,8 @@ import {
   fetchAuditLogs,
   filterRecordsByCurrentStudyScope,
   fetchQualityIssues,
+  fetchStudies,
+  fetchUsers,
   getCurrentScopedStudyId,
   previewStudyCrfMigration,
   recordBelongsToCurrentStudyScope,
@@ -67,13 +71,16 @@ import {
   updateDataQuery,
   updateOmicsRecord,
   updateSampleRecord,
+  updateGlobalRoleStudyScope,
   updateStudyCrfField,
   updateStudyCrfVersion,
+  updateStudy,
+  updateUserAccount,
   updateUserAccountStatus,
   upsertStudyMember,
   uploadFileToBackend
 } from '../services/api';
-import type { ApiApprovalRequest, ApiAuditLog, ApiDataQuery, ApiExportJob, ApiQualityIssue, ApiSiteUser, ApiStudyMember, ApiStudySite, ApiUser } from '../services/contracts';
+import type { ApiApprovalRequest, ApiAuditLog, ApiDataQuery, ApiExportJob, ApiQualityIssue, ApiSiteUser, ApiStudy, ApiStudyMember, ApiStudySite, ApiUser } from '../services/contracts';
 import type { CrfMigrationApprovalRecord, CrfMigrationPreview, StudyCrfVersionRecord } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
@@ -2910,8 +2917,19 @@ type SystemAccount = {
   lastLogin: string;
 };
 
+type SystemStudy = ApiStudy & {
+  systemAdminCount: number;
+};
+
 function userIdForEmail(email: string) {
   return demoUsers.find((user) => user.username === email)?.id;
+}
+
+function formatUserStudyScope(user: ApiUser, fallbackStudyId: string) {
+  if (user.study_scope?.scopeType === 'all_studies') return '全部 Study';
+  const studyIds = user.study_scope?.studyIds ?? [];
+  if (studyIds.length) return studyIds.join(' / ');
+  return fallbackStudyId;
 }
 
 function accountFromStudyMember(member: ApiStudyMember): SystemAccount {
@@ -2936,10 +2954,18 @@ function accountFromApiUser(user: ApiUser, studyId: string): SystemAccount {
     email: user.username,
     role,
     roleLabel: roleLabels[role],
-    studyScope: membership?.study_id ?? studyId,
+    studyScope: membership?.study_id ?? formatUserStudyScope(user, studyId),
     status: membership?.status === 'disabled' || user.status === 'disabled' ? 'Disabled' : membership?.status === 'active' ? 'Active' : 'Pending',
     lastLogin: '-'
   };
+}
+
+function studyScopeToIds(scope: string, studyIds: string[]) {
+  if (scope === '全部 Study') return studyIds;
+  return scope
+    .split('/')
+    .map((item) => item.trim())
+    .filter((item) => studyIds.includes(item));
 }
 
 function studyMemberStatusFromAccountStatus(status: SystemAccount['status']) {
@@ -3117,6 +3143,23 @@ function nextCrfDraftVersion(versions: StudyCrfVersionRecord[]) {
 }
 
 const systemStudyOptions = ['LGL-1111', 'RWD-NMO-2026', 'LZXK-01'];
+const systemStudyNames: Record<string, string> = {
+  'LGL-1111': '免疫相关性神经系统疾病 RWD 研究',
+  'RWD-NMO-2026': '视神经脊髓炎谱系疾病 RWD 研究',
+  'LZXK-01': '真实世界肺癌耐药研究'
+};
+const fallbackSystemStudies: SystemStudy[] = systemStudyOptions.map((studyId) => ({
+  id: studyId,
+  code: studyId,
+  name: systemStudyNames[studyId],
+  indication: studyId === 'LZXK-01' ? 'NSCLC / EGFR-TKI resistance' : 'Immune-related neurological diseases',
+  phase: 'RWD',
+  status: 'active',
+  owner_org: 'LinZight',
+  created_at: '2026-05-01T00:00:00Z',
+  updated_at: '2026-05-01T00:00:00Z',
+  systemAdminCount: 0
+}));
 
 function formatAuditValue(value: unknown): string {
   if (value === null || value === undefined || value === '') return '-';
@@ -3139,12 +3182,15 @@ function approvalTypeLabel(type: ApiApprovalRequest['approval_type']) {
 export function SystemManagementPage({ currentUser }: { currentUser?: AuthenticatedUser | null } = {}) {
   const { t } = useI18n();
   const lockedStudyId = getCurrentScopedStudyId();
+  const [studyRows, setStudyRows] = useState<SystemStudy[]>(fallbackSystemStudies);
+  const allSystemStudyIds = useMemo(() => studyRows.map((study) => study.id), [studyRows]);
+  const isGlobalManagement = !lockedStudyId;
   const availableSystemStudies = useMemo(() => {
     if (lockedStudyId) return [lockedStudyId];
     const userStudyIds = currentUser?.studyScope?.studyIds;
     if (userStudyIds?.length) return userStudyIds;
-    return systemStudyOptions;
-  }, [currentUser, lockedStudyId]);
+    return allSystemStudyIds.length ? allSystemStudyIds : systemStudyOptions;
+  }, [allSystemStudyIds, currentUser, lockedStudyId]);
   const [selectedSystemStudyId, setSelectedSystemStudyId] = useState(lockedStudyId ?? availableSystemStudies[0] ?? 'LGL-1111');
   const scopedStudyId = availableSystemStudies.includes(selectedSystemStudyId) ? selectedSystemStudyId : availableSystemStudies[0] ?? 'LGL-1111';
   const [systemQuery, setSystemQuery] = useState('');
@@ -3250,12 +3296,64 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     () => auditRows.filter((entry) => !scopedStudyId || entry.study_id === scopedStudyId).filter((entry) => entry.diff?.length).slice(0, 4),
     [auditRows, scopedStudyId]
   );
+  const studyRegistryRows = useMemo(() => {
+    return studyRows.filter((study) => availableSystemStudies.includes(study.id)).map((study) => {
+      const studyId = study.id;
+      const accounts = accountRows.filter((account) => account.studyScope === '全部 Study' || account.studyScope.split('/').map((item) => item.trim()).includes(studyId));
+      return {
+        ...study,
+        studyId,
+        accountCount: accounts.length,
+        globalRoleCount: accounts.filter((account) => account.role.startsWith('LZ_')).length,
+        studyRoleCount: accounts.filter((account) => account.role.startsWith('STUDY_')).length,
+        systemAdminCount: accounts.filter((account) => account.role === 'STUDY_CONFIG_ADMIN').length
+      };
+    });
+  }, [accountRows, availableSystemStudies, studyRows]);
 
   useEffect(() => {
     if (!availableSystemStudies.includes(selectedSystemStudyId)) {
       setSelectedSystemStudyId(availableSystemStudies[0] ?? 'LGL-1111');
     }
   }, [availableSystemStudies, selectedSystemStudyId]);
+
+  useEffect(() => {
+    let ignore = false;
+    void fetchStudies()
+      .then((studies) => {
+        if (ignore || !studies.length) return;
+        setStudyRows((rows) =>
+          studies.map((study) => ({
+            ...study,
+            systemAdminCount: rows.find((row) => row.id === study.id)?.systemAdminCount ?? 0
+          }))
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!scopedStudyId) return;
+    let ignore = false;
+    void fetchUsers(isGlobalManagement ? undefined : scopedStudyId)
+      .then((users) => {
+        if (ignore || !users.length) return;
+        const accounts = users.flatMap((user) => {
+          if (user.study_memberships?.length && user.role.startsWith('STUDY_')) {
+            return user.study_memberships.map((membership) => accountFromApiUser(user, membership.study_id));
+          }
+          return [accountFromApiUser(user, scopedStudyId)];
+        });
+        setAccountRows((rows) => accounts.reduce((nextRows, account) => upsertAccountRow(nextRows, account), rows));
+      })
+      .catch(() => undefined);
+    return () => {
+      ignore = true;
+    };
+  }, [isGlobalManagement, scopedStudyId]);
 
   const accountTotalPages = Math.max(1, Math.ceil(visibleAccounts.length / systemAccountPageSize));
   const safeAccountPage = Math.min(accountPage, accountTotalPages);
@@ -3273,6 +3371,19 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   useEffect(() => {
     if (!scopedStudyId) return;
     let ignore = false;
+
+    if (isGlobalManagement) {
+      void fetchStudyMembers(scopedStudyId)
+        .then((members) => {
+          if (ignore || !members.length) return;
+          const memberAccounts = members.map(accountFromStudyMember);
+          setAccountRows((rows) => memberAccounts.reduce((nextRows, account) => upsertAccountRow(nextRows, account), rows));
+        })
+        .catch(() => undefined);
+      return () => {
+        ignore = true;
+      };
+    }
 
     void Promise.allSettled([
       fetchStudyVisitPlans(scopedStudyId),
@@ -3345,7 +3456,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     return () => {
       ignore = true;
     };
-  }, [scopedStudyId]);
+  }, [isGlobalManagement, scopedStudyId]);
 
   async function createSystemAccount() {
     const index = accountRows.length + 1;
@@ -3381,9 +3492,115 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     }
   }
 
-  function editSystemAccount(account: SystemAccount) {
+  async function createSystemStudy() {
+    if (currentUser?.role !== 'LZ_ADMIN') {
+      setSystemActionStatus('只有 LZ 系统管理员可以新建 Study');
+      return;
+    }
+    const suffix = Date.now().toString().slice(-4);
+    const studyId = `RWD-NEW-${suffix}`;
+    setSystemActionStatus(`Study ${studyId} 正在创建...`);
+    try {
+      const study = await createStudy({
+        id: studyId,
+        code: studyId,
+        name: `新建真实世界研究 ${suffix}`,
+        indication: '待配置疾病领域',
+        phase: 'RWD',
+        status: 'draft',
+        owner_org: 'LinZight'
+      });
+      setStudyRows((rows) => [{ ...study, systemAdminCount: 0 }, ...rows.filter((row) => row.id !== study.id)]);
+      setSelectedSystemStudyId(study.id);
+      setSystemActionStatus(`Study 已创建为草稿：${study.id}。发布前需绑定 CRF、访视计划、知情模板和系统管理员。`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 Study 新建权限');
+    }
+  }
+
+  async function terminateSystemStudy(studyId: string) {
+    setSystemActionStatus(`Study ${studyId} 正在终止，终止后业务写入会被后端拒绝...`);
+    try {
+      const study = await updateStudy(studyId, { status: 'terminated' });
+      setStudyRows((rows) => rows.map((row) => (row.id === study.id ? { ...study, systemAdminCount: row.systemAdminCount } : row)));
+      setSystemActionStatus(`Study 已终止：${study.id}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 Study 终止权限');
+    }
+  }
+
+  async function deleteSystemStudy(studyId: string) {
+    setSystemActionStatus(`Study ${studyId} 正在删除/归档...`);
+    try {
+      const study = await deleteStudy(studyId);
+      setStudyRows((rows) => rows.map((row) => (row.id === study.id ? { ...study, systemAdminCount: row.systemAdminCount } : row)));
+      setSystemActionStatus(`Study 已标记为 deleted：${study.id}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 Study 删除权限');
+    }
+  }
+
+  async function editSystemAccount(account: SystemAccount) {
     setSystemQuery(account.email);
-    setSystemActionStatus(`已定位账户 ${account.email}，可继续按角色或状态筛选`);
+    const userId = account.userId ?? userIdForEmail(account.email);
+    if (!userId) {
+      setSystemActionStatus(`已定位账户 ${account.email}，但缺少用户 ID，无法同步修改`);
+      return;
+    }
+    const nextName = account.name.endsWith('（已更新）') ? account.name.replace('（已更新）', '') : `${account.name}（已更新）`;
+    setSystemActionStatus(`账户 ${account.email} 正在同步显示名修改...`);
+    try {
+      const user = await updateUserAccount(userId, { display_name: nextName }, scopedStudyId);
+      const savedAccount = accountFromApiUser(user, scopedStudyId ?? account.studyScope);
+      setAccountRows((rows) => upsertAccountRow(rows, savedAccount));
+      setSystemActionStatus(`账户资料已同步：${savedAccount.email}`);
+    } catch {
+      setSystemActionStatus(`后端不可用或当前角色无账户资料修改权限，已定位账户 ${account.email}`);
+    }
+  }
+
+  async function makeStudySystemAdmin(account: SystemAccount) {
+    const studyId = scopedStudyId ?? selectedSystemStudyId;
+    const userId = account.userId ?? userIdForEmail(account.email);
+    if (!studyId || !userId) {
+      setSystemActionStatus('缺少 Study 或用户 ID，无法设置 Study 系统管理员');
+      return;
+    }
+    setSystemActionStatus(`正在将 ${account.email} 设置为 ${studyId} 的 Study 系统管理员...`);
+    try {
+      const member = await upsertStudyMember(studyId, {
+        userId,
+        studyRole: 'STUDY_CONFIG_ADMIN',
+        status: 'active'
+      });
+      const savedAccount = accountFromStudyMember(member);
+      setAccountRows((rows) => upsertAccountRow(rows, savedAccount));
+      setSystemActionStatus(`已设置 Study 系统管理员：${savedAccount.email} -> ${studyId}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无 Study 成员管理权限');
+    }
+  }
+
+  async function togglePlatformStudyScope(account: SystemAccount) {
+    const studyId = scopedStudyId ?? selectedSystemStudyId;
+    const userId = account.userId ?? userIdForEmail(account.email);
+    if (!studyId || !userId || !account.role.startsWith('LZ_') || account.role === 'LZ_ADMIN') {
+      setSystemActionStatus('只有非 LZ_ADMIN 平台角色可以配置授权 Study 范围');
+      return;
+    }
+    const currentStudyIds = studyScopeToIds(account.studyScope, allSystemStudyIds);
+    const nextStudyIds = currentStudyIds.includes(studyId)
+      ? currentStudyIds.filter((item) => item !== studyId)
+      : [...currentStudyIds, studyId];
+    setSystemActionStatus(`正在同步 ${account.email} 的平台角色 Study 授权范围...`);
+    try {
+      const user = await updateGlobalRoleStudyScope(userId, nextStudyIds);
+      const savedAccount = accountFromApiUser(user, studyId);
+      setAccountRows((rows) => upsertAccountRow(rows, savedAccount));
+      setSystemActionStatus(`授权范围已同步：${savedAccount.email} -> ${savedAccount.studyScope || '无授权 Study'}`);
+    } catch {
+      setSystemActionStatus('后端不可用或当前角色无平台角色授权范围管理权限');
+    }
   }
 
   async function toggleSystemAccount(account: SystemAccount) {
@@ -3831,8 +4048,8 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       <section className="system-management-hero module-card">
         <div className="system-management-title">
           <span>System Management</span>
-          <h2>{t('系统管理')}</h2>
-          <p>{t('管理 Study 成员、平台角色、权限策略和 CRF 版本。')}</p>
+          <h2>{t(isGlobalManagement ? 'Study 系统管理' : '系统管理')}</h2>
+          <p>{t(isGlobalManagement ? 'LZ 全局层只管理 Study、用户和授权范围，不直接编辑业务数据。' : '管理 Study 成员、平台角色、权限策略和 CRF 版本。')}</p>
         </div>
         <label className="system-study-select">
           <span>Study</span>
@@ -3865,7 +4082,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                   setAccountPage(1);
                   setFieldPage(1);
                 }}
-                placeholder="Search users, roles, CRF fields, visit plans, or ask LinZight AI..."
+                placeholder={isGlobalManagement ? t('Search studies, users, roles, or authorization scopes...') : 'Search users, roles, CRF fields, visit plans, or ask LinZight AI...'}
               />
               <Icon name="microphone" />
             </label>
@@ -3893,14 +4110,66 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         </div>
         <div className="system-global-actions">
           <Icon name="alerts" />
-          <span>Global Actions</span>
-          <strong>{t('Study 成员、CRF 版本、导出和权限策略变更均进入审计日志。')}</strong>
+          <span>{isGlobalManagement ? 'LZ Global Layer' : 'Global Actions'}</span>
+          <strong>{t(isGlobalManagement ? 'LZ 管理页不是业务租户；业务操作必须进入单个 Study Workspace。' : 'Study 成员、CRF 版本、导出和权限策略变更均进入审计日志。')}</strong>
         </div>
         <div className="module-upload-status">
           <Icon name="shield" />
           <span>{t(systemActionStatus)}</span>
         </div>
       </section>
+
+      {isGlobalManagement ? (
+        <section className="module-card system-study-registry-card">
+          <header className="module-card__header">
+            <div>
+              <h2>{t('Study Registry | Study 管理')}</h2>
+              <span>{t('维护 Study、用户和授权范围；业务数据在单个 Study Workspace 内处理。')}</span>
+            </div>
+            <button className="module-primary-button" type="button" onClick={() => void createSystemStudy()}>
+              <Icon name="studies" />Create Study<br /><span>{t('新建 Study')}</span>
+            </button>
+          </header>
+          <div className="module-table-wrap">
+            <table className="module-table system-study-registry-table">
+              <thead>
+                <tr>
+                  <th>Study ID</th>
+                  <th>{t('Study 名称')}</th>
+	                  <th>{t('授权账号')}</th>
+	                  <th>{t('平台角色')}</th>
+	                  <th>{t('研究角色')}</th>
+	                  <th>{t('状态')}</th>
+	                  <th>{t('系统管理员')}</th>
+	                  <th>{t('边界')}</th>
+	                  <th>{t('Actions')}</th>
+	                </tr>
+	              </thead>
+	              <tbody>
+	                {studyRegistryRows.map((study) => (
+	                  <tr key={study.studyId}>
+	                    <td><span className="status-pill status-pill--info">{study.studyId}</span></td>
+	                    <td>{t(study.name)}</td>
+	                    <td>{study.accountCount}</td>
+	                    <td>{study.globalRoleCount}</td>
+	                    <td>{study.studyRoleCount}</td>
+	                    <td><span className={`status-pill status-pill--${study.status === 'active' ? 'success' : study.status === 'draft' ? 'warning' : 'danger'}`}>{study.status}</span></td>
+	                    <td>{study.systemAdminCount}</td>
+	                    <td>{t('业务操作进入 Study Workspace')}</td>
+	                    <td>
+	                      <div className="module-table-actions">
+	                        <button className="module-link-button" type="button" onClick={() => setSelectedSystemStudyId(study.studyId)}>{t('Select')}</button>
+	                        <button className="module-link-button" type="button" disabled={study.status === 'terminated' || study.status === 'deleted'} onClick={() => void terminateSystemStudy(study.studyId)}>{t('Terminate')}</button>
+	                        <button className="module-link-button module-link-button--danger" type="button" disabled={study.status === 'deleted'} onClick={() => void deleteSystemStudy(study.studyId)}>{t('Delete')}</button>
+	                      </div>
+	                    </td>
+	                  </tr>
+	                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       <div className="system-management-grid">
         <div className="module-stack">
@@ -3941,15 +4210,33 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                       <td>
                         <div className="module-table-actions">
                           <button className="module-link-button" type="button" onClick={() => editSystemAccount(account)}>{t('Edit')}</button>
-                          <button
-                            className="module-link-button module-link-button--danger"
-                            type="button"
-                            disabled={!canToggleAccount}
-                            title={canToggleAccount ? undefined : t('当前角色没有用户状态写入权限')}
-                            onClick={() => void toggleSystemAccount(account)}
-                          >
-                            {account.status === 'Disabled' ? t('Enable') : t('Disable')}
-                          </button>
+	                          <button
+	                            className="module-link-button module-link-button--danger"
+	                            type="button"
+	                            disabled={!canToggleAccount}
+	                            title={canToggleAccount ? undefined : t('当前角色没有用户状态写入权限')}
+	                            onClick={() => void toggleSystemAccount(account)}
+	                          >
+	                            {account.status === 'Disabled' ? t('Enable') : t('Disable')}
+	                          </button>
+	                          <button
+	                            className="module-link-button"
+	                            type="button"
+	                            disabled={!scopedStudyId || !(account.userId ?? userIdForEmail(account.email))}
+	                            title={t('设置为当前 Study 的系统管理员')}
+	                            onClick={() => void makeStudySystemAdmin(account)}
+	                          >
+	                            {t('Set Admin')}
+	                          </button>
+	                          <button
+	                            className="module-link-button"
+	                            type="button"
+	                            disabled={currentUser?.role !== 'LZ_ADMIN' || !account.role.startsWith('LZ_') || account.role === 'LZ_ADMIN'}
+	                            title={t('授予或移除当前 Study 的平台角色授权')}
+	                            onClick={() => void togglePlatformStudyScope(account)}
+	                          >
+	                            {t('Scope')}
+	                          </button>
                         </div>
                       </td>
                     </tr>
@@ -3961,6 +4248,8 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
             <ModuleTableFooter page={safeAccountPage} total={visibleAccounts.length} pageSize={systemAccountPageSize} onPageChange={setAccountPage} />
           </section>
 
+          {!isGlobalManagement ? (
+            <>
           <section className="module-card">
             <header className="module-card__header">
               <div>
@@ -4294,6 +4583,8 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
               </table>
             </div>
           </section>
+            </>
+          ) : null}
         </div>
 
         <div className="module-stack">
@@ -4333,6 +4624,8 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
             </div>
           </section>
 
+          {!isGlobalManagement ? (
+            <>
           <section className="module-card system-query-card">
             <header className="module-card__header">
               <div>
@@ -4467,6 +4760,8 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
               </table>
             </div>
           </section>
+            </>
+          ) : null}
         </div>
       </div>
     </div>
@@ -4485,6 +4780,8 @@ function canRunQualityValidation(user?: { role: UserRole } | null) {
 }
 
 function exportStudyOptionsForUser(user?: AuthenticatedUser | null) {
+  const scopedStudyId = getCurrentScopedStudyId();
+  if (scopedStudyId) return [scopedStudyId];
   if (user?.studyScope?.scopeType === 'all_studies') return systemStudyOptions;
   return user?.studyScope?.studyIds?.length ? user.studyScope.studyIds : [getCurrentScopedStudyId() ?? 'LGL-1111'];
 }

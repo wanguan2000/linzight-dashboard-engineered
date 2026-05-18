@@ -58,6 +58,7 @@ function startServer() {
     cwd: repoRoot,
     env: {
       ...process.env,
+      DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-crf-semantics.db')}`,
       LINZIGHT_DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-crf-semantics.db')}`,
       LINZIGHT_UPLOADS_DIR: join(tempDir, 'uploads'),
     },

@@ -46,6 +46,9 @@ export function Sidebar({ activeIndex, items = navItems, onSelect, currentUser }
             <span>● {t(roleLabel)}</span>
           </div>
         </div>
+        <a className="icp-link sidebar__icp" href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
+          {t('沪ICP备2026020480号')}
+        </a>
       </footer>
     </aside>
   );

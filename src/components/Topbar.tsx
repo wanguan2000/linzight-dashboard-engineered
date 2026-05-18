@@ -12,6 +12,10 @@ interface TopbarProps {
   title?: string;
   subtitle?: string;
   currentUser?: AuthenticatedUser;
+  activeStudyId?: string;
+  studyOptions?: Array<{ id: string; name: string }>;
+  onStudyChange?: (studyId: string) => void;
+  onGlobalManagement?: () => void;
   onLogout?: () => void;
 }
 
@@ -21,13 +25,18 @@ export function Topbar({
   title = '欢迎回来，任约翰博士',
   subtitle = '这里是今日临床研究运营概览。',
   currentUser,
+  activeStudyId,
+  studyOptions = [],
+  onStudyChange,
+  onGlobalManagement,
   onLogout
 }: TopbarProps) {
   const { t } = useI18n();
   const [notificationStatus, setNotificationStatus] = useState('');
   const profile = currentUser ?? userProfile;
   const roleLabel = currentUser ? currentUser.roleLabel : userProfile.role;
-  const studyLabel = visibleStudyLabel(currentUser);
+  const studyLabel = activeStudyId ?? visibleStudyLabel(currentUser);
+  const showStudySwitcher = Boolean(onStudyChange && (studyOptions.length > 1 || onGlobalManagement));
 
   return (
     <header className="topbar">
@@ -39,10 +48,28 @@ export function Topbar({
 
         <div className="topbar__actions">
           <LanguageToggle />
-          <div className="study-badge" aria-label={`${t('Study 范围')}：${t(studyLabel)}`}>
-            <span>{t('Study 范围')}</span>
-            <strong>{t(studyLabel)}</strong>
-          </div>
+          {showStudySwitcher ? (
+            <label className="study-badge study-badge--select" aria-label={t('Study Workspace')}>
+              <span>{t(activeStudyId ? 'Study Workspace' : '全局管理')}</span>
+              <select
+                value={activeStudyId ?? '__GLOBAL__'}
+                onChange={(event) => {
+                  if (event.target.value === '__GLOBAL__') onGlobalManagement?.();
+                  else onStudyChange?.(event.target.value);
+                }}
+              >
+                {onGlobalManagement ? <option value="__GLOBAL__">{t('LZ 全局管理')}</option> : null}
+                {studyOptions.map((study) => (
+                  <option value={study.id} key={study.id}>{study.id}</option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="study-badge" aria-label={`${t('Study 范围')}：${t(studyLabel)}`}>
+              <span>{t(activeStudyId ? 'Study Workspace' : 'Study 范围')}</span>
+              <strong>{t(studyLabel)}</strong>
+            </div>
+          )}
           <div className="role-badge" aria-label={`${t('当前角色')}：${t(roleLabel)}`}>
             <span>{t('当前角色')}</span>
             <strong>{t(roleLabel)}</strong>

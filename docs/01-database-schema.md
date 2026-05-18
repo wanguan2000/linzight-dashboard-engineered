@@ -2,13 +2,11 @@
 
 ## 运行配置
 
-- 开发默认：SQLite，`LINZIGHT_DATABASE_URL=sqlite:///./backend/linzight_demo.db`
-- PostgreSQL 保留配置：`LINZIGHT_POSTGRES_URL=postgresql://linzight:linzight@localhost:5432/linzight`
+- 开发默认：macOS 本地 PostgreSQL，`DATABASE_URL=postgresql+psycopg2:///linzight_dashboard_engineered`
+- SQLite 仅用于隔离 smoke、备份恢复和迁移导出脚本，可显式设置 `DATABASE_URL=sqlite:///./backend/linzight_demo.db`
 - 本地文件目录：`LINZIGHT_UPLOADS_DIR=./uploads`
 
-当前后端运行时仍使用 SQLite；PostgreSQL URL 作为部署迁移配置保留，不在 v1 开发阶段强制启用。
-
-SQLite 版本支持 `jsonb()` 时，CRF payload 会以 JSONB（二进制 JSON）BLOB 保存；不支持时自动回退到 TEXT JSON。API 层统一解码为 JSON object，因此前端不需要直接处理 BLOB。
+当前后端运行时默认使用 PostgreSQL；SQLite 版本支持 `jsonb()` 时，CRF payload 会以 JSONB（二进制 JSON）BLOB 保存，不支持时自动回退到 TEXT JSON。PostgreSQL runtime 当前以兼容 JSON 文本保存。API 层统一解码为 JSON object，因此前端不需要直接处理底层存储格式。
 
 ## 核心实体
 
@@ -74,14 +72,14 @@ SQLite 版本支持 `jsonb()` 时，CRF payload 会以 JSONB（二进制 JSON）
 
 ## CRF JSONB 存储
 
-CRF 宽表数据采用双轨存储，兼顾 SQLite JSONB 查询性能和迁移可读性：
+CRF 宽表数据采用双轨存储，兼顾 PostgreSQL runtime、SQLite JSONB 查询性能和迁移可读性：
 
 | 表 | JSONB BLOB 字段 | TEXT JSON 兼容字段 | 版本字段 | 格式字段 |
 | --- | --- | --- | --- | --- |
 | `patients` | `clinical_data_jsonb` | `clinical_data_json` | `clinical_data_version` | `clinical_data_format` |
 | `crf_entries` | `payload_jsonb` | `payload_json` | `payload_version` | `payload_format` |
 
-- `*_jsonb`：SQLite 支持 `jsonb()` 时写入 BLOB；支持 `json_extract()`、`json()` 等 SQLite JSON 函数读取。
+- `*_jsonb`：PostgreSQL runtime 当前写入 JSON 文本；SQLite 支持 `jsonb()` 时写入 BLOB，并支持 `json_extract()`、`json()` 等 SQLite JSON 函数读取。
 - `*_json`：保留 TEXT JSON 作为可读兼容副本，也用于不支持 `jsonb()` 的环境。
 - `*_version`：来自 payload 内的 `CRF版本`，当前 SLE CRF schema 为 `V0.1`。
 - `*_format`：记录实际写入格式，当前支持 `jsonb`、`json` 和历史迁移值 `legacy`。

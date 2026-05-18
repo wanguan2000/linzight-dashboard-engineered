@@ -2,7 +2,7 @@
 
 ## 发布包内容
 
-- `RELEASE_NOTES.md` / `docs/release-notes-v0.2.0-production-demo-rc1.md`
+- `RELEASE_NOTES.md` / `docs/release-notes-v1.0.0.md`
 - `docs/demo-readiness-checklist.md`
 - `docs/07-production-release-candidate-workflows.md`
 - `docs/08-permission-matrix.md`
@@ -36,7 +36,7 @@
 - 导出任务记录 Study、操作者、生成时间和下载行为。
 - 390px 视口可跑患者、CRF、样本、Query、审批、审计主链路。
 - 中英文切换无明显硬编码阻断。
-- Release notes 明确：Demo/private beta，不可直接承载真实患者生产数据。
+- Release notes 明确：`v1.0.0` 是 GA 功能测试与测试数据填写版本，不可直接承载真实患者生产数据。
 
 ## 回滚步骤
 
@@ -48,4 +48,4 @@
 
 ## 发布限制声明
 
-当前 release candidate 仅用于客户演示和内部试点。真实患者生产上线前，必须完成生产 PostgreSQL runtime、集中身份源、真实对象存储、真实病毒扫描、安全审计、备份恢复演练、UAT 签字和合规评估。
+当前 `v1.0.0` GA 包用于正式功能测试、演示和用户自行填写测试数据。真实患者生产上线前，必须完成生产 PostgreSQL runtime、集中身份源、真实对象存储、真实病毒扫描、安全审计、备份恢复演练、UAT 签字和合规评估。

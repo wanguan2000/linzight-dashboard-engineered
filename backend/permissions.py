@@ -160,11 +160,18 @@ PERMISSION_MATRIX: list[dict[str, Any]] = [
         "endpoints": ["GET /studies", "GET /study-configurations", "GET /studies/{study_id}/configuration"],
     },
     {
+        "module": "LZ System Management",
+        "operation": "Create, update, terminate, or delete Studies",
+        "resource": "study_lifecycle",
+        "action": "write",
+        "endpoints": ["POST /studies", "PATCH /studies/{study_id}", "DELETE /studies/{study_id}"],
+    },
+    {
         "module": "Account and Study Members",
         "operation": "Create or update users and Study members",
         "resource": "study_members",
         "action": "write",
-        "endpoints": ["POST /users", "GET /studies/{study_id}/members", "POST /studies/{study_id}/members"],
+        "endpoints": ["GET /users", "POST /users", "PATCH /users/{user_id}", "PATCH /users/{user_id}/study-scope", "GET /studies/{study_id}/members", "POST /studies/{study_id}/members"],
     },
     {
         "module": "Patient Cohort",

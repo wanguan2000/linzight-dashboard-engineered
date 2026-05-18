@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project uses Semantic Versioning.
 
+## [1.0.0] - 2026-05-18
+
+### Added
+
+- GA functional-testing release for the LinZight RWD EDC workflow, intended for formal user testing, demo data entry, and end-to-end feature validation.
+- LZ System Management Study lifecycle APIs: `POST /studies`, `PATCH /studies/{study_id}`, and `DELETE /studies/{study_id}` for create, update, terminate, and soft-delete lifecycle states.
+- Business-write guard for `terminated` and `deleted` Studies across patient, CRF, visit, follow-up, sample, omics, file, quality, and export write paths.
+- User-management APIs for GA testing: `GET /users`, `PATCH /users/{user_id}`, and `PATCH /users/{user_id}/study-scope`.
+- Platform-role Study scope management through `global_role_study_scope`, restricted to `LZ_ADMIN`.
+- Study system-admin assignment through `/studies/{study_id}/members` by setting a user to `STUDY_CONFIG_ADMIN`.
+- System Management UI controls for Create Study, Terminate, Delete, Set Admin, and platform-role Scope actions.
+- API smoke coverage for Study lifecycle, terminated-Study write rejection, Study member promotion, Study-scoped user edits, and platform-role Study scope updates.
+- GA release notes, updated OpenAPI snapshot, refreshed static HTML exports, and release/UAT documentation aligned to `v1.0.0`.
+
+### Changed
+
+- Project package version promoted from `0.2.0-production-demo-rc1` to `1.0.0`.
+- Release checklist now targets GA functional testing instead of private beta tagging.
+- UAT package now points to the `v1.0.0` release notes and keeps the explicit limitation that real patient production use requires production identity, storage, database policy, backup, and compliance sign-off.
+
+### Fixed
+
+- Static export runtime smoke now handles the current login flow where a single-Study account may enter the Study Workspace directly after authentication.
+
 ## [0.2.0-production-demo-rc1] - 2026-05-12
 
 ### Added

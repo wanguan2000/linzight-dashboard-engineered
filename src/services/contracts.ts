@@ -38,6 +38,30 @@ export type ApiUserStatusUpdate = {
   status: 'active' | 'disabled';
 };
 
+export type ApiUserUpdate = {
+  display_name?: string;
+  role?: ApiUserRole;
+  password?: string;
+  status?: 'active' | 'disabled';
+};
+
+export type ApiStudy = {
+  id: string;
+  code: string;
+  name: string;
+  indication: string;
+  phase: string;
+  status: 'draft' | 'active' | 'terminated' | 'deleted';
+  owner_org: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiStudyCreate = Pick<ApiStudy, 'id' | 'code' | 'name' | 'indication'> &
+  Partial<Pick<ApiStudy, 'phase' | 'status' | 'owner_org'>>;
+
+export type ApiStudyUpdate = Partial<Pick<ApiStudy, 'code' | 'name' | 'indication' | 'phase' | 'status' | 'owner_org'>>;
+
 export type ApiLoginResponse = {
   access_token: string;
   token_type: 'bearer';
@@ -57,6 +81,16 @@ export type ApiPatient = {
   clinical_data: Record<string, string | number>;
   clinical_data_version?: string;
   clinical_data_format?: 'jsonb' | 'json' | 'legacy';
+};
+
+export type ApiGlobalPatientIndex = {
+  patient_id: string;
+  masked_subject_code: string;
+  study_id: string;
+  study_name: string;
+  disease_type: DiseaseType;
+  status: string;
+  last_updated: string;
 };
 
 export type ApiSample = {

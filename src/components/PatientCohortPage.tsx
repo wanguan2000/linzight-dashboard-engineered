@@ -347,10 +347,51 @@ interface PatientTableProps {
   activePatientName?: string;
   canEdit?: boolean;
   showStudyId?: boolean;
+  globalIndexOnly?: boolean;
 }
 
-function PatientTable({ patients, onEditPatient, onViewPatient, activePatientName, canEdit = true, showStudyId = false }: PatientTableProps) {
+function PatientTable({ patients, onEditPatient, onViewPatient, activePatientName, canEdit = true, showStudyId = false, globalIndexOnly = false }: PatientTableProps) {
   const { t } = useI18n();
+
+  if (globalIndexOnly) {
+    return (
+      <div className="patient-table-wrap">
+        <table className="patient-table">
+          <thead>
+            <tr>
+              <th>{t('患者索引')}</th>
+              <th>{t('Study ID')}</th>
+              <th>{t('Study 名称')}</th>
+              <th>{t('状态')}</th>
+              <th>{t('最近更新')}</th>
+              <th>{t('操作')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {patients.map((patient) => (
+              <tr className={patient.name === activePatientName ? 'is-active' : undefined} key={`${patient.studyId}-${patient.id ?? patient.name}`}>
+                <td data-label={t('患者索引')}>{patient.name}</td>
+                <td data-label={t('Study ID')}><span className="status-pill status-pill--info">{patient.studyId}</span></td>
+                <td data-label={t('Study 名称')}>{patient.studyName ?? '-'}</td>
+                <td data-label={t('状态')}>{t(patient.status ?? patient.note)}</td>
+                <td data-label={t('最近更新')}>{patient.lastUpdated ?? '-'}</td>
+                <td data-label={t('操作')}>
+                  <div className="patient-actions">
+                    <button type="button" onClick={() => onViewPatient(patient)}>{t('进入 Study')}</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {!patients.length && (
+              <tr>
+                <td colSpan={6}>{t('暂无匹配患者')}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   return (
     <div className="patient-table-wrap">
@@ -633,8 +674,12 @@ export function PatientCohortPage({
   const [saveStatus, setSaveStatus] = useState('等待患者操作');
   const [sampleCollectedOnly, setSampleCollectedOnly] = useState(false);
   const currentStudyId = getCurrentScopedStudyId();
-  const canEditPatientRecords = canWritePatients(currentUser);
-  const availableStudyOptions = useMemo(() => studyOptionsForUser(currentUser, patients), [currentUser, patients]);
+  const globalIndexOnly = !currentStudyId;
+  const canEditPatientRecords = Boolean(currentStudyId) && canWritePatients(currentUser);
+  const availableStudyOptions = useMemo(
+    () => currentStudyId ? [currentStudyId] : studyOptionsForUser(currentUser, patients),
+    [currentStudyId, currentUser, patients]
+  );
   const showStudyId = true;
   const studyScopedPatients = useMemo(
     () => patients.filter((patient) => studyFilter === '全部 Study' || patient.studyId === studyFilter),
@@ -715,6 +760,10 @@ export function PatientCohortPage({
   }, [availableStudyOptions, studyFilter]);
 
   useEffect(() => {
+    if (currentStudyId) setStudyFilter(currentStudyId);
+  }, [currentStudyId]);
+
+  useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
@@ -728,7 +777,7 @@ export function PatientCohortPage({
 
   function openCreatePatientEditor() {
     if (!canEditPatientRecords) {
-      setSaveStatus('当前角色没有患者写入权限，请切换到 Study CRC 或 LZ CRC');
+      setSaveStatus(currentStudyId ? '当前角色没有患者写入权限，请切换到 Study CRC 或 LZ CRC' : '全局患者列表仅作为索引；请先进入单个 Study Workspace');
       return;
     }
     setEditorMode('create');
@@ -738,7 +787,7 @@ export function PatientCohortPage({
 
   function openEditPatientEditor(patient: PatientRecord) {
     if (!canEditPatientRecords) {
-      setSaveStatus('当前角色没有患者写入权限，请切换到 Study CRC 或 LZ CRC');
+      setSaveStatus(currentStudyId ? '当前角色没有患者写入权限，请切换到 Study CRC 或 LZ CRC' : '全局患者列表仅作为索引；请通过患者链接进入所属 Study 后再管理');
       return;
     }
     setEditorMode('edit');
@@ -758,6 +807,10 @@ export function PatientCohortPage({
 
   async function savePatientEditor() {
     if (!draftPatient || !editorMode) return;
+    if (!currentStudyId) {
+      setSaveStatus('全局患者列表不能直接写入；请先进入单个 Study Workspace');
+      return;
+    }
     if (!draftPatient.name.trim() || !draftPatient.hospitalNo.trim()) {
       setSaveStatus('患者编号和住院号为必填项');
       return;
@@ -834,7 +887,7 @@ export function PatientCohortPage({
               className="module-primary-button"
               type="button"
               disabled={!canEditPatientRecords}
-              title={canEditPatientRecords ? undefined : t('当前角色没有患者写入权限')}
+              title={canEditPatientRecords ? undefined : t(currentStudyId ? '当前角色没有患者写入权限' : '全局患者列表仅作为索引；请先进入单个 Study Workspace')}
               onClick={openCreatePatientEditor}
             >
               <Icon name="filePlus" />
@@ -972,7 +1025,14 @@ export function PatientCohortPage({
             <span>{t(saveStatus)}</span>
           </div>
 
-          <PatientTable patients={paginatedPatients} canEdit={canEditPatientRecords} onEditPatient={openEditPatientEditor} onViewPatient={onViewPatient} showStudyId={showStudyId} />
+          <PatientTable
+            patients={paginatedPatients}
+            canEdit={canEditPatientRecords}
+            onEditPatient={openEditPatientEditor}
+            onViewPatient={onViewPatient}
+            showStudyId={showStudyId}
+            globalIndexOnly={globalIndexOnly}
+          />
 
           <footer className="patient-list-card__footer">
             <span>{t(`显示 ${displayStart} 至 ${displayEnd} 条，共 ${filteredPatients.length} 条记录`)}</span>

@@ -266,6 +266,23 @@
   box-shadow: 0 12px 24px rgba(58, 123, 213, 0.18);
 }
 
+.icp-link {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+  text-decoration: none;
+}
+
+.icp-link:hover {
+  color: #167286;
+  text-decoration: underline;
+}
+
+.login-icp {
+  margin-top: -4px;
+}
+
 .logo {
   display: flex;
   align-items: center;
@@ -349,6 +366,11 @@
   margin: 0 10px;
   padding: 10px 8px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.sidebar__icp {
+  display: block;
+  margin-top: 10px;
 }
 
 .user-card {
@@ -465,6 +487,20 @@
 
 .study-badge strong {
   color: #167286;
+}
+
+.study-badge--select {
+  min-width: 190px;
+  justify-content: space-between;
+}
+
+.study-badge--select select {
+  max-width: 132px;
+  border: 0;
+  background: transparent;
+  color: #167286;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .icon-button {

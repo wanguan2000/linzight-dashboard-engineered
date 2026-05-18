@@ -14,8 +14,9 @@ Backend:
 
 | Variable | Example | Notes |
 | --- | --- | --- |
-| `LINZIGHT_DATABASE_URL` | `sqlite:////data/linzight_demo.db` | SQLite URL for the Demo backend. Do not use SQLite as a production clinical database. |
-| `LINZIGHT_POSTGRES_URL` | `postgresql://linzight:linzight@localhost:5432/linzight` | PostgreSQL target URL for migration rehearsal and future runtime adapter work. |
+| `DATABASE_URL` | `postgresql+psycopg2:///linzight_dashboard_engineered` | Preferred backend database URL. The default macOS local setup uses the current OS user over the local PostgreSQL socket; do not commit real passwords for other environments. |
+| `LINZIGHT_DATABASE_URL` | `postgresql+psycopg2:///linzight_dashboard_engineered` | Fallback backend database URL when `DATABASE_URL` is unset. |
+| `LINZIGHT_POSTGRES_URL` | `postgresql+psycopg2:///linzight_dashboard_engineered` | PostgreSQL default reference URL for local development. |
 | `LINZIGHT_UPLOADS_DIR` | `/uploads` | Local upload directory for demo files. Production should use controlled object storage. |
 | `LINZIGHT_BACKUP_DIR` | `./backups` | Optional backup output path for demo SQLite backup scripts. |
 
@@ -31,20 +32,15 @@ docker compose up --build
 - Backend: `http://127.0.0.1:8000/`
 - Health: `http://127.0.0.1:8000/health`
 
-The backend container seeds the SQLite volume on first start only. Remove the `linzight_backend_data` volume if you need a clean seeded database.
+The backend container uses PostgreSQL by default and runs `python -m backend.bootstrap` on startup. It initializes schema every time and seeds demo data only when the `studies` table is empty. Remove the `linzight_postgres_data` volume if you need a clean seeded database.
 
-Optional PostgreSQL service for migration rehearsals:
+The SQLite export command remains available for legacy demo database migration packages:
 
 ```bash
-docker compose --profile postgres up -d postgres
-psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/001_schema.sql
-psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/002_indexes.sql
-psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/003_constraints.sql
-psql "$LINZIGHT_POSTGRES_URL" -f backend/migrations/postgres/004_seed_demo.sql
 npm run export:postgres-migration -- exports/postgres-migration
 ```
 
-The export command writes one CSV and JSON file per SQLite table plus `manifest.json`. Load these files into PostgreSQL with a controlled migration tool, compare table counts against the manifest, then switch traffic only after read/write validation. Runtime writes still default to SQLite until a PostgreSQL SQL adapter is activated.
+The export command writes one CSV and JSON file per SQLite table plus `manifest.json`. Load these files into PostgreSQL with a controlled migration tool and compare table counts against the manifest before switching traffic.
 
 Validation commands:
 

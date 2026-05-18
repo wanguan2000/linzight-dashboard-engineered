@@ -10,7 +10,7 @@ import {
   type StudyVisitPlanRecord,
   type VisitRecord
 } from '../data/operations';
-import { authStorageKey, normalizeAuthenticatedUser, roleLabels, userCanAccessStudy, type AuthenticatedUser } from '../data/auth';
+import { activeStudyStorageKey, authStorageKey, normalizeAuthenticatedUser, roleLabels, userCanAccessStudy, type AuthenticatedUser } from '../data/auth';
 import { patientRecords, type OmicsStatus, type PatientRecord, type SampleCollection } from '../data/patientCohort';
 import type {
   ApiAnalysisSummary,
@@ -23,6 +23,7 @@ import type {
   ApiExportJob,
   ApiFileMetadata,
   ApiFollowUpRecord,
+  ApiGlobalPatientIndex,
   ApiLoginResponse,
   ApiOmics,
   ApiPanorama,
@@ -34,12 +35,16 @@ import type {
   ApiStudyConfiguration,
   ApiStudyCrfField,
   ApiStudyCrfVersion,
+  ApiStudy,
+  ApiStudyCreate,
   ApiStudyMember,
   ApiStudySite,
+  ApiStudyUpdate,
   ApiStudyVisitPlan,
   ApiUser,
   ApiUserCreate,
   ApiUserStatusUpdate,
+  ApiUserUpdate,
   ApiVisit
 } from './contracts';
 
@@ -255,21 +260,23 @@ export async function uploadFileToBackend(
   });
 }
 
-export async function createExportJob(exportType = 'cohort_csv', studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiExportJob> {
+export async function createExportJob(exportType = 'cohort_csv', studyId = getCurrentScopedStudyId()): Promise<ApiExportJob> {
+  const scopedStudyId = studyId ?? getCurrentScopedStudyId();
+  if (!scopedStudyId) throw new ApiRequestError(400, 'Study Workspace is required for exports');
   const token = window.localStorage.getItem(authTokenStorageKey);
   return postJson<ApiExportJob>(
     '/exports',
     {
       export_type: exportType,
-      scope: { study_id: studyId },
+      scope: { study_id: scopedStudyId },
       requested_by: null
     },
     token ? { Authorization: `Bearer ${token}` } : undefined
   );
 }
 
-export async function fetchApprovalRequests(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiApprovalRequest[]> {
-  return getJson<ApiApprovalRequest[]>(`/approvals?study_id=${encodeURIComponent(studyId)}`);
+export async function fetchApprovalRequests(studyId = getCurrentScopedStudyId()): Promise<ApiApprovalRequest[]> {
+  return getJson<ApiApprovalRequest[]>(studyBusinessPath(studyId, 'approvals'));
 }
 
 export async function createApprovalRequest(payload: {
@@ -397,6 +404,28 @@ export async function fetchStudyConfiguration(studyId = getCurrentScopedStudyId(
   return getJson<ApiStudyConfiguration>(`/studies/${encodeURIComponent(studyId)}/configuration`);
 }
 
+export async function fetchStudies(): Promise<ApiStudy[]> {
+  return getJson<ApiStudy[]>('/studies');
+}
+
+export async function createStudy(payload: ApiStudyCreate): Promise<ApiStudy> {
+  return postJson<ApiStudy>('/studies', payload);
+}
+
+export async function updateStudy(studyId: string, payload: ApiStudyUpdate): Promise<ApiStudy> {
+  return requestJson<ApiStudy>(`/studies/${encodeURIComponent(studyId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteStudy(studyId: string): Promise<ApiStudy> {
+  return requestJson<ApiStudy>(`/studies/${encodeURIComponent(studyId)}`, {
+    method: 'DELETE'
+  });
+}
+
 export async function fetchStudyConfigurations(studyId?: string): Promise<ApiStudyConfiguration[]> {
   const query = studyId ? `?study_id=${encodeURIComponent(studyId)}` : '';
   return getJson<ApiStudyConfiguration[]>(`/study-configurations${query}`);
@@ -450,16 +479,16 @@ export async function assignStudySiteUser(
   });
 }
 
-export async function fetchDataQueries(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiDataQuery[]> {
-  return getJson<ApiDataQuery[]>(`/queries?study_id=${encodeURIComponent(studyId)}`);
+export async function fetchDataQueries(studyId = getCurrentScopedStudyId()): Promise<ApiDataQuery[]> {
+  return getJson<ApiDataQuery[]>(studyBusinessPath(studyId, 'queries'));
 }
 
-export async function fetchQualityIssues(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiQualityIssue[]> {
-  return getJson<ApiQualityIssue[]>(`/quality/issues?study_id=${encodeURIComponent(studyId)}`);
+export async function fetchQualityIssues(studyId = getCurrentScopedStudyId()): Promise<ApiQualityIssue[]> {
+  return getJson<ApiQualityIssue[]>(studyBusinessPath(studyId, 'quality/issues'));
 }
 
-export async function fetchAuditLogs(studyId = getCurrentScopedStudyId() ?? 'LGL-1111'): Promise<ApiAuditLog[]> {
-  return getJson<ApiAuditLog[]>(`/audit-logs?study_id=${encodeURIComponent(studyId)}`);
+export async function fetchAuditLogs(studyId = getCurrentScopedStudyId()): Promise<ApiAuditLog[]> {
+  return getJson<ApiAuditLog[]>(studyBusinessPath(studyId, 'audit-logs'));
 }
 
 export async function createDataQuery(payload: {
@@ -486,11 +515,33 @@ export async function createUserAccount(payload: ApiUserCreate): Promise<ApiUser
   return postJson<ApiUser>('/users', payload);
 }
 
+export async function fetchUsers(studyId?: string): Promise<ApiUser[]> {
+  const query = studyId ? `?study_id=${encodeURIComponent(studyId)}` : '';
+  return getJson<ApiUser[]>(`/users${query}`);
+}
+
+export async function updateUserAccount(userId: string, payload: ApiUserUpdate, studyId?: string): Promise<ApiUser> {
+  const query = studyId ? `?study_id=${encodeURIComponent(studyId)}` : '';
+  return requestJson<ApiUser>(`/users/${encodeURIComponent(userId)}${query}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function updateUserAccountStatus(userId: string, payload: ApiUserStatusUpdate): Promise<ApiUser> {
   return requestJson<ApiUser>(`/users/${encodeURIComponent(userId)}/status`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
+  });
+}
+
+export async function updateGlobalRoleStudyScope(userId: string, studyIds: string[]): Promise<ApiUser> {
+  return requestJson<ApiUser>(`/users/${encodeURIComponent(userId)}/study-scope`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ study_ids: studyIds })
   });
 }
 
@@ -615,12 +666,11 @@ export async function updateStudyCrfField(field: StudyCrfFieldRecord): Promise<S
 
 export async function runQualityChecks(studyId = getCurrentScopedStudyId()): Promise<{ status: string; created: number }> {
   const token = window.localStorage.getItem(authTokenStorageKey);
-  const path = studyId ? `/quality/run?study_id=${encodeURIComponent(studyId)}` : withCurrentStudyQuery('/quality/run');
-  return postJson<{ status: string; created: number }>(path, {}, token ? { Authorization: `Bearer ${token}` } : undefined);
+  return postJson<{ status: string; created: number }>(studyBusinessPath(studyId, 'quality/run'), {}, token ? { Authorization: `Bearer ${token}` } : undefined);
 }
 
 export async function fetchAnalyticsSummary(): Promise<ApiAnalysisSummary> {
-  return getJson<ApiAnalysisSummary>(withCurrentStudyQuery('/analytics/summary'));
+  return getJson<ApiAnalysisSummary>(currentStudyBusinessPath('analytics/summary'));
 }
 
 function toConsentRecord(record: ApiConsent): ConsentRecord {
@@ -639,7 +689,7 @@ function toConsentRecord(record: ApiConsent): ConsentRecord {
 }
 
 export async function fetchConsentRecords(): Promise<ConsentRecord[]> {
-  return filterRecordsByCurrentStudyScope((await getJson<ApiConsent[]>(withCurrentStudyQuery('/consents'))).map(toConsentRecord));
+  return filterRecordsByCurrentStudyScope((await getJson<ApiConsent[]>(currentStudyBusinessPath('consents'))).map(toConsentRecord));
 }
 
 export async function updateConsentRecord(id: string, payload: Partial<Pick<ConsentRecord, 'status' | 'signedAt' | 'version' | 'method'>>): Promise<ConsentRecord> {
@@ -667,8 +717,9 @@ export async function updatePatientClinicalData(patient: PatientRecord, clinical
 }
 
 export async function createPatientRecord(patient: PatientRecord): Promise<PatientRecord> {
-  const response = await postJson<ApiPatient>('/patients', {
-    study_id: patient.studyId || getCurrentScopedStudyId() || 'LGL-1111',
+  const studyId = patient.studyId || getCurrentScopedStudyId();
+  const response = await postJson<ApiPatient>(studyBusinessPath(studyId, 'patients'), {
+    study_id: studyId,
     name: patient.name,
     hospital_no: patient.hospitalNo,
     sex: patient.sex,
@@ -697,7 +748,7 @@ export async function updatePatientRecord(patient: PatientRecord): Promise<Patie
 }
 
 export async function fetchCrfEntries(patientId: string): Promise<ApiCrfEntry[]> {
-  return getJson<ApiCrfEntry[]>(`/crf?patient_id=${encodeURIComponent(patientId)}`);
+  return getJson<ApiCrfEntry[]>(`${currentStudyBusinessPath('crf')}?patient_id=${encodeURIComponent(patientId)}`);
 }
 
 export async function saveClinicalCrfEntry(patient: PatientRecord, payload: PatientRecord['clinicalData'], status: ApiCrfEntry['status']): Promise<ApiCrfEntry> {
@@ -717,12 +768,12 @@ export async function saveClinicalCrfEntry(patient: PatientRecord, payload: Pati
   if (existingEntry) {
     return putJson<ApiCrfEntry>(`/crf/${existingEntry.id}`, body);
   }
-  return postJson<ApiCrfEntry>('/crf', body);
+  return postJson<ApiCrfEntry>(studyBusinessPath(patient.studyId, 'crf'), body);
 }
 
 export async function createSampleRecord(record: SampleRecord): Promise<SampleRecord> {
   if (!record.patientId) throw new Error('patient id is required');
-  const response = await postJson<ApiSample>('/samples', {
+  const response = await postJson<ApiSample>(studyBusinessPath(record.studyId, 'samples'), {
     id: record.id.startsWith('SPL-NEW-') ? undefined : record.id,
     patient_id: record.patientId,
     patient_name: record.patientName,
@@ -754,7 +805,7 @@ export async function updateSampleRecord(record: SampleRecord): Promise<SampleRe
 
 export async function createOmicsRecord(record: OmicsRecord): Promise<OmicsRecord> {
   if (!record.patientId) throw new Error('patient id is required');
-  const response = await postJson<ApiOmics>('/omics', {
+  const response = await postJson<ApiOmics>(studyBusinessPath(record.studyId, 'omics'), {
     id: record.id.startsWith('OMX-NEW-') ? undefined : record.id,
     testing_project_id: record.testingProjectId ?? testingProjectIdForStudy(record.studyId),
     patient_id: record.patientId,
@@ -826,6 +877,27 @@ function toPatientRecord(patient: ApiPatient, allSamples: ApiSample[], allOmics:
     clinicalDataVersion: patient.clinical_data_version,
     clinicalDataFormat: patient.clinical_data_format,
     clinicalData: patient.clinical_data
+  };
+}
+
+function toGlobalPatientIndexRecord(record: ApiGlobalPatientIndex): PatientRecord {
+  return {
+    id: record.patient_id,
+    studyId: record.study_id,
+    name: record.masked_subject_code,
+    hospitalNo: '-',
+    sex: '女',
+    age: 0,
+    diseaseType: record.disease_type,
+    organs: [],
+    samples: [],
+    omicsStatus: '样本采集',
+    note: record.status,
+    clinicalData: {},
+    isGlobalIndexOnly: true,
+    studyName: record.study_name,
+    status: record.status,
+    lastUpdated: record.last_updated
   };
 }
 
@@ -940,25 +1012,37 @@ function testingProjectIdForStudy(studyId?: string): string {
 
 export function getCurrentScopedStudyId(): string | undefined {
   const user = getStoredUser();
-  if (!user || !user.studyScope?.scopeType || user.studyScope.scopeType === 'all_studies') return undefined;
+  if (!user || !user.studyScope?.scopeType) return undefined;
+  const activeStudyId = window.localStorage.getItem(activeStudyStorageKey) || undefined;
+  if (activeStudyId && userCanAccessStudy(user, activeStudyId)) return activeStudyId;
+  if (activeStudyId) window.localStorage.removeItem(activeStudyStorageKey);
+  if (user.studyScope.scopeType === 'all_studies') return undefined;
   const studyIds = user.studyScope.studyIds ?? [];
   return studyIds.length === 1 ? studyIds[0] : undefined;
 }
 
-function withCurrentStudyQuery(path: string): string {
+function currentStudyBusinessPath(resource: string): string {
   const studyId = getCurrentScopedStudyId();
-  if (!studyId) return path;
-  const separator = path.includes('?') ? '&' : '?';
-  return `${path}${separator}study_id=${encodeURIComponent(studyId)}`;
+  if (!studyId) throw new ApiRequestError(400, 'Study Workspace is required for business APIs');
+  return `/studies/${encodeURIComponent(studyId)}/${resource.replace(/^\/+/, '')}`;
+}
+
+function studyBusinessPath(studyId: string | undefined, resource: string): string {
+  if (!studyId) throw new ApiRequestError(400, 'Study Workspace is required for business APIs');
+  return `/studies/${encodeURIComponent(studyId)}/${resource.replace(/^\/+/, '')}`;
 }
 
 export function recordBelongsToCurrentStudyScope(record: { studyId?: string }): boolean {
+  const activeStudyId = getCurrentScopedStudyId();
+  if (activeStudyId) return record.studyId === activeStudyId;
   const user = getStoredUser();
   if (!user || !user.studyScope?.scopeType || user.studyScope.scopeType === 'all_studies') return true;
   return Boolean(record.studyId && userCanAccessStudy(user, record.studyId));
 }
 
 export function filterRecordsByCurrentStudyScope<T extends { studyId?: string }>(records: T[]): T[] {
+  const activeStudyId = getCurrentScopedStudyId();
+  if (activeStudyId) return records.filter((record) => record.studyId === activeStudyId);
   const user = getStoredUser();
   if (!user || !user.studyScope?.scopeType || user.studyScope.scopeType === 'all_studies') return records;
   return records.filter((record) => Boolean(record.studyId && userCanAccessStudy(user, record.studyId)));
@@ -975,6 +1059,20 @@ function fallbackDemoDataset(): DemoDataset {
 }
 
 function filterDatasetByStudyScope(dataset: DemoDataset): DemoDataset {
+  const activeStudyId = getCurrentScopedStudyId();
+  if (activeStudyId) {
+    const patients = dataset.patients.filter((patient) => patient.studyId === activeStudyId);
+    const patientIds = new Set(patients.map((patient) => patient.id).filter(Boolean));
+    const patientNames = new Set(patients.map((patient) => patient.name));
+    return {
+      patients,
+      samples: dataset.samples.filter((sample) => sample.studyId === activeStudyId || (!sample.studyId && (sample.patientId ? patientIds.has(sample.patientId) : patientNames.has(sample.patientName)))),
+      omics: dataset.omics.filter((record) => record.studyId === activeStudyId || (!record.studyId && (record.patientId ? patientIds.has(record.patientId) : patientNames.has(record.patientName)))),
+      visits: dataset.visits.filter((visit) => visit.studyId === activeStudyId || (!visit.studyId && (visit.patientId ? patientIds.has(visit.patientId) : patientNames.has(visit.patientName)))),
+      followUps: dataset.followUps.filter((followUp) => followUp.studyId === activeStudyId || (!followUp.studyId && (followUp.patientId ? patientIds.has(followUp.patientId) : patientNames.has(followUp.patientName))))
+    };
+  }
+
   const user = getStoredUser();
   if (!user || !user.studyScope?.scopeType || user.studyScope.scopeType === 'all_studies') return dataset;
   const patients = dataset.patients.filter((patient) => userCanAccessStudy(user, patient.studyId));
@@ -1004,12 +1102,23 @@ function filterDatasetByStudyScope(dataset: DemoDataset): DemoDataset {
 
 export async function fetchDemoDataset(): Promise<DemoDataset> {
   try {
+    if (!getCurrentScopedStudyId()) {
+      const apiPatients = await getJson<ApiGlobalPatientIndex[]>('/global/patient-index');
+      return {
+        patients: apiPatients.map(toGlobalPatientIndexRecord),
+        samples: [],
+        omics: [],
+        visits: [],
+        followUps: []
+      };
+    }
+
     const [apiPatients, apiSamples, apiOmics, apiVisits, apiFollowUps] = await Promise.all([
-      getJson<ApiPatient[]>(withCurrentStudyQuery('/patients')),
-      getJson<ApiSample[]>(withCurrentStudyQuery('/samples')),
-      getJson<ApiOmics[]>(withCurrentStudyQuery('/omics')),
-      getJson<ApiVisit[]>(withCurrentStudyQuery('/visits')),
-      getJson<ApiFollowUpRecord[]>(withCurrentStudyQuery('/follow-up-records'))
+      getJson<ApiPatient[]>(currentStudyBusinessPath('patients')),
+      getJson<ApiSample[]>(currentStudyBusinessPath('samples')),
+      getJson<ApiOmics[]>(currentStudyBusinessPath('omics')),
+      getJson<ApiVisit[]>(currentStudyBusinessPath('visits')),
+      getJson<ApiFollowUpRecord[]>(currentStudyBusinessPath('follow-up-records'))
     ]);
 
     if (!apiPatients.length) {
@@ -1030,7 +1139,7 @@ export async function fetchDemoDataset(): Promise<DemoDataset> {
 
 export async function fetchSamples(): Promise<SampleRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiSample[]>(withCurrentStudyQuery('/samples'))).map(toSampleRecord));
+    return filterRecordsByCurrentStudyScope((await getJson<ApiSample[]>(currentStudyBusinessPath('samples'))).map(toSampleRecord));
   } catch {
     return filterRecordsByCurrentStudyScope(samples);
   }
@@ -1038,7 +1147,7 @@ export async function fetchSamples(): Promise<SampleRecord[]> {
 
 export async function fetchOmicsRecords(): Promise<OmicsRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiOmics[]>(withCurrentStudyQuery('/omics'))).map(toOmicsRecord));
+    return filterRecordsByCurrentStudyScope((await getJson<ApiOmics[]>(currentStudyBusinessPath('omics'))).map(toOmicsRecord));
   } catch {
     return filterRecordsByCurrentStudyScope(omicsRecords);
   }
@@ -1046,7 +1155,7 @@ export async function fetchOmicsRecords(): Promise<OmicsRecord[]> {
 
 export async function fetchVisits(): Promise<VisitRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiVisit[]>(withCurrentStudyQuery('/visits'))).map(toVisitRecord));
+    return filterRecordsByCurrentStudyScope((await getJson<ApiVisit[]>(currentStudyBusinessPath('visits'))).map(toVisitRecord));
   } catch {
     return filterRecordsByCurrentStudyScope(visits);
   }
@@ -1054,7 +1163,7 @@ export async function fetchVisits(): Promise<VisitRecord[]> {
 
 export async function fetchFollowUpRecords(): Promise<FollowUpRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiFollowUpRecord[]>(withCurrentStudyQuery('/follow-up-records'))).map(toFollowUpRecord));
+    return filterRecordsByCurrentStudyScope((await getJson<ApiFollowUpRecord[]>(currentStudyBusinessPath('follow-up-records'))).map(toFollowUpRecord));
   } catch {
     return filterRecordsByCurrentStudyScope(followUpRecords);
   }
@@ -1117,7 +1226,7 @@ export async function saveVisitFollowUpRecord(record: VisitRecord, patient: Pati
     return followUpRecordToVisitRecord(toFollowUpRecord(response), record);
   }
 
-  const existingRecords = await getJson<ApiFollowUpRecord[]>(`/follow-up-records?patient_id=${encodeURIComponent(patientId ?? '')}`)
+  const existingRecords = await getJson<ApiFollowUpRecord[]>(`${studyBusinessPath(payload.study_id, 'follow-up-records')}?patient_id=${encodeURIComponent(patientId ?? '')}`)
     .then((rows) => rows.map(toFollowUpRecord))
     .catch(() => [] as FollowUpRecord[]);
   const existing = existingRecords.find((item) => item.visitId === record.id)
@@ -1128,7 +1237,7 @@ export async function saveVisitFollowUpRecord(record: VisitRecord, patient: Pati
     return followUpRecordToVisitRecord(toFollowUpRecord(response), record);
   }
 
-  const response = await postJson<ApiFollowUpRecord>('/follow-up-records', {
+  const response = await postJson<ApiFollowUpRecord>(studyBusinessPath(payload.study_id, 'follow-up-records'), {
     id: record.id.startsWith('V-NEW-') ? undefined : `FUP-${record.id}`,
     ...payload
   });

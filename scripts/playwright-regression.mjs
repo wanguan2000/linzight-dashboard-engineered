@@ -67,6 +67,7 @@ function startBackend() {
     cwd: repoRoot,
     env: {
       ...process.env,
+      DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-playwright.db')}`,
       LINZIGHT_DATABASE_URL: `sqlite:///${join(tempDir, 'linzight-playwright.db')}`,
       LINZIGHT_UPLOADS_DIR: join(tempDir, 'uploads'),
     },
@@ -116,13 +117,12 @@ async function run() {
     browser = await playwright.chromium.launch();
     const page = await browser.newPage({ viewport: { width: 1440, height: 980 } });
     await page.goto(`${frontendUrl}/?locale=en-US`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: /LZ System Admin|LZ System Management|LZ 系统管理/i }).click();
-    await page.getByLabel(/Role account|角色账号/i).selectOption('crf-admin@demo.linzight');
+    await page.getByLabel(/Role account|角色账号/i).selectOption('lung-dm@demo.linzight');
     await page.getByLabel(/password/i).fill('Demo1234!');
     await page.getByRole('button', { name: /enter system/i }).click();
     await page.getByRole('button', { name: /Home|首页工作台/i }).waitFor({ timeout: 10000 });
     await page.locator('.sidebar .nav-item').filter({ hasText: /Patient Cohort|患者队列/i }).click();
-    await page.getByText(/New Patient|新建患者/i).waitFor({ timeout: 10000 });
+    await page.getByText(/Patient Search|患者搜索/i).waitFor({ timeout: 10000 });
     await page.locator('.sidebar .nav-item').filter({ hasText: /System Admin|System Management|系统管理/i }).click();
     await page.getByText(/Approval Center/i).waitFor({ timeout: 10000 });
     await page.getByText(/Query Management/i).waitFor({ timeout: 10000 });

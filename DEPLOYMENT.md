@@ -50,8 +50,8 @@ docker compose up --build
 
 - `Dockerfile.frontend`：Node 22 Alpine 构建 Vite 应用，并用 `vite preview` 暴露 `5173`。
 - `Dockerfile.backend`：Python 3.11 slim，安装 FastAPI 依赖，复制 `backend/` 与 CRF schema，并运行 uvicorn。
-- `docker-compose.yml`：启动 frontend + backend，后端使用 SQLite volume `/data/linzight_demo.db` 和上传 volume `/uploads`。
-- 后端首次启动时如果 `/data/linzight_demo.db` 不存在，会执行 `python -m backend.seed` 生成三 Study Demo 数据。
+- `docker-compose.yml`：启动 PostgreSQL + backend + frontend，默认后端使用 PostgreSQL volume 和上传 volume `/uploads`。
+- 后端首次启动时会执行 `python -m backend.bootstrap`，在数据库为空时生成三 Study Demo 数据；已有数据不会被重置。
 
 默认访问地址：
 
@@ -71,6 +71,7 @@ health:   http://127.0.0.1:8000/health
 
 后端：
 
+- `DATABASE_URL`
 - `LINZIGHT_DATABASE_URL`
 - `LINZIGHT_POSTGRES_URL`
 - `LINZIGHT_UPLOADS_DIR`
@@ -94,7 +95,7 @@ npm run restore:sqlite -- backups/linzight-<timestamp>
 ## 生产部署注意事项
 
 - 不要部署 demo token 认证作为生产认证。
-- 不要使用本地 SQLite 作为生产主库。
+- 不要使用本地 SQLite 作为生产主库；PostgreSQL 数据库 URL 必须放入受控环境变量或 systemd env file，不要写入仓库。
 - 上传目录应使用持久化存储或对象存储。
 - 患者数据和医疗敏感数据必须有脱敏、权限和审计。
 - CORS 只允许可信前端域名。

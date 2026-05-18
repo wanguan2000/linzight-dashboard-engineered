@@ -134,11 +134,17 @@ function startStaticServer() {
 
 async function loginLungCrc(page) {
   await page.goto(`${baseUrl}/clinical-data-capture.html?locale=zh-CN`, { waitUntil: 'networkidle' });
-  await page.getByLabel(/研究编号|study_id/i).selectOption('LZXK-01');
   await page.getByLabel(/角色账号|Role account/i).selectOption('lung-crc@demo.linzight');
   await page.getByLabel(/密码|password/i).fill('Demo1234!');
   await page.getByRole('button', { name: /进入系统|Enter system/i }).click();
+  await page.waitForFunction(() => globalThis.localStorage.getItem('linzight-demo-user'), null, { timeout: 10000 });
+  const studySelector = page.getByLabel(/选择 Study Workspace|Select Study Workspace/i);
+  if (await studySelector.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await studySelector.selectOption('LZXK-01');
+    await page.getByRole('button', { name: /进入 Study Workspace|Enter Study Workspace/i }).click();
+  }
   await page.waitForLoadState('networkidle').catch(() => undefined);
+  await page.goto(`${baseUrl}/clinical-data-capture.html?locale=zh-CN`, { waitUntil: 'networkidle' });
   await page.getByText('LZXK-01', { exact: false }).first().waitFor({ timeout: 10000 });
 }
 
@@ -172,7 +178,11 @@ async function run() {
     writeReport('passed', { checkedPage: 'clinical-data-capture.html', role: 'lung-crc@demo.linzight', viewport: '390x844' });
     console.log(`Static export runtime smoke passed: LZXK-01 clinical capture visible text is lung-specific. Report: ${reportPath}`);
   } catch (error) {
-    writeReport('failed', { message: error instanceof Error ? error.message : String(error) });
+    const visibleText = await browser?.contexts()[0]?.pages()[0]?.locator('body').innerText({ timeout: 1000 }).catch(() => '');
+    writeReport('failed', {
+      message: error instanceof Error ? error.message : String(error),
+      visibleText: visibleText?.slice(0, 2000),
+    });
     throw error;
   } finally {
     await browser?.close().catch(() => undefined);

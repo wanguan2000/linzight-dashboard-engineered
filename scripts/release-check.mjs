@@ -32,6 +32,7 @@ for (const script of ['lint', 'build', 'export:html', 'export:openapi', 'smoke:a
 
 for (const path of [
   'README.md',
+  'RELEASE_NOTES.md',
   'AI_HANDOFF.md',
   'ARCHITECTURE.md',
   'CHANGELOG.md',
@@ -42,6 +43,7 @@ for (const path of [
   'docs/07-production-release-candidate-workflows.md',
   'docs/08-permission-matrix.md',
   'docs/09-uat-release-package.md',
+  'docs/release-notes-v1.0.0.md',
   'docs/deployment-ops.md',
   'docs/frontend-function-gap-audit.md',
   'docs/frontend-html-export.md',

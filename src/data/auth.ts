@@ -31,6 +31,13 @@ export interface DemoUser {
 }
 
 export const authStorageKey = 'linzight-demo-user';
+export const activeStudyStorageKey = 'linzight-active-study-id';
+
+export const studyOptions = [
+  { id: 'LZXK-01', name: '真实世界肺癌耐药研究' },
+  { id: 'LGL-1111', name: '免疫相关性神经系统疾病 RWD 研究' },
+  { id: 'RWD-NMO-2026', name: 'NMOSD 真实世界随访研究' }
+];
 
 export const roleLabels: Record<UserRole, string> = {
   LZ_ADMIN: 'LZ 系统管理员',
@@ -272,6 +279,16 @@ export function userCanAccessStudy(user: Pick<AuthenticatedUser, 'studyScope'>, 
   if (!user.studyScope?.scopeType) return false;
   if (user.studyScope.scopeType === 'all_studies') return true;
   return Boolean(user.studyScope.studyIds?.includes(studyId));
+}
+
+export function accessibleStudyIdsForUser(user?: Pick<AuthenticatedUser, 'studyScope'> | null) {
+  if (!user?.studyScope?.scopeType) return [];
+  if (user.studyScope.scopeType === 'all_studies') return studyOptions.map((study) => study.id);
+  return user.studyScope.studyIds ?? [];
+}
+
+export function isPlatformRole(user?: Pick<AuthenticatedUser, 'role'> | null) {
+  return Boolean(user?.role?.startsWith('LZ_'));
 }
 
 export function narrowAuthenticatedUserToStudy(user: AuthenticatedUser, studyId: string): AuthenticatedUser {

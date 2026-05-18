@@ -12,7 +12,16 @@ import {
 import { PatientCohortPage } from './components/PatientCohortPage';
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
-import { authStorageKey, normalizeAuthenticatedUser, userCanAccessStudy, type AuthenticatedUser } from './data/auth';
+import {
+  accessibleStudyIdsForUser,
+  activeStudyStorageKey,
+  authStorageKey,
+  isPlatformRole,
+  normalizeAuthenticatedUser,
+  studyOptions,
+  userCanAccessStudy,
+  type AuthenticatedUser
+} from './data/auth';
 import { navItems } from './data/dashboard';
 import type { PatientRecord } from './data/patientCohort';
 import { useI18n } from './i18n/I18nProvider';
@@ -85,6 +94,16 @@ function getInitialUser(): AuthenticatedUser | null {
   }
 }
 
+function getInitialActiveStudyId(user: AuthenticatedUser | null): string | undefined {
+  if (typeof window === 'undefined' || !user) return undefined;
+  const activeStudyId = window.localStorage.getItem(activeStudyStorageKey) || undefined;
+  if (activeStudyId && userCanAccessStudy(user, activeStudyId)) return activeStudyId;
+  if (activeStudyId) window.localStorage.removeItem(activeStudyStorageKey);
+  const studyIds = accessibleStudyIdsForUser(user);
+  if (studyIds.length === 1) return studyIds[0];
+  return undefined;
+}
+
 function syncModuleRoute(label: string) {
   if (typeof window === 'undefined') return;
   const slug = moduleSlugMap[label];
@@ -142,8 +161,10 @@ function getTopbarCopy(activeModule: string) {
   return copy[activeModule] ?? copy.首页工作台;
 }
 
-function canAccessModule(user: AuthenticatedUser | null, label: string) {
-  if (!user || user.role === 'LZ_ADMIN') return true;
+function canAccessModule(user: AuthenticatedUser | null, label: string, activeStudyId?: string) {
+  if (!user) return true;
+  if (!activeStudyId) return isPlatformRole(user) && ['系统管理', '患者队列管理'].includes(label);
+  if (user.role === 'LZ_ADMIN') return true;
   if (label === '系统管理') return ['LZ_CRF_ADMIN', 'STUDY_CONFIG_ADMIN', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_DATA_MANAGER'].includes(user.role);
   if (label === '数据分析') return ['LZ_CRC', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_PI', 'STUDY_CRC', 'STUDY_DATA_MANAGER'].includes(user.role);
   if (label === '临床数据采集') return !['LZ_AUDITOR'].includes(user.role);
@@ -155,13 +176,42 @@ function canAccessModule(user: AuthenticatedUser | null, label: string) {
 export default function App() {
   useI18n();
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(getInitialUser);
+  const [activeStudyId, setActiveStudyId] = useState<string | undefined>(() => getInitialActiveStudyId(getInitialUser()));
   const [activeNavIndex, setActiveNavIndex] = useState(getInitialNavIndex);
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
   const hasVerifiedSession = useRef(false);
-  const visibleNavItems = useMemo(() => navItems.filter((item) => canAccessModule(currentUser, item.label)), [currentUser]);
+  const visibleNavItems = useMemo(() => {
+    const items = navItems.filter((item) => canAccessModule(currentUser, item.label, activeStudyId));
+    if (currentUser && isPlatformRole(currentUser) && !activeStudyId) {
+      return items.map((item) => {
+        if (item.label === '患者队列管理') return { ...item, label: '全局患者索引', routeLabel: item.label };
+        if (item.label === '系统管理') return { ...item, label: 'Study 系统管理', routeLabel: item.label };
+        return item;
+      });
+    }
+    return items;
+  }, [activeStudyId, currentUser]);
   const activeModule = navItems[activeNavIndex]?.label ?? '首页工作台';
-  const visibleActiveIndex = Math.max(0, visibleNavItems.findIndex((item) => item.label === activeModule));
-  const topbarCopy = getTopbarCopy(activeModule);
+  const visibleActiveIndex = Math.max(0, visibleNavItems.findIndex((item) => (item.routeLabel ?? item.label) === activeModule));
+  const baseTopbarCopy = getTopbarCopy(activeModule);
+  const topbarCopy =
+    currentUser && isPlatformRole(currentUser) && !activeStudyId && activeModule === '患者队列管理'
+      ? {
+          ...baseTopbarCopy,
+          title: '全局患者索引',
+          subtitle: 'LZ 全局层只展示患者索引；业务管理必须进入单个 Study Workspace。',
+          aiPlaceholder: '搜索患者索引、Study ID 或状态...',
+          showAiPrompts: false
+        }
+      : currentUser && isPlatformRole(currentUser) && !activeStudyId && activeModule === '系统管理'
+        ? {
+            ...baseTopbarCopy,
+            title: 'Study 系统管理',
+            subtitle: '管理 Study、用户和授权范围；不直接编辑 CRF、样本、随访或导出数据。',
+            aiPlaceholder: '询问 Study、用户、角色或授权范围...',
+            showAiPrompts: false
+          }
+        : baseTopbarCopy;
   const topbarTitle =
     activeModule === '首页工作台' && currentUser
       ? `欢迎回来，${currentUser.name}`
@@ -179,19 +229,27 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     if (!currentUser || hasVerifiedSession.current) return undefined;
+    if (!window.localStorage.getItem(authTokenStorageKey)) return undefined;
     hasVerifiedSession.current = true;
     fetchCurrentUser()
       .then((user) => {
         if (cancelled) return;
         window.localStorage.setItem(authStorageKey, JSON.stringify(user));
         setCurrentUser(user);
+        const storedActiveStudyId = window.localStorage.getItem(activeStudyStorageKey) || undefined;
+        if (storedActiveStudyId && !userCanAccessStudy(user, storedActiveStudyId)) {
+          window.localStorage.removeItem(activeStudyStorageKey);
+          setActiveStudyId(undefined);
+        }
       })
       .catch(() => {
         if (cancelled) return;
         window.localStorage.removeItem(authStorageKey);
         window.localStorage.removeItem(authTokenStorageKey);
+        window.localStorage.removeItem(activeStudyStorageKey);
         window.localStorage.removeItem('linzight-demo-token');
         setSelectedPatient(null);
+        setActiveStudyId(undefined);
         setCurrentUser(null);
       });
     return () => {
@@ -200,43 +258,95 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
-    if (!currentUser || canAccessModule(currentUser, activeModule)) return;
+    if (!currentUser || canAccessModule(currentUser, activeModule, activeStudyId)) return;
     setActiveModule(visibleNavItems[0]?.label ?? '首页工作台');
-  }, [activeModule, currentUser, visibleNavItems]);
+  }, [activeModule, activeStudyId, currentUser, visibleNavItems]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    if (activeStudyId && userCanAccessStudy(currentUser, activeStudyId)) return;
+    if (activeStudyId) {
+      window.localStorage.removeItem(activeStudyStorageKey);
+      setActiveStudyId(undefined);
+      return;
+    }
+    const studyIds = accessibleStudyIdsForUser(currentUser);
+    if (!isPlatformRole(currentUser) && studyIds.length === 1) {
+      window.localStorage.setItem(activeStudyStorageKey, studyIds[0]);
+      setActiveStudyId(studyIds[0]);
+    }
+  }, [activeStudyId, currentUser]);
 
   useEffect(() => {
     if (!currentUser || !selectedPatient) return;
-    if (!selectedPatient.studyId || !userCanAccessStudy(currentUser, selectedPatient.studyId)) {
+    if (!selectedPatient.studyId || !userCanAccessStudy(currentUser, selectedPatient.studyId) || (activeStudyId && selectedPatient.studyId !== activeStudyId)) {
       setSelectedPatient(null);
     }
-  }, [currentUser, selectedPatient]);
+  }, [activeStudyId, currentUser, selectedPatient]);
+
+  function enterStudyWorkspace(studyId: string) {
+    if (!currentUser || !userCanAccessStudy(currentUser, studyId)) return;
+    window.localStorage.setItem(activeStudyStorageKey, studyId);
+    setActiveStudyId(studyId);
+  }
+
+  function enterGlobalManagement() {
+    if (!currentUser || !isPlatformRole(currentUser)) return;
+    window.localStorage.removeItem(activeStudyStorageKey);
+    setActiveStudyId(undefined);
+    setSelectedPatient(null);
+    setActiveModule('系统管理');
+  }
 
   function openPatientJourney(patient: PatientRecord) {
+    if (patient.studyId && currentUser && userCanAccessStudy(currentUser, patient.studyId)) {
+      enterStudyWorkspace(patient.studyId);
+    }
     setSelectedPatient(patient);
     setActiveModule('患者旅程');
   }
 
   function openClinicalData(patient: PatientRecord) {
+    if (patient.studyId && currentUser && userCanAccessStudy(currentUser, patient.studyId)) {
+      enterStudyWorkspace(patient.studyId);
+    }
     setSelectedPatient(patient);
     setActiveModule('临床数据采集');
   }
 
   function createPatient() {
+    if (!activeStudyId) {
+      setActiveModule('患者队列管理');
+      return;
+    }
     setSelectedPatient(null);
     setActiveModule('临床数据采集');
   }
 
-  function handleAuthenticated(user: AuthenticatedUser) {
+  function handleAuthenticated(user: AuthenticatedUser, nextActiveStudyId?: string) {
+    hasVerifiedSession.current = false;
     window.localStorage.setItem(authStorageKey, JSON.stringify(user));
+    if (nextActiveStudyId && userCanAccessStudy(user, nextActiveStudyId)) {
+      window.localStorage.setItem(activeStudyStorageKey, nextActiveStudyId);
+      setActiveStudyId(nextActiveStudyId);
+      setActiveNavIndex(0);
+    } else {
+      window.localStorage.removeItem(activeStudyStorageKey);
+      setActiveStudyId(undefined);
+      setActiveModule('系统管理');
+    }
     setCurrentUser(user);
   }
 
   function handleLogout() {
+    hasVerifiedSession.current = false;
     logoutFromBackend().catch(() => undefined);
     window.localStorage.removeItem(authStorageKey);
     window.localStorage.removeItem(authTokenStorageKey);
+    window.localStorage.removeItem(activeStudyStorageKey);
     window.localStorage.removeItem('linzight-demo-token');
     setSelectedPatient(null);
+    setActiveStudyId(undefined);
     setActiveNavIndex(0);
     setCurrentUser(null);
   }
@@ -272,7 +382,7 @@ export default function App() {
       <Sidebar
         activeIndex={visibleActiveIndex}
         items={visibleNavItems}
-        onSelect={(index) => setActiveModule(visibleNavItems[index]?.label ?? '首页工作台')}
+        onSelect={(index) => setActiveModule(visibleNavItems[index]?.routeLabel ?? visibleNavItems[index]?.label ?? '首页工作台')}
         currentUser={currentUser}
       />
       <main className="main-panel">
@@ -282,6 +392,10 @@ export default function App() {
           title={topbarTitle}
           subtitle={topbarCopy.subtitle}
           currentUser={currentUser}
+          activeStudyId={activeStudyId}
+          studyOptions={studyOptions.filter((study) => accessibleStudyIdsForUser(currentUser).includes(study.id))}
+          onStudyChange={enterStudyWorkspace}
+          onGlobalManagement={isPlatformRole(currentUser) ? enterGlobalManagement : undefined}
           onLogout={handleLogout}
         />
         {renderActiveModule()}

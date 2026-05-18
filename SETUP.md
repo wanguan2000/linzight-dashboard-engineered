@@ -33,9 +33,10 @@ cp backend/.env.example backend/.env
 1. 安装前端依赖：`npm install`
 2. 构建确认：`npm run build`
 3. 启动前端：`npm run dev`
-4. 如需后端，进入 `backend/` 创建虚拟环境并安装依赖。
-5. 初始化后端数据：`python seed.py`
-6. 启动后端：`uvicorn main:app --reload --port 8000`
+4. 如需后端，确认本机 PostgreSQL 已启动，并创建本地库：`createdb linzight_dashboard_engineered 2>/dev/null || true`
+5. 进入 `backend/` 创建虚拟环境并安装依赖。
+6. 初始化后端数据：`python bootstrap.py`
+7. 启动后端：`uvicorn main:app --reload --port 8000`
 
 ## Docker Compose 启动
 
@@ -45,14 +46,14 @@ cp backend/.env.example backend/.env
 docker compose up --build
 ```
 
-首次启动会在 Docker volume 中 seed SQLite Demo 数据。前端地址为 `http://127.0.0.1:5173/`，后端健康检查为 `http://127.0.0.1:8000/health`。
+首次启动会在 Docker PostgreSQL volume 中 seed Demo 数据。前端地址为 `http://127.0.0.1:5173/`，后端健康检查为 `http://127.0.0.1:8000/health`。
 
 ## 常见启动失败原因
 
 - Node.js 版本过旧：升级到 Node.js 20 LTS 或更新 LTS。
 - 依赖未安装：重新运行 `npm install`。
 - 端口占用：Vite 会自动切换端口；后端可改用 `--port 8001`。
-- 后端数据库不存在：运行 `python backend/seed.py` 或在 `backend/` 下运行 `python seed.py`。
+- 后端数据库不存在：先运行 `createdb linzight_dashboard_engineered 2>/dev/null || true`，再在 `backend/` 下运行 `python bootstrap.py`。
 - API 请求失败：检查 `VITE_API_BASE_URL`，或确认本地后端已启动。
 - Python 虚拟环境未启用：确认 `source backend/.venv/bin/activate` 已执行。
 
