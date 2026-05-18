@@ -2914,6 +2914,8 @@ type SystemAccount = {
   role: UserRole;
   roleLabel: string;
   studyScope: string;
+  assignedRoles?: Array<{ role: UserRole; roleLabel: string; studyScope: string }>;
+  studyScopes?: string[];
   status: 'Active' | 'Pending' | 'Disabled';
   lastLogin: string;
 };
@@ -2997,6 +2999,52 @@ function accountFromApiUser(user: ApiUser, studyId: string): SystemAccount {
     status: membership?.status === 'disabled' || user.status === 'disabled' ? 'Disabled' : membership?.status === 'active' || user.status === 'active' ? 'Active' : 'Pending',
     lastLogin: '-'
   };
+}
+
+function accountRowsFromApiUser(user: ApiUser, fallbackStudyId: string): SystemAccount[] {
+  const membershipAccounts = (user.study_memberships ?? []).map((membership) => accountFromApiUser(user, membership.study_id));
+  if (user.role.startsWith('LZ_') || !membershipAccounts.length) {
+    return [accountFromApiUser(user, fallbackStudyId), ...membershipAccounts];
+  }
+  return membershipAccounts;
+}
+
+function accountScopeTokens(account: SystemAccount, allStudyIds: string[]) {
+  if (account.studyScope === '全部 Study') return ['全部 Study'];
+  const ids = studyScopeToIds(account.studyScope, allStudyIds);
+  return ids.length ? ids : account.studyScope.split('/').map((item) => item.trim()).filter(Boolean);
+}
+
+function mergeAccountStatus(statuses: SystemAccount['status'][]): SystemAccount['status'] {
+  if (statuses.includes('Active')) return 'Active';
+  if (statuses.includes('Pending')) return 'Pending';
+  return 'Disabled';
+}
+
+function groupSystemAccounts(accounts: SystemAccount[], allStudyIds: string[]): SystemAccount[] {
+  const groups = new Map<string, SystemAccount[]>();
+  accounts.forEach((account) => {
+    const key = account.userId || account.email;
+    groups.set(key, [...(groups.get(key) ?? []), account]);
+  });
+
+  return Array.from(groups.values()).map((items) => {
+    const primary = items.find((item) => item.role.startsWith('LZ_')) ?? items[0];
+    const assignedRoles = items
+      .map((item) => ({ role: item.role, roleLabel: item.roleLabel, studyScope: item.studyScope }))
+      .filter((item, index, rows) => rows.findIndex((row) => row.role === item.role) === index);
+    const hasAllStudies = items.some((item) => item.studyScope === '全部 Study');
+    const studyScopes = hasAllStudies
+      ? ['全部 Study']
+      : Array.from(new Set(items.flatMap((item) => accountScopeTokens(item, allStudyIds)))).sort();
+
+    return {
+      ...primary,
+      assignedRoles,
+      studyScopes,
+      status: mergeAccountStatus(items.map((item) => item.status))
+    };
+  });
 }
 
 function notifyStudiesUpdated() {
@@ -3254,15 +3302,25 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [permissionMatrixRows, setPermissionMatrixRows] = useState<PermissionRow[]>(fallbackPermissionRows);
   const [systemActionStatus, setSystemActionStatus] = useState('等待系统管理操作');
   const normalizedQuery = systemQuery.trim().toLowerCase();
+  const groupedAccountRows = useMemo(() => groupSystemAccounts(accountRows, allSystemStudyIds), [accountRows, allSystemStudyIds]);
   const visibleAccounts = useMemo(() => {
-    const scopedAccounts = scopedStudyId
+    const scopedAccounts = !isGlobalManagement && scopedStudyId
       ? accountRows.filter((account) => account.studyScope === '全部 Study' || account.studyScope.split('/').map((item) => item.trim()).includes(scopedStudyId))
-      : accountRows;
+      : groupedAccountRows;
     if (!normalizedQuery) return scopedAccounts;
     return scopedAccounts.filter((account) =>
-      [account.name, account.email, account.role, account.roleLabel, account.studyScope, account.status].some((item) => item.toLowerCase().includes(normalizedQuery))
+      [
+        account.name,
+        account.email,
+        account.role,
+        account.roleLabel,
+        account.studyScope,
+        ...(account.assignedRoles ?? []).flatMap((role) => [role.role, role.roleLabel, role.studyScope]),
+        ...(account.studyScopes ?? []),
+        account.status
+      ].some((item) => item.toLowerCase().includes(normalizedQuery))
     );
-  }, [accountRows, normalizedQuery, scopedStudyId]);
+  }, [accountRows, groupedAccountRows, isGlobalManagement, normalizedQuery, scopedStudyId]);
 
   const visibleFields = useMemo(() => {
     const scopedFields = scopedStudyId ? fieldRows.filter((field) => field.studyId === scopedStudyId) : fieldRows;
@@ -3403,12 +3461,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     void fetchUsers(isGlobalManagement ? undefined : scopedStudyId)
       .then((users) => {
         if (ignore) return;
-        const accounts = users.flatMap((user) => {
-          if (user.study_memberships?.length && user.role.startsWith('STUDY_')) {
-            return user.study_memberships.map((membership) => accountFromApiUser(user, membership.study_id));
-          }
-          return [accountFromApiUser(user, scopedStudyId)];
-        });
+        const accounts = users.flatMap((user) => accountRowsFromApiUser(user, scopedStudyId));
         setAccountRows(accounts);
       })
       .catch(() => undefined);
@@ -4335,15 +4388,15 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         <div className="system-summary-grid">
           <div>
             <span>Total Accounts</span>
-            <strong>{accountRows.length}</strong>
+            <strong>{groupedAccountRows.length}</strong>
           </div>
           <div>
             <span>Global Roles</span>
-            <strong>{accountRows.filter((account) => account.role.startsWith('LZ_')).length}</strong>
+            <strong>{groupedAccountRows.filter((account) => (account.assignedRoles ?? [account]).some((role) => role.role.startsWith('LZ_'))).length}</strong>
           </div>
           <div>
             <span>Study Roles</span>
-            <strong>{accountRows.filter((account) => account.role.startsWith('STUDY_')).length}</strong>
+            <strong>{groupedAccountRows.filter((account) => (account.assignedRoles ?? [account]).some((role) => role.role.startsWith('STUDY_'))).length}</strong>
           </div>
           <div>
             <span>Studies</span>
@@ -4670,11 +4723,25 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                         (currentUser?.role === 'LZ_ADMIN' || (scopedStudyId && account.role.startsWith('STUDY_')))
                     );
                     return (
-                    <tr key={`${account.email}-${account.name}`}>
+                    <tr key={`${account.userId ?? account.email}-${account.name}`}>
                       <td>{t(account.name)}</td>
                       <td>{account.email}</td>
-                      <td><span className={`system-role-pill system-role-pill--${roleTone[account.role]}`}>{account.role} | {t(account.roleLabel)}</span></td>
-                      <td>{t(account.studyScope)}</td>
+                      <td>
+                        <div className="system-account-chip-list">
+                          {(account.assignedRoles?.length ? account.assignedRoles : [{ role: account.role, roleLabel: account.roleLabel, studyScope: account.studyScope }]).map((role) => (
+                            <span className={`system-role-pill system-role-pill--${roleTone[role.role]}`} key={`${role.role}-${role.studyScope}`}>
+                              {role.role} | {t(role.roleLabel)}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="system-account-chip-list system-account-chip-list--scope">
+                          {(account.studyScopes?.length ? account.studyScopes : [account.studyScope]).map((scope) => (
+                            <span className="status-pill status-pill--info" key={`${account.userId ?? account.email}-${scope}`}>{t(scope)}</span>
+                          ))}
+                        </div>
+                      </td>
                       <td><span className={`status-pill status-pill--${systemStatusTone[account.status]}`}>{t(account.status)}</span></td>
                       <td>{account.lastLogin}</td>
                       <td>

@@ -6720,6 +6720,17 @@
   background: rgba(123, 85, 215, 0.15);
 }
 
+.system-account-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 420px;
+}
+
+.system-account-chip-list--scope {
+  max-width: 360px;
+}
+
 .system-permission-wrap {
   flex: 1;
   max-height: none;
