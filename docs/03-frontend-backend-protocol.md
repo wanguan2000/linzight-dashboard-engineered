@@ -15,7 +15,7 @@ CRF 字段字典按 Study 绑定。`LGL-1111` 与 `RWD-NMO-2026` 使用 `resourc
 
 所有 RWD EDC 主链路数据使用 `study_id` 做隔离。前端会在登录后保存 `study_scope` 与当前 `activeStudyId`；API 请求自动携带 HMAC 签名 Bearer token，并在进入业务模块时走 `/studies/{study_id}/...` 路径。登录态启动时会调用 `/auth/me` 校验，token 缺失、过期或无效时回到登录页。
 
-Study Workspace 是唯一业务租户边界。Study 入口先认证账号，账号只授权一个 Study 时直接进入该 Study Workspace，授权多个 Study 时认证后再选择工作区。LZ 管理页不是业务租户，只保留 `全局患者索引` 和 `Study 系统管理` 两个全局入口。全局患者列表调用 `/global/patient-index`，只展示 `patient_id`、脱敏编号、Study 信息、状态和更新时间。全局态的 `Study 系统管理` 只管理 Study、用户和授权范围，不加载 CRF、样本、随访、导出、审批、Query、审计等业务治理面板。点击患者后必须进入患者所属 Study Workspace，再执行 CRF、样本、随访、导出或审计等业务操作。当前版本先使用应用层过滤，真实患者生产上线前应在 PostgreSQL 相同边界上补 RLS。
+Study Workspace 是唯一业务租户边界。Study 入口先认证账号，账号只授权一个 Study 时直接进入该 Study Workspace，授权多个 Study 时认证后再选择工作区。LZ 平台角色（`LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER`）可在 LZ 系统管理态进入首页工作台、患者队列管理、样本及检测、临床数据采集、患者旅程、导出/报表和 Study 系统管理，并查看或管理授权范围内所有 Study 的患者、样本、检测、CRF、访视、随访和导出信息。跨 Study 读取必须按 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总，不能调用无 Study 上下文的业务 list 接口；业务写入仍必须带明确 `study_id`。当前版本先使用应用层过滤，真实患者生产上线前应在 PostgreSQL 相同边界上补 RLS。
 
 Study 配置总表由 `/study-configurations` 和 `/studies/{study_id}/configuration` 读取，字段为 `study_id`、`disease_area`、`active_crf_version_id`、`visit_plan`、`consent_template` 和 `testing_profile`。后端 seed 会把 `LZXK-01` 绑定到肺癌 CRF、肺癌知情同意模板和 `TP-LUNG-RESIST-OMICS`；免疫病 Study 绑定免疫病 CRF、免疫病知情同意模板和 `TP-SLE-OMICS`。新建患者时如当前 Study 没有 published CRF，API 直接失败，前端应提示配置未发布。
 

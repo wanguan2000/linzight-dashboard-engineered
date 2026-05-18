@@ -179,7 +179,7 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
         ) : (
           <div className="login-management-summary">
             <strong>{t('LZ 系统管理')}</strong>
-            <span>{t('平台级账号仅管理 Study、成员、权限配置和全局索引；业务操作需进入单个 Study Workspace。')}</span>
+            <span>{t('平台级账号可跨 Study 管理业务数据；读写仍使用 Study-scoped API。')}</span>
           </div>
         )}
 

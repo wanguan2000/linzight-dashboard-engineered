@@ -3086,9 +3086,7 @@ const systemVisitPlans: StudyVisitPlanRecord[] = studyVisitPlans;
 const permissionColumns: Array<{ key: UserRole; label: string }> = [
   { key: 'LZ_ADMIN', label: 'LZ Admin' },
   { key: 'LZ_CRC', label: 'LZ CRC' },
-  { key: 'LZ_CRF_ADMIN', label: 'CRF Admin' },
   { key: 'LZ_DATA_MANAGER', label: 'LZ DM' },
-  { key: 'LZ_AUDITOR', label: 'LZ Auditor' },
   { key: 'STUDY_PI', label: 'Study PI' },
   { key: 'STUDY_CRC', label: 'Study CRC' },
   { key: 'STUDY_CONFIG_ADMIN', label: 'Config Admin' },
@@ -4294,7 +4292,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         <div className="system-management-title">
           <span>System Management</span>
           <h2>{t(isGlobalManagement ? 'Study 系统管理' : '系统管理')}</h2>
-          <p>{t(isGlobalManagement ? 'LZ 全局层只管理 Study、用户和授权范围，不直接编辑业务数据。' : '管理 Study 成员、平台角色、权限策略和 CRF 版本。')}</p>
+          <p>{t(isGlobalManagement ? 'LZ 平台层管理 Study、用户、Study 绑定和跨 Study 业务权限。' : '管理 Study 成员、平台角色、权限策略和 CRF 版本。')}</p>
         </div>
         <label className="system-study-select">
           <span>Study</span>
@@ -4355,7 +4353,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         <div className="system-global-actions">
           <Icon name="alerts" />
           <span>{isGlobalManagement ? 'LZ Global Layer' : 'Global Actions'}</span>
-          <strong>{t(isGlobalManagement ? 'LZ 管理页不是业务租户；业务操作必须进入单个 Study Workspace。' : 'Study 成员、CRF 版本、导出和权限策略变更均进入审计日志。')}</strong>
+          <strong>{t(isGlobalManagement ? 'LZ 平台跨 Study 汇总业务数据，读写仍逐个校验 study_id。' : 'Study 成员、CRF 版本、导出和权限策略变更均进入审计日志。')}</strong>
         </div>
         <div className="module-upload-status">
           <Icon name="shield" />
@@ -4368,7 +4366,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
           <header className="module-card__header">
             <div>
               <h2>{t('Study Registry | Study 管理')}</h2>
-              <span>{t('维护 Study、用户和授权范围；业务数据在单个 Study Workspace 内处理。')}</span>
+              <span>{t('维护 Study、用户、平台角色和每个 Study 的角色绑定。')}</span>
             </div>
             <button className="module-primary-button" type="button" onClick={openSystemStudyCreate}>
               <Icon name="studies" />Create Study<br /><span>{t('新建 Study')}</span>
@@ -5251,17 +5249,18 @@ function canRunQualityValidation(user?: { role: UserRole } | null) {
   return Boolean(user && qualityWriteRoles.has(user.role));
 }
 
-function exportStudyOptionsForUser(user?: AuthenticatedUser | null) {
+function exportStudyOptionsForUser(user?: AuthenticatedUser | null, runtimeStudyIds: string[] = []) {
   const scopedStudyId = getCurrentScopedStudyId();
   if (scopedStudyId) return [scopedStudyId];
-  if (user?.studyScope?.scopeType === 'all_studies') return systemStudyOptions;
-  return user?.studyScope?.studyIds?.length ? user.studyScope.studyIds : [getCurrentScopedStudyId() ?? 'LGL-1111'];
+  if (user?.studyScope?.scopeType === 'all_studies') return runtimeStudyIds.length ? runtimeStudyIds : systemStudyOptions;
+  return user?.studyScope?.studyIds?.length ? user.studyScope.studyIds : [];
 }
 
 export function ReportsPage({ currentUser }: { currentUser?: AuthenticatedUser | null } = {}) {
   const { t } = useI18n();
-  const exportStudyOptions = useMemo(() => exportStudyOptionsForUser(currentUser), [currentUser]);
-  const [selectedStudyId, setSelectedStudyId] = useState(exportStudyOptions[0] ?? 'LGL-1111');
+  const [runtimeExportStudyIds, setRuntimeExportStudyIds] = useState<string[]>([]);
+  const exportStudyOptions = useMemo(() => exportStudyOptionsForUser(currentUser, runtimeExportStudyIds), [currentUser, runtimeExportStudyIds]);
+  const [selectedStudyId, setSelectedStudyId] = useState(exportStudyOptions[0] ?? '');
   const [exportStatus, setExportStatus] = useState('等待导出任务');
   const [qualityStatus, setQualityStatus] = useState('等待数据校验');
   const [exportJobs, setExportJobs] = useState<Record<string, ApiExportJob>>({});
@@ -5286,12 +5285,34 @@ export function ReportsPage({ currentUser }: { currentUser?: AuthenticatedUser |
   );
 
   useEffect(() => {
+    let ignore = false;
+    if (getCurrentScopedStudyId()) {
+      setRuntimeExportStudyIds([]);
+      return undefined;
+    }
+    void fetchStudies()
+      .then((studies) => {
+        if (!ignore) setRuntimeExportStudyIds(studies.filter((study) => study.status !== 'deleted').map((study) => study.id));
+      })
+      .catch(() => {
+        if (!ignore) setRuntimeExportStudyIds([]);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [currentUser]);
+
+  useEffect(() => {
     if (!exportStudyOptions.includes(selectedStudyId)) {
-      setSelectedStudyId(exportStudyOptions[0] ?? 'LGL-1111');
+      setSelectedStudyId(exportStudyOptions[0] ?? '');
     }
   }, [exportStudyOptions, selectedStudyId]);
 
   useEffect(() => {
+    if (!selectedStudyId) {
+      setQualityIssues([]);
+      return undefined;
+    }
     let ignore = false;
     void fetchQualityIssues(selectedStudyId)
       .then((issues) => {
@@ -5308,6 +5329,10 @@ export function ReportsPage({ currentUser }: { currentUser?: AuthenticatedUser |
   async function handleCreateExport(record: ReportRecord) {
     if (!exportEnabled) {
       setExportStatus('当前角色没有导出写入权限，请切换到数据管理员或 CRC');
+      return;
+    }
+    if (!selectedStudyId) {
+      setExportStatus('请先选择一个 Study，再生成导出');
       return;
     }
     setExportStatus(`${record.name} / ${selectedStudyId} 生成中...`);
@@ -5335,6 +5360,10 @@ export function ReportsPage({ currentUser }: { currentUser?: AuthenticatedUser |
   async function handleRunQualityChecks() {
     if (!qualityEnabled) {
       setQualityStatus('当前角色没有数据校验写入权限，请切换到数据管理员或 CRC');
+      return;
+    }
+    if (!selectedStudyId) {
+      setQualityStatus('请先选择一个 Study，再运行校验');
       return;
     }
     setQualityStatus('数据校验运行中...');
@@ -5405,6 +5434,7 @@ export function ReportsPage({ currentUser }: { currentUser?: AuthenticatedUser |
             <label className="module-select-inline">
               <span>{t('Study ID')}</span>
               <select value={selectedStudyId} onChange={(event) => setSelectedStudyId(event.target.value)}>
+                {!exportStudyOptions.length ? <option value="">{t('暂无 Study')}</option> : null}
                 {exportStudyOptions.map((studyId) => <option value={studyId} key={studyId}>{studyId}</option>)}
               </select>
             </label>

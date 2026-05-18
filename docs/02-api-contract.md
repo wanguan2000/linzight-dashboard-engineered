@@ -12,7 +12,7 @@
 - RWD EDC 不使用 `project_id`
 - 显式测试 seed Study：`LGL-1111`、`RWD-NMO-2026`、`LZXK-01`；`LZXK-01` 为真实世界肺癌耐药研究，默认 20 名患者，使用独立 15 字段肺癌耐药 CRF。正式空库不会自动创建这些 Study。
 - Study Workspace 是唯一业务租户边界。患者、CRF、样本、组学、随访、文件、Query、质控、导出、审批和审计等业务 list 接口必须以 `/studies/{study_id}/...` 或显式 `study_id` 进入；未带 Study 上下文的旧式业务 list 请求返回 `400`。
-- LZ 全局态不能直接调用业务 list 接口读取多 Study 业务表；全局患者列表只调用 `/global/patient-index`，返回患者索引、脱敏编号、Study 信息、状态与最近更新时间。LZ 管理页不是业务租户，前端全局态只保留全局患者索引与 Study 系统管理；Study 系统管理只管理 Study、用户和授权范围，不直接编辑 CRF、样本、随访、导出等业务数据。当前版本先用后端应用层过滤；真实患者生产上线前应在 PostgreSQL 同一边界上补 RLS。
+- LZ 平台角色（`LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER`）可在 LZ 系统管理态查看和管理授权范围内所有 Study 的患者、样本、检测、CRF、访视、随访和导出信息。跨 Study 读取必须按 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总，不能调用无 Study 上下文的业务 list 接口。当前版本先用后端应用层过滤；真实患者生产上线前应在 PostgreSQL 同一边界上补 RLS。
 - OpenAPI schema 快照：运行 `npm run export:openapi` 生成 `docs/openapi.json`；API 变更时应同步 `src/services/contracts.ts`、本文档和 smoke tests。
 
 ## 主链路接口

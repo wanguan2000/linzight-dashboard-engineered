@@ -58,7 +58,6 @@ type CompletenessTrend = {
 type PatientEditorMode = 'create' | 'edit';
 
 const patientWriteRoles = new Set(['LZ_ADMIN', 'LZ_CRC', 'STUDY_CRC']);
-const defaultStudyOptions = ['LGL-1111', 'RWD-NMO-2026', 'LZXK-01'];
 
 function canWritePatients(user?: AuthenticatedUser | null) {
   return Boolean(user && patientWriteRoles.has(user.role));
@@ -72,7 +71,7 @@ function currentStudyDefaultDisease(studyId?: string): DiseaseType {
 function makeDraftPatient(studyId?: string): PatientRecord {
   const today = new Date().toISOString().slice(2, 10).replace(/-/g, '');
   return {
-    studyId: studyId ?? 'LGL-1111',
+    studyId: studyId ?? '',
     name: `NEW-${today}`,
     hospitalNo: '',
     sex: '女',
@@ -129,7 +128,7 @@ function uniqueStudyIds(records: PatientRecord[]) {
 
 function studyOptionsForUser(user?: AuthenticatedUser | null, records: PatientRecord[] = []) {
   const scopedStudies = user?.studyScope?.scopeType === 'all_studies'
-    ? defaultStudyOptions
+    ? []
     : user?.studyScope?.studyIds ?? [];
   return Array.from(new Set([...scopedStudies, ...uniqueStudyIds(records)])).sort();
 }
@@ -674,12 +673,13 @@ export function PatientCohortPage({
   const [saveStatus, setSaveStatus] = useState('等待患者操作');
   const [sampleCollectedOnly, setSampleCollectedOnly] = useState(false);
   const currentStudyId = getCurrentScopedStudyId();
-  const globalIndexOnly = !currentStudyId;
-  const canEditPatientRecords = Boolean(currentStudyId) && canWritePatients(currentUser);
+  const globalIndexOnly = false;
   const availableStudyOptions = useMemo(
     () => currentStudyId ? [currentStudyId] : studyOptionsForUser(currentUser, patients),
     [currentStudyId, currentUser, patients]
   );
+  const selectedPatientWriteStudyId = currentStudyId ?? (studyFilter !== '全部 Study' ? studyFilter : availableStudyOptions[0]);
+  const canEditPatientRecords = canWritePatients(currentUser) && Boolean(selectedPatientWriteStudyId);
   const showStudyId = true;
   const studyScopedPatients = useMemo(
     () => patients.filter((patient) => studyFilter === '全部 Study' || patient.studyId === studyFilter),
@@ -777,17 +777,17 @@ export function PatientCohortPage({
 
   function openCreatePatientEditor() {
     if (!canEditPatientRecords) {
-      setSaveStatus(currentStudyId ? '当前角色没有患者写入权限，请切换到 Study CRC 或 LZ CRC' : '全局患者列表仅作为索引；请先进入单个 Study Workspace');
+      setSaveStatus(currentStudyId ? '当前角色没有患者写入权限，请切换到 Study CRC 或 LZ CRC' : '请先选择一个 Study，再新建患者');
       return;
     }
     setEditorMode('create');
-    setDraftPatient(makeDraftPatient(studyFilter === '全部 Study' ? currentStudyId : studyFilter));
-    setSaveStatus('正在新建当前 Study 患者');
+    setDraftPatient(makeDraftPatient(selectedPatientWriteStudyId));
+    setSaveStatus(`正在新建 ${selectedPatientWriteStudyId} 患者`);
   }
 
   function openEditPatientEditor(patient: PatientRecord) {
     if (!canEditPatientRecords) {
-      setSaveStatus(currentStudyId ? '当前角色没有患者写入权限，请切换到 Study CRC 或 LZ CRC' : '全局患者列表仅作为索引；请通过患者链接进入所属 Study 后再管理');
+      setSaveStatus(currentStudyId ? '当前角色没有患者写入权限，请切换到 Study CRC 或 LZ CRC' : '请先选择一个 Study，再编辑患者');
       return;
     }
     setEditorMode('edit');
@@ -807,8 +807,9 @@ export function PatientCohortPage({
 
   async function savePatientEditor() {
     if (!draftPatient || !editorMode) return;
-    if (!currentStudyId) {
-      setSaveStatus('全局患者列表不能直接写入；请先进入单个 Study Workspace');
+    const targetStudyId = draftPatient.studyId || selectedPatientWriteStudyId;
+    if (!targetStudyId) {
+      setSaveStatus('请先选择一个 Study，再保存患者');
       return;
     }
     if (!draftPatient.name.trim() || !draftPatient.hospitalNo.trim()) {
@@ -818,7 +819,7 @@ export function PatientCohortPage({
 
     const nextPatient = {
       ...draftPatient,
-      studyId: draftPatient.studyId || currentStudyId || 'LGL-1111',
+      studyId: targetStudyId,
       name: draftPatient.name.trim(),
       hospitalNo: draftPatient.hospitalNo.trim(),
       note: draftPatient.note.trim()
@@ -887,7 +888,7 @@ export function PatientCohortPage({
               className="module-primary-button"
               type="button"
               disabled={!canEditPatientRecords}
-              title={canEditPatientRecords ? undefined : t(currentStudyId ? '当前角色没有患者写入权限' : '全局患者列表仅作为索引；请先进入单个 Study Workspace')}
+              title={canEditPatientRecords ? undefined : t(currentStudyId ? '当前角色没有患者写入权限' : '请先选择一个 Study，再新建患者')}
               onClick={openCreatePatientEditor}
             >
               <Icon name="filePlus" />
@@ -959,7 +960,7 @@ export function PatientCohortPage({
               <header>
                 <div>
                   <strong>{editorMode === 'create' ? t('新建患者') : t(`编辑患者 ${draftPatient.name}`)}</strong>
-                  <span>{draftPatient.studyId || currentStudyId || 'LGL-1111'}</span>
+                  <span>{draftPatient.studyId || selectedPatientWriteStudyId || '-'}</span>
                 </div>
                 <div className="module-table-actions">
                   <button className="module-link-button module-link-button--primary" type="button" disabled={!canEditPatientRecords} onClick={() => void savePatientEditor()}>{t('保存')}</button>
@@ -971,7 +972,7 @@ export function PatientCohortPage({
                   <span>{t('Study ID')}</span>
                   {showStudyId ? (
                     <select
-                      value={draftPatient.studyId || currentStudyId || 'LGL-1111'}
+                      value={draftPatient.studyId || selectedPatientWriteStudyId || ''}
                       onChange={(event) => patchDraftPatient({
                         studyId: event.target.value,
                         diseaseType: currentStudyDefaultDisease(event.target.value)
@@ -980,7 +981,7 @@ export function PatientCohortPage({
                       {availableStudyOptions.map((option) => <option value={option} key={option}>{option}</option>)}
                     </select>
                   ) : (
-                    <input value={draftPatient.studyId || currentStudyId || 'LGL-1111'} readOnly />
+                    <input value={draftPatient.studyId || selectedPatientWriteStudyId || ''} readOnly />
                   )}
                 </label>
                 <label>

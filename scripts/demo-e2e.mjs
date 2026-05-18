@@ -212,8 +212,8 @@ async function runScenario(browser, role) {
     for (const text of role.homeChecks) checks.push(await expectVisible(page, text, `home ${text}`));
 
     if (role.entry === 'admin') {
-      await clickAnyNav(page, ['全局患者索引']);
-      await assertVisibleTextIncludes(page, role.patientChecks, 'global patient index study id');
+      await clickAnyNav(page, ['患者队列管理', '全局患者索引']);
+      await assertVisibleTextIncludes(page, role.patientChecks, 'platform patient queue study id');
       const systemLoop = await verifySystemLoop(page, role);
       await context.close();
       return { role: role.username, status: 'passed', checks, systemLoop };

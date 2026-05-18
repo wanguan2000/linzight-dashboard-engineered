@@ -12,7 +12,6 @@ import type {
   ApiExportJob,
   ApiFileMetadata,
   ApiFollowUpRecord,
-  ApiGlobalPatientIndex,
   ApiLoginResponse,
   ApiOmics,
   ApiPanorama,
@@ -892,27 +891,6 @@ function toPatientRecord(patient: ApiPatient, allSamples: ApiSample[], allOmics:
   };
 }
 
-function toGlobalPatientIndexRecord(record: ApiGlobalPatientIndex): PatientRecord {
-  return {
-    id: record.patient_id,
-    studyId: record.study_id,
-    name: record.masked_subject_code,
-    hospitalNo: '-',
-    sex: '女',
-    age: 0,
-    diseaseType: record.disease_type,
-    organs: [],
-    samples: [],
-    omicsStatus: '样本采集',
-    note: record.status,
-    clinicalData: {},
-    isGlobalIndexOnly: true,
-    studyName: record.study_name,
-    status: record.status,
-    lastUpdated: record.last_updated
-  };
-}
-
 function toSampleRecord(sample: ApiSample): SampleRecord {
   return {
     id: sample.id,
@@ -1112,25 +1090,34 @@ function filterDatasetByStudyScope(dataset: DemoDataset): DemoDataset {
   };
 }
 
+async function businessStudyIdsForCurrentUser(): Promise<string[]> {
+  const activeStudyId = getCurrentScopedStudyId();
+  if (activeStudyId) return [activeStudyId];
+
+  const user = getStoredUser();
+  if (!user?.studyScope?.scopeType) return [];
+  if (user.studyScope.scopeType !== 'all_studies') return user.studyScope.studyIds ?? [];
+
+  const studies = await fetchStudies();
+  return studies.filter((study) => study.status !== 'deleted').map((study) => study.id);
+}
+
+async function fetchStudyBusinessRows<T>(resource: string): Promise<T[]> {
+  const studyIds = Array.from(new Set(await businessStudyIdsForCurrentUser()));
+  if (!studyIds.length) return [];
+
+  const results = await Promise.allSettled(studyIds.map((studyId) => getJson<T[]>(studyBusinessPath(studyId, resource))));
+  return results.flatMap((result) => (result.status === 'fulfilled' ? result.value : []));
+}
+
 export async function fetchDemoDataset(): Promise<DemoDataset> {
   try {
-    if (!getCurrentScopedStudyId()) {
-      const apiPatients = await getJson<ApiGlobalPatientIndex[]>('/global/patient-index');
-      return {
-        patients: apiPatients.map(toGlobalPatientIndexRecord),
-        samples: [],
-        omics: [],
-        visits: [],
-        followUps: []
-      };
-    }
-
     const [apiPatients, apiSamples, apiOmics, apiVisits, apiFollowUps] = await Promise.all([
-      getJson<ApiPatient[]>(currentStudyBusinessPath('patients')),
-      getJson<ApiSample[]>(currentStudyBusinessPath('samples')),
-      getJson<ApiOmics[]>(currentStudyBusinessPath('omics')),
-      getJson<ApiVisit[]>(currentStudyBusinessPath('visits')),
-      getJson<ApiFollowUpRecord[]>(currentStudyBusinessPath('follow-up-records'))
+      fetchStudyBusinessRows<ApiPatient>('patients'),
+      fetchStudyBusinessRows<ApiSample>('samples'),
+      fetchStudyBusinessRows<ApiOmics>('omics'),
+      fetchStudyBusinessRows<ApiVisit>('visits'),
+      fetchStudyBusinessRows<ApiFollowUpRecord>('follow-up-records')
     ]);
 
     return filterDatasetByStudyScope({
@@ -1147,7 +1134,7 @@ export async function fetchDemoDataset(): Promise<DemoDataset> {
 
 export async function fetchSamples(): Promise<SampleRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiSample[]>(currentStudyBusinessPath('samples'))).map(toSampleRecord));
+    return filterRecordsByCurrentStudyScope((await fetchStudyBusinessRows<ApiSample>('samples')).map(toSampleRecord));
   } catch {
     return [];
   }
@@ -1155,7 +1142,7 @@ export async function fetchSamples(): Promise<SampleRecord[]> {
 
 export async function fetchOmicsRecords(): Promise<OmicsRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiOmics[]>(currentStudyBusinessPath('omics'))).map(toOmicsRecord));
+    return filterRecordsByCurrentStudyScope((await fetchStudyBusinessRows<ApiOmics>('omics')).map(toOmicsRecord));
   } catch {
     return [];
   }
@@ -1163,7 +1150,7 @@ export async function fetchOmicsRecords(): Promise<OmicsRecord[]> {
 
 export async function fetchVisits(): Promise<VisitRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiVisit[]>(currentStudyBusinessPath('visits'))).map(toVisitRecord));
+    return filterRecordsByCurrentStudyScope((await fetchStudyBusinessRows<ApiVisit>('visits')).map(toVisitRecord));
   } catch {
     return [];
   }
@@ -1171,7 +1158,7 @@ export async function fetchVisits(): Promise<VisitRecord[]> {
 
 export async function fetchFollowUpRecords(): Promise<FollowUpRecord[]> {
   try {
-    return filterRecordsByCurrentStudyScope((await getJson<ApiFollowUpRecord[]>(currentStudyBusinessPath('follow-up-records'))).map(toFollowUpRecord));
+    return filterRecordsByCurrentStudyScope((await fetchStudyBusinessRows<ApiFollowUpRecord>('follow-up-records')).map(toFollowUpRecord));
   } catch {
     return [];
   }

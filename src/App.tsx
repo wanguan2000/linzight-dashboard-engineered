@@ -43,6 +43,13 @@ const moduleSlugMap: Record<string, string> = {
   系统管理: 'system-management'
 };
 
+const lzPlatformBusinessRoles = new Set(['LZ_ADMIN', 'LZ_CRC', 'LZ_DATA_MANAGER']);
+const lzPlatformGlobalModules = new Set(['首页工作台', '患者队列管理', '临床数据采集', '样本及检测', '患者旅程', '数据分析', '系统管理']);
+
+function isLzPlatformBusinessRole(user: AuthenticatedUser | null) {
+  return Boolean(user?.role && lzPlatformBusinessRoles.has(user.role));
+}
+
 function getNavIndexByLabel(label?: string | null) {
   if (!label) return 0;
   const normalizedLabel = decodeURIComponent(label).trim();
@@ -162,7 +169,10 @@ function getTopbarCopy(activeModule: string) {
 
 function canAccessModule(user: AuthenticatedUser | null, label: string, activeStudyId?: string) {
   if (!user) return true;
-  if (!activeStudyId) return isPlatformRole(user) && ['系统管理', '患者队列管理'].includes(label);
+  if (!activeStudyId) {
+    if (isLzPlatformBusinessRole(user)) return lzPlatformGlobalModules.has(label);
+    return isPlatformRole(user) && label === '系统管理';
+  }
   if (user.role === 'LZ_ADMIN') return true;
   if (label === '系统管理') return ['LZ_CRF_ADMIN', 'STUDY_CONFIG_ADMIN', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_DATA_MANAGER'].includes(user.role);
   if (label === '数据分析') return ['LZ_CRC', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_PI', 'STUDY_CRC', 'STUDY_DATA_MANAGER'].includes(user.role);
@@ -184,7 +194,6 @@ export default function App() {
     const items = navItems.filter((item) => canAccessModule(currentUser, item.label, activeStudyId));
     if (currentUser && isPlatformRole(currentUser) && !activeStudyId) {
       return items.map((item) => {
-        if (item.label === '患者队列管理') return { ...item, label: '全局患者索引', routeLabel: item.label };
         if (item.label === '系统管理') return { ...item, label: 'Study 系统管理', routeLabel: item.label };
         return item;
       });
@@ -198,16 +207,16 @@ export default function App() {
     currentUser && isPlatformRole(currentUser) && !activeStudyId && activeModule === '患者队列管理'
       ? {
           ...baseTopbarCopy,
-          title: '全局患者索引',
-          subtitle: 'LZ 全局层只展示患者索引；业务管理必须进入单个 Study Workspace。',
-          aiPlaceholder: '搜索患者索引、Study ID 或状态...',
+          title: '患者队列管理',
+          subtitle: 'LZ 平台视角按 Study 汇总患者队列；业务读写仍逐个使用 Study Workspace API。',
+          aiPlaceholder: '搜索患者、Study ID、疾病类型或状态...',
           showAiPrompts: false
         }
       : currentUser && isPlatformRole(currentUser) && !activeStudyId && activeModule === '系统管理'
         ? {
             ...baseTopbarCopy,
             title: 'Study 系统管理',
-            subtitle: '管理 Study、用户和授权范围；不直接编辑 CRF、样本、随访或导出数据。',
+            subtitle: '管理 Study、用户、Study 绑定和平台角色；业务数据继续按 study_id 隔离。',
             aiPlaceholder: '询问 Study、用户、角色或授权范围...',
             showAiPrompts: false
           }

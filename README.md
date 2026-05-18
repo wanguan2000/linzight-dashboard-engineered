@@ -105,12 +105,12 @@ npm run dev
 
 - RWD EDC 主链路统一使用 `study_id` 作为研究隔离字段，不使用 `project_id`。
 - Study Workspace 是唯一业务租户边界；患者、CRF、样本、随访、文件、Query、质控、导出、审批和审计等业务 list 接口使用 `/studies/{study_id}/...`，未带 Study 上下文的业务 list 请求会被后端拒绝。
-- LZ 管理页不是业务租户，只保留两个入口：`全局患者索引` 和 `Study 系统管理`。全局患者索引只调用 `/global/patient-index`，展示脱敏患者索引、Study 信息、状态和更新时间，点击患者后会进入其所属 Study Workspace 再执行后续管理操作。
-- LZ 全局态的 `Study 系统管理` 只管理 Study、用户和授权范围；不直接显示或编辑 CRF、样本、随访、导出、审批、Query、审计等业务数据。进入单个 Study Workspace 后，才显示该 Study 内的 CRF 配置、质控、审批和审计能力。
+- LZ 平台角色可在 LZ 系统管理态查看首页工作台、患者队列管理、样本及检测、临床数据采集、患者旅程、导出/报表和 Study 系统管理。跨 Study 读取由前端按授权 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总，不使用无 Study 上下文的业务 list 接口。
+- LZ 全局态的 `Study 系统管理` 管理 Study、用户、Study 绑定和平台角色；业务写入仍必须带明确 `study_id`，并由后端按 Study scope、角色权限和 Study 生命周期状态独立校验。
 - `LZ_ADMIN` 可通过 Study Registry 新建、终止和软删除 Study，并可管理平台级角色的授权 Study scope；`STUDY_CONFIG_ADMIN` 是本 Study 系统管理员，可创建/修改本 Study 研究级用户、启停成员角色并分配本 Study 系统管理员。`terminated` 或 `deleted` Study 会拒绝患者、CRF、访视、随访、样本、组学、文件、质控和导出等业务写入。
 - 当前版本先使用后端应用层过滤；真实患者生产上线前应在 PostgreSQL 同一租户边界上补 Row Level Security（RLS）。
 - 显式测试 seed 包含 `LGL-1111`、`RWD-NMO-2026` 和 `LZXK-01` 三个 Study，并生成 Study 成员、平台授权范围和独立 CRF 版本。
-- 平台角色使用 `LZ_ADMIN`、`LZ_CRC`、`LZ_CRF_ADMIN`、`LZ_DATA_MANAGER`、`LZ_AUDITOR`。
+- 正式 UI 的平台角色使用 `LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER`。
 - 研究角色使用 `STUDY_PI`、`STUDY_CRC`、`STUDY_CONFIG_ADMIN`、`STUDY_DATA_MANAGER`。
 - 样本检测项目编号字段为 `testing_project_id`，与 RWD EDC Study 概念分离。
 - 详细设计见 `docs/04-study-permissions.md`。

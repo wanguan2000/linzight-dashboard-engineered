@@ -40,7 +40,9 @@ const exactEnglish: Record<string, string> = {
   '登录后如账号只授权一个 Study，将直接进入；多个 Study 时再选择工作区。':
     'After sign-in, accounts with one authorized Study enter directly; accounts with multiple Studies choose a workspace.',
   '平台级账号仅管理 Study、成员、权限配置和全局索引；业务操作需进入单个 Study Workspace。':
-    'Platform accounts manage Studies, members, permission configuration, and global indexes only; business actions must enter a single Study Workspace.',
+    'Platform accounts manage Studies, members, permission configuration, and cross-Study business workflows through Study-scoped APIs.',
+  '平台级账号可跨 Study 管理业务数据；读写仍使用 Study-scoped API。':
+    'Platform accounts can manage business data across Studies; reads and writes still use Study-scoped APIs.',
   'LZ 系统管理入口仅支持平台级账号。': 'The LZ System Admin entry only supports platform-level accounts.',
   '当前账号没有可进入的 Study。': 'This account has no Study workspace access.',
   '工作区边界': 'Workspace boundary',
@@ -55,15 +57,24 @@ const exactEnglish: Record<string, string> = {
   'LZ 全局管理': 'LZ Global Admin',
   'LZ 全局层只展示患者索引；业务管理必须进入单个 Study Workspace。':
     'The LZ global layer only shows the patient index; business management must enter a single Study Workspace.',
+  'LZ 平台视角按 Study 汇总患者队列；业务读写仍逐个使用 Study Workspace API。':
+    'The LZ platform view aggregates patient cohorts by Study; business reads and writes still use Study Workspace APIs per Study.',
+  '搜索患者、Study ID、疾病类型或状态...': 'Search patients, Study ID, disease type, or status...',
   '管理 Study、用户和授权范围；不直接编辑 CRF、样本、随访或导出数据。':
     'Manage Studies, users, and authorization scopes; do not directly edit CRF, samples, follow-up, or export data.',
+  '管理 Study、用户、Study 绑定和平台角色；业务数据继续按 study_id 隔离。':
+    'Manage Studies, users, Study bindings, and platform roles; business data remains isolated by study_id.',
   '搜索患者索引、Study ID 或状态...': 'Search patient index, Study ID, or status...',
   '询问 Study、用户、角色或授权范围...': 'Ask about Studies, users, roles, or authorization scopes...',
   'LZ 全局层只管理 Study、用户和授权范围，不直接编辑业务数据。':
     'The LZ global layer only manages Studies, users, and authorization scopes; it does not directly edit business data.',
+  'LZ 平台层管理 Study、用户、Study 绑定和跨 Study 业务权限。':
+    'The LZ platform layer manages Studies, users, Study bindings, and cross-Study business permissions.',
   'Search studies, users, roles, or authorization scopes...': 'Search studies, users, roles, or authorization scopes...',
   'LZ 管理页不是业务租户；业务操作必须进入单个 Study Workspace。':
     'The LZ admin page is not a business tenant; business operations must enter a single Study Workspace.',
+  'LZ 平台跨 Study 汇总业务数据，读写仍逐个校验 study_id。':
+    'The LZ platform aggregates business data across Studies, while reads and writes are still checked by study_id.',
   'Study Registry | Study 管理': 'Study Registry | Study Management',
   '新建 Study 表单': 'Create Study form',
   '新建用户表单': 'Create user form',
@@ -91,6 +102,8 @@ const exactEnglish: Record<string, string> = {
   '移除': 'Remove',
   '维护 Study、用户和授权范围；业务数据在单个 Study Workspace 内处理。':
     'Maintain Studies, users, and authorization scopes; business data is handled inside a single Study Workspace.',
+  '维护 Study、用户、平台角色和每个 Study 的角色绑定。':
+    'Maintain Studies, users, platform roles, and per-Study role bindings.',
   '授权账号': 'Authorized accounts',
   '平台角色': 'Platform roles',
   '研究角色': 'Study roles',
@@ -101,6 +114,12 @@ const exactEnglish: Record<string, string> = {
     'The global patient list is index-only; use the patient link to enter the owning Study before managing it.',
   '全局患者列表不能直接写入；请先进入单个 Study Workspace':
     'The global patient list cannot be written directly; enter a single Study Workspace first.',
+  '请先选择一个 Study，再新建患者': 'Select a Study before creating a patient.',
+  '请先选择一个 Study，再编辑患者': 'Select a Study before editing a patient.',
+  '请先选择一个 Study，再保存患者': 'Select a Study before saving the patient.',
+  '请先选择一个 Study，再生成导出': 'Select a Study before generating an export.',
+  '请先选择一个 Study，再运行校验': 'Select a Study before running validation.',
+  '暂无 Study': 'No Study',
   'LZ 系统管理 · 全部或授权 Study': 'LZ System Admin · All or assigned Studies',
   '角色账号': 'Role account',
   '账号邮箱': 'Account email',
