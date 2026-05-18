@@ -47,6 +47,7 @@
 - LZ 全局导航只保留 `全局患者索引` 与 `Study 系统管理`。全局态的 `Study 系统管理` 只展示 Study registry、用户账户和授权范围矩阵，不展示 CRF、样本、随访、导出、审批、Query 或审计业务面板。
 - Study 生命周期状态为 `terminated` 或 `deleted` 时，后端必须拒绝患者、CRF、访视、随访、样本、组学、文件、质控和导出等业务写入；系统管理和审计读取仍保留。
 - `STUDY_CONFIG_ADMIN` 是本 Study 系统管理员：可管理本 Study 研究级成员和本 Study 配置，不能新建/终止/删除 Study，也不能配置平台级角色的跨 Study scope。
+- 一个用户可以拥有多个 Study membership；每个 Study membership 独立绑定一个 Study 角色：Study Admin（`STUDY_CONFIG_ADMIN`）、Study PI（`STUDY_PI`）、Study CRC（`STUDY_CRC`）或 Study DM（`STUDY_DATA_MANAGER`）。前端账号编辑面板必须按每个 Study 绑定展示其在本矩阵中的具体权限。
 - 当前版本先使用后端应用层过滤；真实患者生产上线前应在 PostgreSQL 相同 Study 边界上补 RLS。
 - 有权限：按钮可点击，成功/失败必须给出状态反馈。
 - 无权限：按钮保持可见时必须 `disabled`，并用 `title`/tooltip 说明需要的角色或审批状态。

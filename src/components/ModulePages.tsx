@@ -2942,15 +2942,21 @@ type AccountCreateDraft = {
   memberStatus: 'active' | 'pending' | 'disabled';
 };
 
+type AccountStudyBindingDraft = {
+  studyId: string;
+  role: StudyRole;
+  status: 'active' | 'pending' | 'disabled';
+};
+
 type AccountEditDraft = {
   userId?: string;
   originalEmail: string;
   displayName: string;
-  role: UserRole;
-  studyScopeIds: string[];
-  originalStudyScopeIds: string[];
+  accountRole: UserRole;
+  platformStudyScopeIds: string[];
+  studyBindings: AccountStudyBindingDraft[];
+  originalStudyBindings: AccountStudyBindingDraft[];
   status: SystemAccount['status'];
-  memberStatus: 'active' | 'pending' | 'disabled';
   password: string;
 };
 
@@ -3005,7 +3011,7 @@ function studyScopeToIds(scope: string, studyIds: string[]) {
     .filter((item) => studyIds.includes(item));
 }
 
-function studyMemberStatusFromAccountStatus(status: SystemAccount['status']) {
+function studyMemberStatusFromAccountStatus(status: SystemAccount['status']): AccountStudyBindingDraft['status'] {
   if (status === 'Active') return 'active';
   if (status === 'Disabled') return 'disabled';
   return 'pending';
@@ -3023,9 +3029,10 @@ function upsertAccountRow(rows: SystemAccount[], account: SystemAccount) {
   return rows.map((row) => (matches(row) ? { ...row, ...account } : row));
 }
 
-function replaceAccountRowsForUser(rows: SystemAccount[], originalEmail: string, account: SystemAccount) {
-  const matches = (row: SystemAccount) => (account.userId && row.userId === account.userId) || row.email === originalEmail;
-  return [account, ...rows.filter((row) => !matches(row))];
+function replaceAccountRowsForUser(rows: SystemAccount[], originalEmail: string, accounts: SystemAccount[]) {
+  const userId = accounts.find((account) => account.userId)?.userId;
+  const matches = (row: SystemAccount) => (userId && row.userId === userId) || row.email === originalEmail;
+  return [...accounts, ...rows.filter((row) => !matches(row))];
 }
 
 type SystemField = {
@@ -3131,6 +3138,13 @@ const systemStatusTone: Record<SystemAccount['status'], 'success' | 'warning' | 
   Disabled: 'danger'
 };
 const creatableStudyRoles: StudyRole[] = ['STUDY_CRC', 'STUDY_PI', 'STUDY_CONFIG_ADMIN', 'STUDY_DATA_MANAGER'];
+const studyBindingRoleLabels: Record<StudyRole, string> = {
+  STUDY_CONFIG_ADMIN: 'Study Admin',
+  STUDY_PI: 'Study PI',
+  STUDY_CRC: 'Study CRC',
+  STUDY_DATA_MANAGER: 'Study DM'
+};
+const editableStudyBindingRoles: StudyRole[] = ['STUDY_CONFIG_ADMIN', 'STUDY_PI', 'STUDY_CRC', 'STUDY_DATA_MANAGER'];
 const systemFieldTypeOptions: SystemField['type'][] = ['Text', 'Number', 'Dropdown', 'Boolean'];
 const systemFieldStatusOptions: SystemField['status'][] = ['启用', '草稿', '停用'];
 
@@ -3327,11 +3341,13 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     () => auditRows.filter((entry) => !scopedStudyId || entry.study_id === scopedStudyId).filter((entry) => entry.diff?.length).slice(0, 4),
     [auditRows, scopedStudyId]
   );
-  const editableRoleOptions = currentUser?.role === 'LZ_ADMIN' ? editableAccountRoles : creatableStudyRoles;
-  const editedRolePermissions = useMemo(() => {
-    if (!accountEditDraft) return [];
-    return permissionMatrixRows.filter((row) => row.values[accountEditDraft.role]).map((row) => row.action);
-  }, [accountEditDraft, permissionMatrixRows]);
+  const editableRoleOptions = currentUser?.role === 'LZ_ADMIN' ? editableAccountRoles : editableStudyBindingRoles;
+  const permissionsByRole = useMemo(() => {
+    return editableAccountRoles.reduce<Record<UserRole, string[]>>((permissions, role) => {
+      permissions[role] = permissionMatrixRows.filter((row) => row.values[role]).map((row) => row.action);
+      return permissions;
+    }, {} as Record<UserRole, string[]>);
+  }, [permissionMatrixRows]);
   const studyRegistryRows = useMemo(() => {
     return studyRows.filter((study) => availableSystemStudies.includes(study.id)).map((study) => {
       const studyId = study.id;
@@ -3606,16 +3622,34 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   function openSystemAccountEdit(account: SystemAccount) {
     const studyScopeIds = studyScopeToIds(account.studyScope, allSystemStudyIds);
     const fallbackStudyId = scopedStudyId || selectedSystemStudyId || availableSystemStudies[0] || '';
+    const sameUserAccounts = accountRows.filter((row) =>
+      (account.userId && row.userId === account.userId) || row.email === account.email
+    );
+    const studyBindings = sameUserAccounts
+      .filter((row) => row.role.startsWith('STUDY_') && studyScopeToIds(row.studyScope, allSystemStudyIds).length)
+      .map<AccountStudyBindingDraft>((row) => ({
+        studyId: studyScopeToIds(row.studyScope, allSystemStudyIds)[0],
+        role: row.role as StudyRole,
+        status: studyMemberStatusFromAccountStatus(row.status)
+      }));
+    const uniqueStudyBindings = studyBindings.filter((binding, index, rows) =>
+      rows.findIndex((row) => row.studyId === binding.studyId) === index
+    );
+    const effectiveStudyBindings = uniqueStudyBindings.length
+      ? uniqueStudyBindings
+      : account.role.startsWith('STUDY_') && fallbackStudyId
+        ? [{ studyId: fallbackStudyId, role: account.role as StudyRole, status: studyMemberStatusFromAccountStatus(account.status) }]
+        : [];
     setAccountCreateDraft(null);
     setAccountEditDraft({
       userId: account.userId ?? userIdForEmail(account.email),
       originalEmail: account.email,
       displayName: account.name,
-      role: account.role,
-      studyScopeIds: account.studyScope === '全部 Study' ? availableSystemStudies : studyScopeIds.length ? studyScopeIds : fallbackStudyId ? [fallbackStudyId] : [],
-      originalStudyScopeIds: studyScopeIds,
+      accountRole: account.role,
+      platformStudyScopeIds: account.studyScope === '全部 Study' ? availableSystemStudies : studyScopeIds,
+      studyBindings: effectiveStudyBindings,
+      originalStudyBindings: effectiveStudyBindings,
       status: account.status,
-      memberStatus: studyMemberStatusFromAccountStatus(account.status),
       password: ''
     });
     setSystemActionStatus(`正在编辑账户：${account.email}`);
@@ -3625,13 +3659,51 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     setAccountEditDraft((draft) => (draft ? { ...draft, ...patch } : draft));
   }
 
+  function patchAccountStudyBinding(index: number, patch: Partial<AccountStudyBindingDraft>) {
+    setAccountEditDraft((draft) => {
+      if (!draft) return draft;
+      return {
+        ...draft,
+        studyBindings: draft.studyBindings.map((binding, bindingIndex) => (
+          bindingIndex === index ? { ...binding, ...patch } : binding
+        ))
+      };
+    });
+  }
+
+  function addAccountStudyBinding() {
+    setAccountEditDraft((draft) => {
+      if (!draft) return draft;
+      const usedStudyIds = new Set(draft.studyBindings.map((binding) => binding.studyId));
+      const nextStudyId = availableSystemStudies.find((studyId) => !usedStudyIds.has(studyId)) ?? availableSystemStudies[0] ?? '';
+      if (!nextStudyId) return draft;
+      return {
+        ...draft,
+        studyBindings: [
+          ...draft.studyBindings,
+          { studyId: nextStudyId, role: 'STUDY_CRC', status: 'active' }
+        ]
+      };
+    });
+  }
+
+  function removeAccountStudyBinding(index: number) {
+    setAccountEditDraft((draft) => (
+      draft
+        ? { ...draft, studyBindings: draft.studyBindings.filter((_, bindingIndex) => bindingIndex !== index) }
+        : draft
+    ));
+  }
+
   async function saveSystemAccountEdit() {
     if (!accountEditDraft) return;
     const userId = accountEditDraft.userId;
     const displayName = accountEditDraft.displayName.trim();
-    const selectedStudyIds = accountEditDraft.role === 'LZ_ADMIN'
+    const platformStudyIds = accountEditDraft.accountRole === 'LZ_ADMIN'
       ? availableSystemStudies
-      : accountEditDraft.studyScopeIds.filter(Boolean);
+      : accountEditDraft.platformStudyScopeIds.filter(Boolean);
+    const studyBindings = accountEditDraft.studyBindings.filter((binding) => binding.studyId);
+    const uniqueStudyIds = new Set(studyBindings.map((binding) => binding.studyId));
     if (!userId) {
       setSystemActionStatus('缺少用户 ID，无法同步账户编辑');
       return;
@@ -3640,54 +3712,68 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       setSystemActionStatus('请填写用户姓名');
       return;
     }
-    if (accountEditDraft.role !== 'LZ_ADMIN' && selectedStudyIds.length === 0) {
-      setSystemActionStatus('请为用户选择 Study Scope');
+    if (uniqueStudyIds.size !== studyBindings.length) {
+      setSystemActionStatus('同一个用户不能重复绑定同一个 Study，请调整 Study Scope');
+      return;
+    }
+    if (accountEditDraft.accountRole.startsWith('LZ_') && accountEditDraft.accountRole !== 'LZ_ADMIN' && platformStudyIds.length === 0) {
+      setSystemActionStatus('请为平台角色选择 Study Scope');
+      return;
+    }
+    if (!accountEditDraft.accountRole.startsWith('LZ_') && studyBindings.length === 0) {
+      setSystemActionStatus('请至少添加一个 Study 绑定');
       return;
     }
 
-    setSystemActionStatus(`账户 ${accountEditDraft.originalEmail} 正在同步角色、状态和 Study Scope...`);
+    setSystemActionStatus(`账户 ${accountEditDraft.originalEmail} 正在同步账号资料和多 Study 角色绑定...`);
     try {
       const basePayload = {
         display_name: displayName,
         ...(accountEditDraft.password.trim() ? { password: accountEditDraft.password.trim() } : {})
       };
-      let savedAccount: SystemAccount;
-      if (accountEditDraft.role.startsWith('STUDY_')) {
-        await updateUserAccount(userId, {
-          ...basePayload,
-          ...(currentUser?.role === 'LZ_ADMIN' ? { role: accountEditDraft.role } : {})
-        }, selectedStudyIds[0]);
-        const member = await upsertStudyMember(selectedStudyIds[0], {
-          userId,
-          studyRole: accountEditDraft.role as ApiStudyMember['study_role'],
-          status: accountEditDraft.memberStatus
-        });
-        await Promise.all(
-          accountEditDraft.originalStudyScopeIds
-            .filter((studyId) => studyId !== selectedStudyIds[0])
-            .map((studyId) =>
-              upsertStudyMember(studyId, {
-                userId,
-                studyRole: accountEditDraft.role as ApiStudyMember['study_role'],
-                status: 'disabled'
-              }).catch(() => undefined)
-            )
-        );
-        savedAccount = accountFromStudyMember(member);
-      } else {
-        const updatedUser = await updateUserAccount(userId, {
-          ...basePayload,
-          role: accountEditDraft.role,
-          status: userStatusFromAccountStatus(accountEditDraft.status)
-        });
-        const scopedUser = accountEditDraft.role === 'LZ_ADMIN'
-          ? updatedUser
-          : await updateGlobalRoleStudyScope(userId, selectedStudyIds);
-        savedAccount = accountFromApiUser(scopedUser, selectedStudyIds[0] ?? '全部 Study');
+      const accountRole = accountEditDraft.accountRole.startsWith('LZ_')
+        ? accountEditDraft.accountRole
+        : studyBindings[0]?.role ?? accountEditDraft.accountRole;
+      let updatedUser = await updateUserAccount(userId, {
+        ...basePayload,
+        ...(currentUser?.role === 'LZ_ADMIN' ? { role: accountRole, status: userStatusFromAccountStatus(accountEditDraft.status) } : {})
+      }, scopedStudyId || studyBindings[0]?.studyId);
+      if (accountRole.startsWith('LZ_') && accountRole !== 'LZ_ADMIN') {
+        updatedUser = await updateGlobalRoleStudyScope(userId, platformStudyIds);
       }
-      setAccountRows((rows) => replaceAccountRowsForUser(rows, accountEditDraft.originalEmail, savedAccount));
+      const savedMembers = await Promise.all(studyBindings.map((binding) =>
+        upsertStudyMember(binding.studyId, {
+          userId,
+          studyRole: binding.role,
+          status: binding.status
+        })
+      ));
+      const retainedStudyIds = new Set(studyBindings.map((binding) => binding.studyId));
+      await Promise.all(
+        accountEditDraft.originalStudyBindings
+          .filter((binding) => !retainedStudyIds.has(binding.studyId))
+          .map((binding) =>
+            upsertStudyMember(binding.studyId, {
+              userId,
+              studyRole: binding.role,
+              status: 'disabled'
+            }).catch(() => undefined)
+          )
+      );
+      const savedAccounts = savedMembers.map(accountFromStudyMember);
+      if (accountRole.startsWith('LZ_')) {
+        savedAccounts.unshift(accountFromApiUser(updatedUser, platformStudyIds[0] ?? '全部 Study'));
+      }
+      if (!savedAccounts.length) {
+        savedAccounts.push(accountFromApiUser(updatedUser, scopedStudyId || platformStudyIds[0] || '全部 Study'));
+      }
+      setAccountRows((rows) => replaceAccountRowsForUser(rows, accountEditDraft.originalEmail, savedAccounts));
       setAccountEditDraft(null);
-      setSystemActionStatus(`账户权限已同步：${savedAccount.email} -> ${savedAccount.role} / ${savedAccount.studyScope}`);
+      if (studyBindings.length) {
+        setSystemActionStatus(`账户 Study 绑定已同步：${accountEditDraft.originalEmail} -> ${studyBindings.map((binding) => `${binding.studyId}/${binding.role}`).join('，')}`);
+      } else {
+        setSystemActionStatus(`账户权限已同步：${accountEditDraft.originalEmail}`);
+      }
     } catch {
       setSystemActionStatus('后端不可用、密码不符合策略，或当前角色无账户权限修改权限');
     }
@@ -4445,52 +4531,48 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                   <input value={accountEditDraft.originalEmail} disabled />
                 </label>
                 <label>
-                  <span>{t('角色')}</span>
-                  <select value={accountEditDraft.role} onChange={(event) => {
+                  <span>{t('账号基础角色')}</span>
+                  <select value={accountEditDraft.accountRole} onChange={(event) => {
                     const role = event.target.value as UserRole;
-                    const studyScopeIds = role === 'LZ_ADMIN'
-                      ? availableSystemStudies
-                      : accountEditDraft.studyScopeIds.length
-                        ? accountEditDraft.studyScopeIds
-                        : scopedStudyId
-                          ? [scopedStudyId]
-                          : availableSystemStudies.slice(0, 1);
-                    patchAccountEditDraft({ role, studyScopeIds });
+                    patchAccountEditDraft({
+                      accountRole: role,
+                      platformStudyScopeIds: role === 'LZ_ADMIN'
+                        ? availableSystemStudies
+                        : accountEditDraft.platformStudyScopeIds.length
+                          ? accountEditDraft.platformStudyScopeIds
+                          : availableSystemStudies.slice(0, 1),
+                      studyBindings: role.startsWith('LZ_') || accountEditDraft.studyBindings.length
+                        ? accountEditDraft.studyBindings
+                        : [{ studyId: scopedStudyId || availableSystemStudies[0] || '', role: role as StudyRole, status: 'active' }]
+                    });
                   }}>
                     {editableRoleOptions.map((role) => (
                       <option value={role} key={role}>{role} | {t(roleLabels[role])}</option>
                     ))}
                   </select>
                 </label>
-                <label>
-                  <span>Study Scope</span>
-                  {accountEditDraft.role === 'LZ_ADMIN' ? (
+                {accountEditDraft.accountRole.startsWith('LZ_') ? (
+                  <label>
+                    <span>{t('平台 Study Scope')}</span>
+                  {accountEditDraft.accountRole === 'LZ_ADMIN' ? (
                     <select value="全部 Study" disabled>
                       <option value="全部 Study">{t('全部 Study')}</option>
                     </select>
-                  ) : accountEditDraft.role.startsWith('LZ_') ? (
+                  ) : (
                     <select
                       multiple
-                      value={accountEditDraft.studyScopeIds}
+                      value={accountEditDraft.platformStudyScopeIds}
                       onChange={(event) => patchAccountEditDraft({
-                        studyScopeIds: Array.from(event.target.selectedOptions).map((option) => option.value)
+                        platformStudyScopeIds: Array.from(event.target.selectedOptions).map((option) => option.value)
                       })}
                     >
                       {availableSystemStudies.map((studyId) => (
                         <option value={studyId} key={studyId}>{studyId}</option>
                       ))}
                     </select>
-                  ) : (
-                    <select
-                      value={accountEditDraft.studyScopeIds[0] ?? ''}
-                      onChange={(event) => patchAccountEditDraft({ studyScopeIds: event.target.value ? [event.target.value] : [] })}
-                    >
-                      {availableSystemStudies.map((studyId) => (
-                        <option value={studyId} key={studyId}>{studyId}</option>
-                      ))}
-                    </select>
                   )}
-                </label>
+                  </label>
+                ) : null}
                 <label>
                   <span>{t('账户状态')}</span>
                   <select value={accountEditDraft.status} onChange={(event) => patchAccountEditDraft({ status: event.target.value as AccountEditDraft['status'] })}>
@@ -4500,27 +4582,65 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                   </select>
                 </label>
                 <label>
-                  <span>{t('Study 成员状态')}</span>
-                  <select
-                    value={accountEditDraft.memberStatus}
-                    disabled={!accountEditDraft.role.startsWith('STUDY_')}
-                    onChange={(event) => patchAccountEditDraft({ memberStatus: event.target.value as AccountEditDraft['memberStatus'] })}
-                  >
-                    <option value="pending">pending</option>
-                    <option value="active">active</option>
-                    <option value="disabled">disabled</option>
-                  </select>
-                </label>
-                <label>
                   <span>{t('修改密码')}</span>
                   <input type="password" value={accountEditDraft.password} onChange={(event) => patchAccountEditDraft({ password: event.target.value })} placeholder={t('留空则不修改密码')} />
                 </label>
+                <div className="system-study-bindings">
+                  <div className="system-study-bindings__header">
+                    <div>
+                      <strong>{t('Study 角色绑定')}</strong>
+                      <span>{t('一个用户可以绑定多个 Study，每个 Study 独立选择角色')}</span>
+                    </div>
+                    <button className="module-link-button module-link-button--primary" type="button" onClick={addAccountStudyBinding}>{t('添加 Study 绑定')}</button>
+                  </div>
+                  {accountEditDraft.studyBindings.length ? (
+                    <div className="system-study-binding-list">
+                      {accountEditDraft.studyBindings.map((binding, bindingIndex) => (
+                        <div className="system-study-binding-row" key={`${binding.studyId}-${bindingIndex}`}>
+                          <label>
+                            <span>Study Scope</span>
+                            <select value={binding.studyId} onChange={(event) => patchAccountStudyBinding(bindingIndex, { studyId: event.target.value })}>
+                              {availableSystemStudies.map((studyId) => (
+                                <option value={studyId} key={studyId}>{studyId}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <span>Study Role</span>
+                            <select value={binding.role} onChange={(event) => patchAccountStudyBinding(bindingIndex, { role: event.target.value as StudyRole })}>
+                              {editableStudyBindingRoles.map((role) => (
+                                <option value={role} key={role}>{studyBindingRoleLabels[role]} | {t(roleLabels[role])}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <span>{t('Study 成员状态')}</span>
+                            <select value={binding.status} onChange={(event) => patchAccountStudyBinding(bindingIndex, { status: event.target.value as AccountStudyBindingDraft['status'] })}>
+                              <option value="active">active</option>
+                              <option value="pending">pending</option>
+                              <option value="disabled">disabled</option>
+                            </select>
+                          </label>
+                          <button className="module-link-button module-link-button--danger" type="button" onClick={() => removeAccountStudyBinding(bindingIndex)}>{t('移除')}</button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="system-study-bindings__empty">{t('暂无 Study 绑定')}</span>
+                  )}
+                </div>
                 <div className="system-role-permissions">
                   <strong>{t('具体权限')}</strong>
-                  <span>{accountEditDraft.role} | {t(roleLabels[accountEditDraft.role])}</span>
+                  <span>{t('按每个 Study 绑定角色匹配权限策略矩阵')}</span>
                   <ul>
-                    {editedRolePermissions.length ? editedRolePermissions.map((permission) => (
-                      <li key={permission}>{t(permission)}</li>
+                    {accountEditDraft.studyBindings.length ? accountEditDraft.studyBindings.flatMap((binding) => (
+                      (permissionsByRole[binding.role] ?? []).map((permission) => (
+                        <li key={`${binding.studyId}-${binding.role}-${permission}`}>
+                          {binding.studyId} / {studyBindingRoleLabels[binding.role]}: {t(permission)}
+                        </li>
+                      ))
+                    )) : accountEditDraft.accountRole.startsWith('LZ_') && (permissionsByRole[accountEditDraft.accountRole] ?? []).length ? (permissionsByRole[accountEditDraft.accountRole] ?? []).map((permission) => (
+                      <li key={`${accountEditDraft.accountRole}-${permission}`}>{accountEditDraft.accountRole}: {t(permission)}</li>
                     )) : (
                       <li>{t('当前角色没有矩阵授权项')}</li>
                     )}
