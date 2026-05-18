@@ -3142,6 +3142,7 @@ const permissionColumns: Array<{ key: UserRole; label: string }> = [
 ];
 
 const editableAccountRoles = permissionColumns.map((column) => column.key);
+const studyPermissionColumns = permissionColumns.filter((column) => column.key.startsWith('STUDY_'));
 
 const fallbackPermissionRows: PermissionRow[] = [
   { action: 'Study Configuration / Read Study configuration', values: { LZ_ADMIN: true, LZ_CRC: true, LZ_CRF_ADMIN: true, LZ_DATA_MANAGER: true, LZ_AUDITOR: true, STUDY_PI: true, STUDY_CRC: true, STUDY_CONFIG_ADMIN: true, STUDY_DATA_MANAGER: true } },
@@ -3303,12 +3304,17 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [systemActionStatus, setSystemActionStatus] = useState('等待系统管理操作');
   const normalizedQuery = systemQuery.trim().toLowerCase();
   const groupedAccountRows = useMemo(() => groupSystemAccounts(accountRows, allSystemStudyIds), [accountRows, allSystemStudyIds]);
+  const studyScopedAccountRows = useMemo(() => {
+    if (!scopedStudyId) return [];
+    return accountRows.filter((account) =>
+      account.role.startsWith('STUDY_') &&
+      accountScopeTokens(account, allSystemStudyIds).includes(scopedStudyId)
+    );
+  }, [accountRows, allSystemStudyIds, scopedStudyId]);
+  const accountSummaryRows = isGlobalManagement ? groupedAccountRows : studyScopedAccountRows;
   const visibleAccounts = useMemo(() => {
-    const scopedAccounts = !isGlobalManagement && scopedStudyId
-      ? accountRows.filter((account) => account.studyScope === '全部 Study' || account.studyScope.split('/').map((item) => item.trim()).includes(scopedStudyId))
-      : groupedAccountRows;
-    if (!normalizedQuery) return scopedAccounts;
-    return scopedAccounts.filter((account) =>
+    if (!normalizedQuery) return accountSummaryRows;
+    return accountSummaryRows.filter((account) =>
       [
         account.name,
         account.email,
@@ -3320,7 +3326,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         account.status
       ].some((item) => item.toLowerCase().includes(normalizedQuery))
     );
-  }, [accountRows, groupedAccountRows, isGlobalManagement, normalizedQuery, scopedStudyId]);
+  }, [accountSummaryRows, normalizedQuery]);
 
   const visibleFields = useMemo(() => {
     const scopedFields = scopedStudyId ? fieldRows.filter((field) => field.studyId === scopedStudyId) : fieldRows;
@@ -3397,13 +3403,21 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     () => auditRows.filter((entry) => !scopedStudyId || entry.study_id === scopedStudyId).filter((entry) => entry.diff?.length).slice(0, 4),
     [auditRows, scopedStudyId]
   );
-  const editableRoleOptions = currentUser?.role === 'LZ_ADMIN' ? editableAccountRoles : editableStudyBindingRoles;
+  const visiblePermissionColumns = isGlobalManagement ? permissionColumns : studyPermissionColumns;
+  const visiblePermissionMatrixRows = useMemo(() => {
+    if (isGlobalManagement) return permissionMatrixRows;
+    return permissionMatrixRows.filter((row) =>
+      !row.action.startsWith('LZ System Management /') &&
+      studyPermissionColumns.some((column) => row.values[column.key])
+    );
+  }, [isGlobalManagement, permissionMatrixRows]);
+  const editableRoleOptions = isGlobalManagement && currentUser?.role === 'LZ_ADMIN' ? editableAccountRoles : editableStudyBindingRoles;
   const permissionsByRole = useMemo(() => {
     return editableAccountRoles.reduce<Record<UserRole, string[]>>((permissions, role) => {
-      permissions[role] = permissionMatrixRows.filter((row) => row.values[role]).map((row) => row.action);
+      permissions[role] = visiblePermissionMatrixRows.filter((row) => row.values[role]).map((row) => row.action);
       return permissions;
     }, {} as Record<UserRole, string[]>);
-  }, [permissionMatrixRows]);
+  }, [visiblePermissionMatrixRows]);
   const studyRegistryRows = useMemo(() => {
     return studyRows.filter((study) => availableSystemStudies.includes(study.id)).map((study) => {
       const studyId = study.id;
@@ -3676,7 +3690,14 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     const sameUserAccounts = accountRows.filter((row) =>
       (account.userId && row.userId === account.userId) || row.email === account.email
     );
-    const studyBindings = sameUserAccounts
+    const editableAccountsForScope = isGlobalManagement
+      ? sameUserAccounts
+      : sameUserAccounts.filter((row) =>
+        row.role.startsWith('STUDY_') &&
+        scopedStudyId &&
+        accountScopeTokens(row, allSystemStudyIds).includes(scopedStudyId)
+      );
+    const studyBindings = editableAccountsForScope
       .filter((row) => row.role.startsWith('STUDY_') && studyScopeToIds(row.studyScope, allSystemStudyIds).length)
       .map<AccountStudyBindingDraft>((row) => ({
         studyId: studyScopeToIds(row.studyScope, allSystemStudyIds)[0],
@@ -3696,7 +3717,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       userId: account.userId ?? userIdForEmail(account.email),
       originalEmail: account.email,
       displayName: account.name,
-      accountRole: account.role,
+      accountRole: effectiveStudyBindings[0]?.role ?? account.role,
       platformStudyScopeIds: account.studyScope === '全部 Study' ? availableSystemStudies : studyScopeIds,
       studyBindings: effectiveStudyBindings,
       originalStudyBindings: effectiveStudyBindings,
@@ -3787,9 +3808,9 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         : studyBindings[0]?.role ?? accountEditDraft.accountRole;
       let updatedUser = await updateUserAccount(userId, {
         ...basePayload,
-        ...(currentUser?.role === 'LZ_ADMIN' ? { role: accountRole, status: userStatusFromAccountStatus(accountEditDraft.status) } : {})
+        ...(isGlobalManagement && currentUser?.role === 'LZ_ADMIN' ? { role: accountRole, status: userStatusFromAccountStatus(accountEditDraft.status) } : {})
       }, scopedStudyId || studyBindings[0]?.studyId);
-      if (accountRole.startsWith('LZ_') && accountRole !== 'LZ_ADMIN') {
+      if (isGlobalManagement && accountRole.startsWith('LZ_') && accountRole !== 'LZ_ADMIN') {
         updatedUser = await updateGlobalRoleStudyScope(userId, platformStudyIds);
       }
       const savedMembers = await Promise.all(studyBindings.map((binding) =>
@@ -3812,7 +3833,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
           )
       );
       const savedAccounts = savedMembers.map(accountFromStudyMember);
-      if (accountRole.startsWith('LZ_')) {
+      if (isGlobalManagement && accountRole.startsWith('LZ_')) {
         savedAccounts.unshift(accountFromApiUser(updatedUser, platformStudyIds[0] ?? '全部 Study'));
       }
       if (!savedAccounts.length) {
@@ -3911,7 +3932,14 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     setSystemActionStatus(`账户 ${account.email} 状态正在同步后端...`);
     try {
       let savedAccount: SystemAccount;
-      if (currentUser?.role === 'LZ_ADMIN') {
+      if (!isGlobalManagement && scopedStudyId && account.role.startsWith('STUDY_')) {
+        const member = await upsertStudyMember(scopedStudyId, {
+          userId,
+          studyRole: account.role as ApiStudyMember['study_role'],
+          status: studyMemberStatusFromAccountStatus(nextStatus)
+        });
+        savedAccount = accountFromStudyMember(member);
+      } else if (currentUser?.role === 'LZ_ADMIN') {
         const updatedUser = await updateUserAccountStatus(userId, { status: nextStatus === 'Disabled' ? 'disabled' : 'active' });
         savedAccount = accountFromApiUser(updatedUser, scopedStudyId ?? account.studyScope);
       } else if (scopedStudyId && account.role.startsWith('STUDY_')) {
@@ -4345,7 +4373,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         <div className="system-management-title">
           <span>System Management</span>
           <h2>{t(isGlobalManagement ? 'Study 系统管理' : '系统管理')}</h2>
-          <p>{t(isGlobalManagement ? 'LZ 平台层管理 Study、用户、Study 绑定和跨 Study 业务权限。' : '管理 Study 成员、平台角色、权限策略和 CRF 版本。')}</p>
+          <p>{t(isGlobalManagement ? 'LZ 平台层管理 Study、用户、Study 绑定和跨 Study 业务权限。' : '仅管理当前 Study 的成员、Study 角色、权限策略和 CRF 版本。')}</p>
         </div>
         <label className="system-study-select">
           <span>Study</span>
@@ -4388,24 +4416,32 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         <div className="system-summary-grid">
           <div>
             <span>Total Accounts</span>
-            <strong>{groupedAccountRows.length}</strong>
+            <strong>{accountSummaryRows.length}</strong>
           </div>
-          <div>
-            <span>Global Roles</span>
-            <strong>{groupedAccountRows.filter((account) => (account.assignedRoles ?? [account]).some((role) => role.role.startsWith('LZ_'))).length}</strong>
-          </div>
+          {isGlobalManagement ? (
+            <div>
+              <span>Global Roles</span>
+              <strong>{accountSummaryRows.filter((account) => (account.assignedRoles ?? [account]).some((role) => role.role.startsWith('LZ_'))).length}</strong>
+            </div>
+          ) : null}
           <div>
             <span>Study Roles</span>
-            <strong>{groupedAccountRows.filter((account) => (account.assignedRoles ?? [account]).some((role) => role.role.startsWith('STUDY_'))).length}</strong>
+            <strong>{accountSummaryRows.filter((account) => (account.assignedRoles ?? [account]).some((role) => role.role.startsWith('STUDY_'))).length}</strong>
           </div>
+          {!isGlobalManagement ? (
+            <div>
+              <span>Study Admins</span>
+              <strong>{accountSummaryRows.filter((account) => (account.assignedRoles ?? [account]).some((role) => role.role === 'STUDY_CONFIG_ADMIN')).length}</strong>
+            </div>
+          ) : null}
           <div>
-            <span>Studies</span>
-            <strong>{studyRows.filter((study) => study.status !== 'deleted').length}</strong>
+            <span>{isGlobalManagement ? 'Studies' : 'Current Study'}</span>
+            <strong>{isGlobalManagement ? studyRows.filter((study) => study.status !== 'deleted').length : scopedStudyId || '-'}</strong>
           </div>
         </div>
         <div className="system-global-actions">
           <Icon name="alerts" />
-          <span>{isGlobalManagement ? 'LZ Global Layer' : 'Global Actions'}</span>
+          <span>{isGlobalManagement ? 'LZ Global Layer' : 'Study Scope'}</span>
           <strong>{t(isGlobalManagement ? 'LZ 平台跨 Study 汇总业务数据，读写仍逐个校验 study_id。' : 'Study 成员、CRF 版本、导出和权限策略变更均进入审计日志。')}</strong>
         </div>
         <div className="module-upload-status">
@@ -4582,7 +4618,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                   <input value={accountEditDraft.originalEmail} disabled />
                 </label>
                 <label>
-                  <span>{t('账号基础角色')}</span>
+                  <span>{t(isGlobalManagement ? '账号基础角色' : 'Study Role')}</span>
                   <select value={accountEditDraft.accountRole} onChange={(event) => {
                     const role = event.target.value as UserRole;
                     patchAccountEditDraft({
@@ -4602,7 +4638,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                     ))}
                   </select>
                 </label>
-                {accountEditDraft.accountRole.startsWith('LZ_') ? (
+                {isGlobalManagement && accountEditDraft.accountRole.startsWith('LZ_') ? (
                   <label>
                     <span>{t('平台 Study Scope')}</span>
                   {accountEditDraft.accountRole === 'LZ_ADMIN' ? (
@@ -4640,9 +4676,11 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                   <div className="system-study-bindings__header">
                     <div>
                       <strong>{t('Study 角色绑定')}</strong>
-                      <span>{t('一个用户可以绑定多个 Study，每个 Study 独立选择角色')}</span>
+                      <span>{t(isGlobalManagement ? '一个用户可以绑定多个 Study，每个 Study 独立选择角色' : '当前页面只调整本 Study 内角色')}</span>
                     </div>
-                    <button className="module-link-button module-link-button--primary" type="button" onClick={addAccountStudyBinding}>{t('添加 Study 绑定')}</button>
+                    {isGlobalManagement ? (
+                      <button className="module-link-button module-link-button--primary" type="button" onClick={addAccountStudyBinding}>{t('添加 Study 绑定')}</button>
+                    ) : null}
                   </div>
                   {accountEditDraft.studyBindings.length ? (
                     <div className="system-study-binding-list">
@@ -4765,15 +4803,17 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
 	                          >
 	                            {t('Set Admin')}
 	                          </button>
-	                          <button
-	                            className="module-link-button"
-	                            type="button"
-	                            disabled={currentUser?.role !== 'LZ_ADMIN' || !account.role.startsWith('LZ_') || account.role === 'LZ_ADMIN'}
-	                            title={t('授予或移除当前 Study 的平台角色授权')}
-	                            onClick={() => void togglePlatformStudyScope(account)}
-	                          >
-	                            {t('Scope')}
-	                          </button>
+	                          {isGlobalManagement ? (
+	                            <button
+	                              className="module-link-button"
+	                              type="button"
+	                              disabled={currentUser?.role !== 'LZ_ADMIN' || !account.role.startsWith('LZ_') || account.role === 'LZ_ADMIN'}
+	                              title={t('授予或移除当前 Study 的平台角色授权')}
+	                              onClick={() => void togglePlatformStudyScope(account)}
+	                            >
+	                              {t('Scope')}
+	                            </button>
+	                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -5129,7 +5169,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
             <header className="module-card__header">
               <div>
                 <h2>{t('Permission Strategy Matrix | 权限策略矩阵')}</h2>
-                <span>{t('平台级角色跨 Study；研究级角色只在所属 Study 内生效')}</span>
+                <span>{t(isGlobalManagement ? '平台级角色跨 Study；研究级角色只在所属 Study 内生效' : '当前 Study 仅显示 Study 角色权限，不显示 LZ 平台级角色')}</span>
               </div>
             </header>
             <div className="module-table-wrap system-permission-wrap">
@@ -5137,16 +5177,16 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                 <thead>
                   <tr>
                     <th>Permission</th>
-                    {permissionColumns.map((column) => (
+                    {visiblePermissionColumns.map((column) => (
                       <th key={column.key}>{column.label}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {permissionMatrixRows.map((row) => (
+                  {visiblePermissionMatrixRows.map((row) => (
                     <tr key={row.action}>
                       <td>{t(row.action)}</td>
-                      {permissionColumns.map((column) => (
+                      {visiblePermissionColumns.map((column) => (
                         <td key={column.key}>
                           <label className="system-permission-check">
                             <input type="checkbox" checked={Boolean(row.values[column.key])} readOnly aria-label={`${t(row.action)}-${column.key}`} />

@@ -43,6 +43,7 @@
 
 - Study Workspace 是唯一业务租户边界；所有 patient/sample/testing/CRF/visit/followup/export 等业务数据必须有 `study_id`。
 - LZ 平台角色可在 LZ 系统管理态进入首页工作台、患者队列管理、样本及检测、临床数据采集、患者旅程、导出/报表和 Study 系统管理，跨 Study 查看授权范围内业务数据。
+- 单个 Study Workspace 内的系统管理只显示当前 Study 的 `STUDY_*` 成员、Study 角色权限矩阵和当前 Study 配置；不得显示 LZ 系统管理员、`LZ_ADMIN` 行、平台角色列、跨 Study scope 操作或 Study 新建/终止/删除入口。
 - 跨 Study 读取必须按 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总；普通 Study Workspace API 必须是 `/studies/{study_id}/...`，不能新增无 Study 上下文的业务 list。
 - Study 生命周期状态为 `terminated` 或 `deleted` 时，后端必须拒绝患者、CRF、访视、随访、样本、组学、文件、质控和导出等业务写入；系统管理和审计读取仍保留。
 - `STUDY_CONFIG_ADMIN` 是本 Study 系统管理员：拥有本 Study 内患者、知情同意、CRF、访视、随访、样本、检测、文件、Query、质控、导出、审批、审计和 Study 配置的全部权限；不能新建/终止/删除 Study，也不能配置平台级角色的跨 Study scope。
