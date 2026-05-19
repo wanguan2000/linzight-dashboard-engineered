@@ -17,7 +17,7 @@ import {
 } from '../data/operations';
 import { type PatientRecord } from '../data/patientCohort';
 import { useI18n } from '../i18n/I18nProvider';
-import { fetchWorkspaceDataset, getCurrentScopedStudyId, recordBelongsToCurrentStudyScope } from '../services/api';
+import { fetchPatientPanorama, fetchWorkspaceDataset, getCurrentScopedStudyId, recordBelongsToCurrentStudyScope } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 
@@ -107,12 +107,6 @@ function parseDateMs(date: string | undefined) {
   return Number.isNaN(timestamp) ? null : timestamp;
 }
 
-function shiftDate(date: string, days: number) {
-  const timestamp = Date.parse(date);
-  if (Number.isNaN(timestamp)) return date;
-  return toIsoDate(new Date(timestamp + days * dayMs));
-}
-
 function sortByDate<T extends { date?: string; visitDate?: string; followUpDate?: string; collectedAt?: string; sentAt?: string }>(items: T[]) {
   return [...items].sort(
     (a, b) =>
@@ -122,20 +116,24 @@ function sortByDate<T extends { date?: string; visitDate?: string; followUpDate?
 }
 
 function numericClinicalValue(patient: PatientRecord, field: string, fallback: number) {
-  const value = Number(patient.clinicalData[field]);
+  const value = numberFromClinicalValue(patient.clinicalData[field]);
   return Number.isFinite(value) ? value : fallback;
 }
 
-function clampNumber(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
+function numberFromClinicalValue(value: string | number | undefined) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : Number.NaN;
+  const normalized = String(value ?? '').replace('%', '').trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
-function formatPatientMedication(patient: PatientRecord, fallback: string) {
-  const medicationFields = ['免疫抑制剂1', '免疫制剂2', '免疫制剂2（第2项）'];
-  const medications = medicationFields
-    .map((field) => String(patient.clinicalData[field] ?? '').trim())
-    .filter((value) => value && value !== '-' && value !== '无');
-  return medications.length ? medications.slice(0, 2).join(' + ') : fallback;
+function scoreFromResponse(value: string | number | undefined) {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  if (normalized === 'CR') return 90;
+  if (normalized === 'PR') return 65;
+  if (normalized === 'SD') return 45;
+  if (normalized === 'PD') return 20;
+  return 0;
 }
 
 function styleFor(category: JourneyEventCategory) {
@@ -143,7 +141,8 @@ function styleFor(category: JourneyEventCategory) {
 }
 
 function patientRowMatches(patient: PatientRecord, row: { patientId?: string; patientName: string }) {
-  return row.patientId === patient.id || row.patientName === patient.name;
+  if (patient.id) return row.patientId === patient.id;
+  return row.patientName === patient.name;
 }
 
 function getPatientScopedRows(patient: PatientRecord, source: PatientJourneySource) {
@@ -162,76 +161,8 @@ function buildPatientJourneyEvents(
   patientSamples: SampleRecord[],
   patientOmics: OmicsRecord[]
 ): JourneyEvent[] {
-  const firstVisitDate = patientVisits[0]?.visitDate ?? '2024-05-01';
-  const lastVisitDate = patientVisits[patientVisits.length - 1]?.visitDate ?? firstVisitDate;
   const isLungStudy = patient.studyId === 'LZXK-01';
-  const baselineSledai = Number(patientVisits[0]?.sleDai ?? patient.clinicalData['SLEDAI评分'] ?? 0);
-  const baselineEcog = Number(patient.clinicalData['ECOG评分'] ?? 0);
-  const diseaseTitle = patient.diseaseType === 'HC' ? '健康对照入组' : isLungStudy ? `明确${patient.diseaseType} / 肺癌耐药队列` : `明确${patient.diseaseType}`;
-  const events: JourneyEvent[] = [
-    {
-      id: `${patient.id}-screening`,
-      kind: 'point',
-      category: 'disease',
-      track: '病程主线',
-      laneIndex: 0,
-      title: patient.diseaseType === 'HC' ? '筛选入组' : '症状记录',
-      tag: patient.diseaseType === 'HC' ? '入组' : '病程',
-      date: shiftDate(firstVisitDate, -30),
-      subtitle: `${patient.name} · ${patient.diseaseType}`,
-      description: `${patient.name} 建立患者旅程，受累脏器：${patient.organs.join('、') || '未记录'}。`,
-      ...styleFor('disease')
-    },
-    {
-      id: `${patient.id}-diagnosis`,
-      kind: 'point',
-      category: 'disease',
-      track: '病程主线',
-      laneIndex: 0,
-      title: diseaseTitle,
-      tag: '诊断',
-      date: shiftDate(firstVisitDate, -14),
-      subtitle: isLungStudy ? `基线 ECOG ${Number.isFinite(baselineEcog) ? baselineEcog : 0}` : baselineSledai ? `基线 SLEDAI ${baselineSledai}` : patient.diseaseType,
-      description: `${patient.name} 诊断/分组为 ${patient.diseaseType}，住院号 ${patient.hospitalNo}。`,
-      ...styleFor('disease')
-    }
-  ];
-
-  if (patient.diseaseType !== 'HC') {
-    const treatmentTitle = formatPatientMedication(patient, patientVisits[0]?.medication ?? '维持治疗');
-    events.push(
-      {
-        id: `${patient.id}-admission`,
-        kind: 'range',
-        category: 'admission',
-        track: '住院/急性事件',
-        laneIndex: 1,
-        title: isLungStudy ? '肺癌耐药基线评估' : baselineSledai >= 10 ? '活动评估住院' : '基线评估住院',
-        tag: '住院',
-        date: shiftDate(firstVisitDate, -5),
-        endDate: shiftDate(firstVisitDate, 2),
-        subtitle: `${patient.diseaseType} · ${patient.organs.join('、')}`,
-        description: isLungStudy
-          ? `${patient.name} 完成 ${patient.diseaseType} 基线评估，记录 ECOG、TNM、治疗线数、ctDNA/NGS 和样本采集计划。`
-          : `${patient.name} 完成 ${patient.diseaseType} 基线评估，记录 SLEDAI、用药和样本采集计划。`,
-        ...styleFor('admission')
-      },
-      {
-        id: `${patient.id}-treatment`,
-        kind: 'range',
-        category: 'treatment',
-        track: '治疗方案',
-        laneIndex: 2,
-        title: treatmentTitle,
-        tag: '治疗',
-        date: firstVisitDate,
-        endDate: shiftDate(lastVisitDate, 30),
-        subtitle: patientVisits[0]?.medication ?? '随访期间维持治疗',
-        description: `${patient.name} 当前治疗方案：${treatmentTitle}。`,
-        ...styleFor('treatment')
-      }
-    );
-  }
+  const events: JourneyEvent[] = [];
 
   patientVisits.forEach((visit) => {
     events.push({
@@ -306,51 +237,38 @@ function buildPatientJourneyEvents(
 }
 
 function buildPatientBiomarkerPoints(patient: PatientRecord, patientVisits: VisitRecord[]): JourneyBiomarkerPoint[] {
-  const orderedVisits = patientVisits.length
-    ? patientVisits
-    : [
-        {
-          id: `${patient.id}-baseline`,
-          patientName: patient.name,
-          visit: 'V1 基线访视',
-          visitDate: '2024-05-01',
-          visitType: '基线访视',
-          sleDai: String(patient.clinicalData['SLEDAI评分'] ?? 0),
-          medication: '-',
-          sampleCollection: '-',
-          completeness: 0,
-          status: '已完成' as const
-        }
-      ];
-  const c3Base = numericClinicalValue(patient, 'C3(g/l)', patient.diseaseType === 'HC' ? 0.9 : 0.58);
-  const esrBase = numericClinicalValue(patient, 'ESR(mm)', patient.diseaseType === 'HC' ? 12 : 50);
-  const proteinBase = numericClinicalValue(patient, '24小时尿蛋白 g/24h', patient.organs.includes('肾') ? 0.8 : 0.18);
-  const iggBase = numericClinicalValue(patient, 'IgG(g/l)', patient.diseaseType === 'HC' ? 9 : 12);
-  const isLungStudy = patient.studyId === 'LZXK-01';
-  const ecogBase = numericClinicalValue(patient, 'ECOG评分', 1);
-  const pfsBase = numericClinicalValue(patient, 'PFS（月）', 8);
-  const ctdnaBase = Number(String(patient.clinicalData['ctDNA突变丰度'] ?? '2.4').replace('%', '')) || 2.4;
-  const orrScore = patient.clinicalData['ORR评估'] === 'PR' ? 65 : patient.clinicalData['ORR评估'] === 'SD' ? 45 : 28;
+  if (!patientVisits.length) return [];
 
-  return orderedVisits.map((visit, index) => {
-    const sledai = Number(visit.sleDai);
+  const isLungStudy = patient.studyId === 'LZXK-01';
+  const ecogBase = numericClinicalValue(patient, 'ECOG评分', 0);
+  const ctdnaBase = numericClinicalValue(patient, 'ctDNA突变丰度', 0);
+  const pfsBase = numericClinicalValue(patient, 'PFS（月）', 0);
+  const lesionChange = numericClinicalValue(patient, '靶病灶变化', 0);
+  const orrScore = scoreFromResponse(patient.clinicalData['ORR评估']);
+  const c3Base = numericClinicalValue(patient, 'C3(g/l)', 0);
+  const esrBase = numericClinicalValue(patient, 'ESR(mm)', 0);
+  const proteinBase = numericClinicalValue(patient, '24小时尿蛋白 g/24h', 0);
+  const iggBase = numericClinicalValue(patient, 'IgG(g/l)', 0);
+
+  return patientVisits.map((visit) => {
+    const visitMetric = numberFromClinicalValue(visit.sleDai);
     if (isLungStudy) {
       return {
         date: visit.visitDate,
-        sledai: Number(clampNumber(ecogBase + (index > 1 ? 0.5 : 0), 0, 5).toFixed(1)),
-        c3: Number(clampNumber(ctdnaBase - index * 0.35, 0.1, 12).toFixed(2)),
-        esr: Number(clampNumber(pfsBase + index * 1.2, 0, 24).toFixed(1)),
-        protein24h: Number(clampNumber(0.72 - index * 0.08, 0.05, 1.2).toFixed(2)),
-        igg: Math.round(clampNumber(orrScore + index * 4, 0, 100))
+        sledai: Number.isFinite(visitMetric) ? visitMetric : ecogBase,
+        c3: ctdnaBase,
+        esr: pfsBase,
+        protein24h: lesionChange,
+        igg: orrScore
       };
     }
     return {
       date: visit.visitDate,
-      sledai: Number.isFinite(sledai) ? sledai : 0,
-      c3: Number(clampNumber(c3Base + index * 0.05, 0.1, 1.2).toFixed(2)),
-      esr: Math.round(clampNumber(esrBase - index * 6, 2, 100)),
-      protein24h: Number(clampNumber(proteinBase - index * 0.08, 0.02, 1.2).toFixed(2)),
-      igg: Number(clampNumber(iggBase - index * 0.35, 3, 18).toFixed(1))
+      sledai: Number.isFinite(visitMetric) ? visitMetric : 0,
+      c3: c3Base,
+      esr: esrBase,
+      protein24h: proteinBase,
+      igg: iggBase
     };
   });
 }
@@ -691,7 +609,7 @@ export function PatientJourneyPage({
   const [enabledCategories, setEnabledCategories] = useState<JourneyEventCategory[]>(categoryOrder);
   const [query, setQuery] = useState('');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState('2024-05-01');
+  const [selectedDate, setSelectedDate] = useState('');
   const [streamPage, setStreamPage] = useState(1);
   const [zoomRange, setZoomRange] = useState<TimelineZoomRange>({ start: 0, end: 100 });
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
@@ -745,6 +663,32 @@ export function PatientJourneyPage({
       setPatientPickerOpen(false);
     }
   }, [selectedPatient]);
+
+  useEffect(() => {
+    if (!activePatient?.id) return undefined;
+    let ignore = false;
+
+    void fetchPatientPanorama(activePatient.id)
+      .then((dataset) => {
+        if (ignore) return;
+        const [panoramaPatient] = dataset.patients;
+        if (panoramaPatient) {
+          setActivePatient(panoramaPatient);
+          setPatients((rows) => rows.map((item) => (item.id === panoramaPatient.id ? panoramaPatient : item)));
+        }
+        setJourneySource({
+          visits: dataset.visits,
+          followUps: dataset.followUps,
+          samples: dataset.samples,
+          omics: dataset.omics
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      ignore = true;
+    };
+  }, [activePatient?.id]);
 
   useEffect(() => {
     if (activePatient?.id) onPatientChange?.(activePatient);

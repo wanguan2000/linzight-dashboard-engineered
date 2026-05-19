@@ -34,7 +34,7 @@ This audit tracks whether each demo page uses the same Study scope, backend data
 - Made LZXK-01 visit metric values ECOG/RECIST based instead of assuming `SLEDAI评分`.
 - Added explicit Study ID display to the Patient Journey header.
 - Added explicit Study ID display to patient queue rows for both all-Study and single-Study roles.
-- Added `npm run demo:e2e` to validate admin, lung CRC and lung data manager walkthroughs with Study-scoped CRF, eConsent, sample/testing, Journey, analytics, Query, approval and audit checks.
+- Added `npm run demo:e2e` to validate admin, lung CRC and lung data manager walkthroughs with Study-scoped CRF, eConsent, sample/testing, Journey, analytics, Query, approval checks, plus API-level operation-log validation.
 - Added `npm run smoke:crf-semantics` to block regressions where LZXK-01 patients, CRF payloads or Study CRF fields reintroduce SLE fields, and to verify lung Study rejects `SLEDAI评分` Query creation.
 
 ## Residual Product Gaps

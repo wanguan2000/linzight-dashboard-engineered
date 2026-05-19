@@ -12,6 +12,9 @@ export interface SampleCollection {
 export interface PatientRecord {
   id?: string;
   studyId: string;
+  patientNumber?: string;
+  patientName?: string;
+  patientNameInitials?: string;
   name: string;
   hospitalNo: string;
   sex: '男' | '女';

@@ -2,7 +2,7 @@
 
 记录日期：2026-05-10
 
-更新：2026-05-12 增加 `npm run release:check`、`docs/release-checklist.md`、`npm run export:openapi`、`Dockerfile.frontend`、`Dockerfile.backend`、`docker-compose.yml`、`docs/deployment-ops.md` 和旧 SQLite 备份恢复脚本，CI 会在 lint/build/API smoke/OpenAPI export/HTML export/UI smoke 后执行 release gate，并上传 `exports/html/` 静态 HTML artifact。正式运行数据库已固定为 PostgreSQL；`npm run smoke:api`、`npm run smoke:ui` 和 `.github/workflows/ci.yml` 仍可在显式 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 下自动启动临时 FastAPI + SQLite 实例并验证 Study 隔离、权限矩阵、用户创建、CRF 字段写入、CRF 版本迁移审批/发布、知情同意文件上传、样本/组学创建、导出权限和审计日志；静态 UI smoke 会检查 8 个 HTML 导出页面、关键按钮文案和 CRF migration approval 文案。
+更新：2026-05-12 增加 `npm run release:check`、`docs/release-checklist.md`、`npm run export:openapi`、`Dockerfile.frontend`、`Dockerfile.backend`、`docker-compose.yml`、`docs/deployment-ops.md` 和旧 SQLite 备份恢复脚本，CI 会在 lint/build/API smoke/OpenAPI export/HTML export/UI smoke 后执行 release gate，并上传 `exports/html/` 静态 HTML artifact。正式运行数据库已固定为 PostgreSQL；`npm run smoke:api`、`npm run smoke:ui` 和 `.github/workflows/ci.yml` 仍可在显式 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 下自动启动临时 FastAPI + SQLite 实例并验证 Study 隔离、权限矩阵、用户创建、CRF 字段写入、CRF 版本迁移审批/发布、知情同意文件上传、样本/组学创建、导出权限和审批流程；静态 UI smoke 会检查 8 个 HTML 导出页面、关键按钮文案和 CRF migration approval 文案。
 
 本文记录从 `v0.0.1-beta.0` 到 `v1.0.2` GA 功能测试包的工程验证结果。当前结论是：项目适合发布为 GA 功能测试和测试数据填写版本；正式 Docker 启动为空库，仅保留首个 LZ 系统管理员。真实患者生产上线前仍必须完成生产级身份源、对象存储、PostgreSQL RLS、备份恢复演练和合规签字。
 
@@ -35,7 +35,7 @@
 ## Beta 发布范围
 
 - 前端：Vite + React + TypeScript dashboard，支持登录、Study scope、模块路由、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析、系统管理、Query 管理和多中心配置。
-- 后端：FastAPI + PostgreSQL API，包含签名 Bearer token、Study 生命周期、Study 权限、用户/成员授权、CRUD、导出、导入、质量规则、审计和患者全景接口。
+- 后端：FastAPI + PostgreSQL API，包含签名 Bearer token、Study 生命周期、Study 权限、用户/成员授权、CRUD、导出、导入、质量规则、审批和患者全景接口。
 - 数据：正式空库只保留首个 LZ 系统管理员；三 Study demo seed、SLE CRF V0.1 schema、LZXK-01 肺癌耐药字段和患者/访视/随访/样本/组学数据仅作为显式测试 fixture。
 - 交付：源码、工程文档、环境示例、静态 HTML 导出产物。
 

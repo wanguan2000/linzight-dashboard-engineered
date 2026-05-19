@@ -134,7 +134,7 @@ function getTopbarCopy(activeModule: string) {
     },
     知情同意: {
       title: '知情同意管理',
-      subtitle: '管理患者授权、版本签署与审计轨迹。',
+      subtitle: '管理患者授权、版本签署与电子归档状态。',
       aiPlaceholder: '询问 LinZight AI... 例如：列出待签署患者、汇总撤回情况'
     },
     临床数据采集: {
@@ -154,13 +154,13 @@ function getTopbarCopy(activeModule: string) {
     },
     数据分析: {
       title: '导出 / 报表',
-      subtitle: '生成研究数据集、患者全景报表与审计导出。',
-      aiPlaceholder: '询问报表生成、数据导出、SDTM 草稿或审计记录...'
+      subtitle: '生成研究数据集、患者全景报表与归档数据包。',
+      aiPlaceholder: '询问报表生成、数据导出、SDTM 草稿或归档状态...'
     },
     系统管理: {
       title: '系统管理',
       subtitle: '管理账户、角色、字段配置和权限策略。',
-      aiPlaceholder: '询问角色权限、字段配置或系统审计...'
+      aiPlaceholder: '询问角色权限、字段配置或 Study 绑定...'
     }
   };
 

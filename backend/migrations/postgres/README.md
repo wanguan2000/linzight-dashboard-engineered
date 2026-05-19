@@ -5,7 +5,8 @@ This directory is the formal RC migration split:
 1. `001_schema.sql` creates baseline tables.
 2. `002_indexes.sql` creates query indexes.
 3. `003_constraints.sql` adds status/role constraints and the one-published-CRF invariant.
-4. `004_seed_demo.sql` inserts minimal staging connectivity seed rows.
+4. `004_seed_demo.sql` is a no-op ordering marker; GA databases must not receive demo Study or patient rows from migrations.
+5. `005` through `012` add the GA core data model, patient-name privacy, configurable follow-up payloads, Study registry metadata, PostgreSQL-native JSONB columns, removal of legacy unused tables, removal of the standalone audit log module, and backend operation logging.
 
 For the full 70-patient demo dataset, run:
 

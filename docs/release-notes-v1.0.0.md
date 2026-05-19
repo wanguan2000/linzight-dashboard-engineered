@@ -36,9 +36,9 @@ Release date: 2026-05-18
 
 | Role | Account | Scope |
 | --- | --- | --- |
-| LZ Admin | `admin@demo.linzight` | All Studies, Study lifecycle, users, scopes, approvals, audit |
+| LZ Admin | `admin@demo.linzight` | All Studies, Study lifecycle, users, scopes, approvals, backend operation logs |
 | Lung Study CRC | `lung-crc@demo.linzight` | `LZXK-01` data entry and study workflow |
-| Lung Study Data Manager | `lung-dm@demo.linzight` | `LZXK-01` quality, Query, export, approvals, audit |
+| Lung Study Data Manager | `lung-dm@demo.linzight` | `LZXK-01` quality, Query, export, approvals |
 | Lung Study Config Admin | `lung-config@demo.linzight` | `LZXK-01` Study configuration and member administration |
 
 Default password for demo accounts remains `Demo1234!`.
@@ -47,5 +47,5 @@ Default password for demo accounts remains `Demo1234!`.
 
 - The backend remains a demo-grade API until production identity, managed secrets, TLS, object storage, PostgreSQL RLS, and backup/restore are live.
 - Query management is functional for GA testing but still needs production reviewer worklists, SLA reporting, notifications, and dashboarding.
-- eConsent withdraw/re-sign has approval states; production still needs final signed-file handling, scanning, retention, and formal audit reports.
+- eConsent withdraw/re-sign has approval states and backend operation logging; production still needs final signed-file handling, scanning, retention, and formal audit reports.
 - Multi-center/site administration has a first-pass API/UI and still needs full production roster lifecycle and identity-provider group mapping.

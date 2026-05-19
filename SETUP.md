@@ -40,13 +40,13 @@ cp backend/.env.example backend/.env
 
 ## Docker Compose 启动
 
-如果本机已安装 Docker，可以直接启动前后端 PostgreSQL 功能测试环境：
+如果本机已安装 Docker，可以直接启动前后端功能测试环境。Compose 后端默认连接宿主机 Homebrew PostgreSQL 17.10 数据库 `linzight_dashboard_engineered`，不再默认拉起内置 PostgreSQL 16 容器：
 
 ```bash
 docker compose up --build
 ```
 
-首次启动会在 Docker PostgreSQL volume 中初始化 schema，并在用户表为空时只创建首个 LZ 系统管理员，不会自动 seed Study、患者、样本、检测或测试用户。前端地址为 `http://127.0.0.1:5173/`，后端健康检查为 `http://127.0.0.1:8000/health`。
+首次启动会在宿主机 PostgreSQL 17.10 库中初始化 schema，并在用户表为空时只创建首个 LZ 系统管理员，不会自动 seed Study、患者、样本、检测或测试用户。前端地址为 `http://127.0.0.1:5173/`，后端健康检查为 `http://127.0.0.1:8000/health`。
 
 ## 常见启动失败原因
 
@@ -88,8 +88,9 @@ curl http://127.0.0.1:8000/health
 ## 旧 SQLite 测试库备份恢复
 
 ```bash
+npm run backup:postgres
 npm run backup:sqlite
 npm run restore:sqlite -- backups/linzight-<timestamp>
 ```
 
-备份路径默认是 `./backups`，已被 Git ignore。更多部署与运维说明见 `docs/deployment-ops.md`。
+PostgreSQL 备份演练会生成 `pg_dump` custom-format dump 和 `reports/postgres-backup-drill.json`；SQLite 备份仅用于旧测试库。备份路径默认是 `./backups`，已被 Git ignore。更多部署与运维说明见 `docs/deployment-ops.md`。

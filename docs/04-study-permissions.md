@@ -40,8 +40,8 @@ type StudyScope = {
 - `crc@demo.linzight`：`STUDY_CRC`，只访问 `LGL-1111`。
 - `lung-pi@demo.linzight`：`STUDY_PI`，只访问 `LZXK-01`。
 - `lung-crc@demo.linzight`：`STUDY_CRC`，只访问 `LZXK-01`。
-- `lung-config@demo.linzight`：`STUDY_CONFIG_ADMIN`，拥有 `LZXK-01` 本 Study 全部业务、配置、成员、审计、导出和审批权限。
-- `lung-dm@demo.linzight`：`STUDY_DATA_MANAGER`，只访问 `LZXK-01` 质控、Query、导出和审计流程。
+- `lung-config@demo.linzight`：`STUDY_CONFIG_ADMIN`，拥有 `LZXK-01` 本 Study 全部业务、配置、成员、导出和审批权限。
+- `lung-dm@demo.linzight`：`STUDY_DATA_MANAGER`，只访问 `LZXK-01` 质控、Query、导出和审批流程。
 - `admin@demo.linzight`：`LZ_ADMIN`，访问全部 Study。
 - `lz-crc@demo.linzight`：`LZ_CRC`，访问 `LGL-1111`、`RWD-NMO-2026`、`LZXK-01`。
 - `lz-dm@demo.linzight`：`LZ_DATA_MANAGER`，只访问 `RWD-NMO-2026`。
@@ -51,13 +51,13 @@ type StudyScope = {
 ## 后端实现
 
 - `backend/permissions.py` 提供 `role_can()`、`get_user_study_scope()`、`can_access_study()` 和 Study 成员查询。
-- `backend/database.py` 增加 `studies`、`study_members`、`global_role_study_scope`、`study_visit_plans`、`study_configurations`、`crf_templates`、`study_crf_versions`。
-- 患者、知情、访视、随访记录、CRF、样本、组学、文件、导出、质控和审计均包含 `study_id`。
+- `backend/database.py` 增加 `studies`、`study_members`、`global_role_study_scope`、`study_visit_plans`、`study_configurations`、`study_crf_versions`。
+- 患者、知情、访视、随访记录、CRF、样本、组学、文件、导出和质控均包含 `study_id`。
 - `omics_records` 使用 `testing_project_id` 表示样本检测项目编号。
 - 所有核心列表和详情接口按授权 Study 自动过滤。
 - Query 创建校验患者、访视和 CRF 字段都属于当前 Study；`field_name` 必须来自该 Study 当前 CRF schema。
 - 质量检查会基于 `study_visit_plans` 生成访视窗口超窗问题。
-- 审计日志包含 `before`、`after` 和结构化 `diff`，关键操作必须带 `study_id`。
+- GA 版本已移除 standalone audit log 模块；关键业务写入仍必须带 `study_id` 并由后端校验 Study scope。
 - CRF 数据绑定 `study_id`、`patient_id`、`crf_version_id`、`form_id`。
 - Study 配置总表 `study_configurations` 绑定病种语义、当前 published CRF、访视计划、知情同意模板和检测 profile；新建患者不得在缺少当前 Study published CRF 时回退默认 LGL。
 - 访视计划配置保存在 `study_visit_plans`，`visits.visit_plan_id` 关联配置；新建患者时按 Study active 访视计划自动生成患者访视与 CRF 草稿。
@@ -82,6 +82,6 @@ type StudyScope = {
 - 授权平台角色只看到被授权 Study。
 - RWD EDC 数据隔离使用 `study_id`。
 - 样本检测项目字段使用 `testing_project_id`。
-- Study 成员、CRF 版本、导出、质控和关键写操作写入 `audit_logs`。
+- Study 成员、CRF 版本、导出、质控和关键写操作均按当前 Study 权限校验，不再写入 `audit_logs`。
 - Study CRC 请求其他 Study 的 patients、samples、omics、consents 等主链路接口必须返回 403，而不是返回空数组或前端静默停留。
-- API smoke 已覆盖 files、queries、quality、exports、approvals、audit logs、CRF entry 的基础越权用例；`npm run browser:matrix` 覆盖桌面和 390px 移动端的角色路由矩阵。正式发布前仍需把该矩阵纳入 CI，并扩展到更多浏览器和真实认证源。
+- API smoke 已覆盖 files、queries、quality、exports、approvals、CRF entry 的基础越权用例；`npm run browser:matrix` 覆盖桌面和 390px 移动端的角色路由矩阵。正式发布前仍需把该矩阵纳入 CI，并扩展到更多浏览器和真实认证源。

@@ -74,7 +74,7 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
         { label: 'CRF 录入', icon: 'crf', count: '0 / 0', percent: 0, status: 'empty' },
         { label: '样本采集', icon: 'samples', count: '0 / 0', percent: 0, status: 'empty' },
         { label: '组学归档', icon: 'activity', count: '0 / 0', percent: 0, status: 'empty' },
-        { label: '导出审计', icon: 'shield', count: '0 / 0', percent: 0, status: 'empty' }
+        { label: '导出归档', icon: 'shield', count: '0 / 0', percent: 0, status: 'empty' }
       ],
       workflowOverall: 0,
       omics: [
@@ -96,7 +96,10 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
   const consentPercent = percent(consentSignedCount, patientCount);
   const samplePercent = percent(samplePatientCount, patientCount);
   const completedOmicsPercent = percent(summary.completed_omics_count, summary.omics_count);
-  const overall = Math.round((100 + consentPercent + samplePercent + completedOmicsPercent) / 4);
+  const exportCount = summary.export_count ?? 0;
+  const readyExportCount = summary.ready_export_count ?? 0;
+  const exportPercent = percent(readyExportCount, exportCount);
+  const overall = Math.round((100 + consentPercent + samplePercent + completedOmicsPercent + exportPercent) / 5);
   const diseaseStats = Object.entries(summary.disease_distribution)
     .filter(([, value]) => value > 0)
     .sort(([, a], [, b]) => b - a)
@@ -139,7 +142,7 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
       { label: 'CRF 录入', icon: 'crf', count: `${formatCount(crfCount)} / ${formatCount(visitCount)}`, percent: percent(crfCount, visitCount), status: 'normal' },
       { label: '样本采集', icon: 'samples', count: `${formatCount(samplePatientCount)} / ${formatCount(patientCount)}`, percent: samplePercent, status: samplePercent < 80 ? 'low' : 'normal' },
       { label: '组学归档', icon: 'activity', count: `${formatCount(summary.completed_omics_count)} / ${formatCount(summary.omics_count)}`, percent: completedOmicsPercent, status: completedOmicsPercent < 80 ? 'low' : 'normal' },
-      { label: '导出审计', icon: 'shield', count: `${formatCount(summary.completed_omics_count)} / ${formatCount(summary.omics_count)}`, percent: completedOmicsPercent, status: completedOmicsPercent < 80 ? 'low' : 'normal' }
+      { label: '导出归档', icon: 'shield', count: `${formatCount(readyExportCount)} / ${formatCount(exportCount)}`, percent: exportPercent, status: exportCount === 0 ? 'empty' : exportPercent < 80 ? 'low' : 'normal' }
     ],
     workflowOverall: overall,
     omics: [

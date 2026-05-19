@@ -195,7 +195,7 @@ async function verifySystemLoop(page, role) {
     await assertVisibleTextIncludes(page, ['Study Registry', 'User Accounts', 'Create Study'], 'global system management');
     return { restricted: false, global: true };
   }
-  await assertVisibleTextIncludes(page, ['Query Management', 'Approval Center', 'Audit Diff'], 'system management closed loop');
+  await assertVisibleTextIncludes(page, ['Query Management', 'Approval Center', 'CRF Migration Approval'], 'system management closed loop');
   if (role.studyId) {
     await assertVisibleTextIncludes(page, [role.studyId], 'system management study scope');
     await assertVisibleTextExcludes(page, ['LGL-1111 全队列', '免疫相关性神经系统疾病多组学解析'], 'lung system management');
@@ -247,7 +247,7 @@ async function runScenario(browser, role) {
     await clickNav(page, '患者旅程');
     await expectVisible(page, '临床 Patient Journey', 'journey page');
     if (role.lungChecks) {
-      await assertVisibleTextIncludes(page, ['LZXK-01', 'ECOG'], 'lung journey');
+      await assertVisibleTextIncludes(page, ['LZXK-01'], 'lung journey');
       await assertVisibleTextExcludes(page, ['基线 SLEDAI', 'C3', 'IgG Index'], 'lung journey');
     }
 

@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -13,7 +14,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 try:
     from .database import (
@@ -23,7 +24,6 @@ try:
         encode_json,
         fetch_one,
         initialize_schema,
-        row_to_audit_log,
         row_to_approval_action,
         row_to_approval_request,
         row_to_consent,
@@ -36,6 +36,7 @@ try:
         row_to_file,
         row_to_follow_up_record,
         row_to_omics,
+        row_to_operation_log,
         row_to_patient,
         row_to_quality_issue,
         row_to_sample,
@@ -55,7 +56,7 @@ try:
     from .permissions import can_access_study, first_accessible_study_id, get_user_study_scope, permission_matrix, role_can, user_role
     from .provisioning import ensure_initial_admin
     from .security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PasswordResetConfirm, PasswordResetRequest, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, UserUpdate, VisitUpdate
+    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, LoginResponse, OmicsCreate, OmicsUpdate, PasswordResetConfirm, PasswordResetRequest, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserPublic, UserStatusUpdate, UserUpdate, VisitUpdate
     from .seed import seed_database
 except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from database import (
@@ -65,7 +66,6 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         encode_json,
         fetch_one,
         initialize_schema,
-        row_to_audit_log,
         row_to_approval_action,
         row_to_approval_request,
         row_to_consent,
@@ -78,6 +78,7 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
         row_to_file,
         row_to_follow_up_record,
         row_to_omics,
+        row_to_operation_log,
         row_to_patient,
         row_to_quality_issue,
         row_to_sample,
@@ -97,7 +98,7 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from permissions import can_access_study, first_accessible_study_id, get_user_study_scope, permission_matrix, role_can, user_role
     from provisioning import ensure_initial_admin
     from security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, OmicsCreate, OmicsUpdate, PasswordResetConfirm, PasswordResetRequest, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserStatusUpdate, UserUpdate, VisitUpdate
+    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, LoginResponse, OmicsCreate, OmicsUpdate, PasswordResetConfirm, PasswordResetRequest, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserPublic, UserStatusUpdate, UserUpdate, VisitUpdate
     from seed import seed_database
 
 app = FastAPI(title="LinZight RWS EDC API", version="1.0.2")
@@ -362,6 +363,8 @@ def mask_sensitive_value(value: Any, rule: str) -> Any:
         return text
     if rule == "name":
         return f"{text[0]}**" if len(text) <= 3 else f"{text[0]}**{text[-1]}"
+    if rule == "pinyin_initials":
+        return pinyin_initials(text)
     if rule == "phone":
         return f"{text[:3]}****{text[-4:]}" if len(text) >= 7 else "***"
     if rule == "id_card":
@@ -371,6 +374,56 @@ def mask_sensitive_value(value: Any, rule: str) -> Any:
     if rule == "address":
         return f"{text[:6]}..." if len(text) > 6 else "***"
     return "***"
+
+
+PINYIN_INITIAL_BOUNDS = [
+    (-20319, "A"),
+    (-20283, "B"),
+    (-19775, "C"),
+    (-19218, "D"),
+    (-18710, "E"),
+    (-18526, "F"),
+    (-18239, "G"),
+    (-17922, "H"),
+    (-17417, "J"),
+    (-16474, "K"),
+    (-16212, "L"),
+    (-15640, "M"),
+    (-15165, "N"),
+    (-14922, "O"),
+    (-14914, "P"),
+    (-14630, "Q"),
+    (-14149, "R"),
+    (-14090, "S"),
+    (-13318, "T"),
+    (-12838, "W"),
+    (-12556, "X"),
+    (-11847, "Y"),
+    (-11055, "Z"),
+]
+
+
+def pinyin_initials(value: str) -> str:
+    initials: list[str] = []
+    for char in value.strip():
+        if re.match(r"[A-Za-z0-9]", char):
+            initials.append(char.upper())
+            continue
+        try:
+            encoded = char.encode("gbk")
+        except UnicodeEncodeError:
+            continue
+        if len(encoded) < 2:
+            continue
+        code = encoded[0] * 256 + encoded[1] - 65536
+        initial = ""
+        for bound, letter in reversed(PINYIN_INITIAL_BOUNDS):
+            if code >= bound:
+                initial = letter
+                break
+        if initial:
+            initials.append(initial)
+    return "".join(initials) or "***"
 
 
 def load_field_permissions(conn: Any, role: str, resource: str = "patients") -> dict[str, dict[str, Any]]:
@@ -413,7 +466,9 @@ def apply_field_permissions_to_record(
         return mask_sensitive_value(value, permission["mask_rule"])
 
     next_record = dict(record)
-    for field_name in ["name", "patient_name", "hospital_no"]:
+    if "patient_name" in next_record:
+        next_record["patient_name_initials"] = pinyin_initials(str(next_record.get("patient_name") or ""))
+    for field_name in ["patient_number", "name", "patient_name", "hospital_no"]:
         if field_name in next_record:
             next_record[field_name] = apply_field(field_name, next_record[field_name])
     clinical_data = next_record.get("clinical_data")
@@ -431,6 +486,60 @@ def apply_field_permissions_to_records(
     mode: str = "view",
 ) -> list[dict[str, Any]]:
     return [apply_field_permissions_to_record(conn, user, record, resource=resource, mode=mode) for record in records]
+
+
+def operation_diff(before: Any, after: Any, prefix: str = "") -> list[dict[str, Any]]:
+    if before is None and after is None:
+        return []
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return [{"field": prefix or "value", "before": before, "after": after}] if before != after else []
+
+    changes: list[dict[str, Any]] = []
+    for key in sorted(set(before.keys()) | set(after.keys())):
+        field_path = f"{prefix}.{key}" if prefix else str(key)
+        before_value = before.get(key)
+        after_value = after.get(key)
+        if isinstance(before_value, dict) and isinstance(after_value, dict):
+            changes.extend(operation_diff(before_value, after_value, field_path))
+        elif before_value != after_value:
+            changes.append({"field": field_path, "before": before_value, "after": after_value})
+    return changes
+
+
+def log_operation(
+    conn: Any,
+    actor: dict[str, Any] | None,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    *,
+    study_id: str | None = None,
+    before: Any = None,
+    after: Any = None,
+    request_context: dict[str, Any] | None = None,
+) -> None:
+    diff = operation_diff(before or {}, after or {})
+    conn.execute(
+        """
+        INSERT INTO operation_logs
+          (id, study_id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, diff_json, request_context_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            f"OPL-{uuid4().hex[:12].upper()}",
+            study_id,
+            actor["id"] if actor else None,
+            user_role(actor) if actor else None,
+            action,
+            entity_type,
+            entity_id,
+            encode_json(before or {}),
+            encode_json(after or {}),
+            encode_json(diff),
+            encode_json(request_context or {}),
+            utc_now(),
+        ),
+    )
 
 
 def approval_with_actions(conn: Any, approval_id: str) -> dict[str, Any]:
@@ -480,6 +589,18 @@ def record_approval_action(
         """,
         (to_status, reviewed_by, reviewed_at, completed_at, comment or approval.get("comment") or "", now, approval["id"]),
     )
+    after = approval_with_actions(conn, approval["id"])
+    log_operation(
+        conn,
+        actor,
+        action.upper(),
+        "approval_requests",
+        approval["id"],
+        study_id=approval["study_id"],
+        before=approval,
+        after=after,
+        request_context={"approval_action": action, "to_status": to_status},
+    )
 
 
 def patient_study_id(conn: Any, patient_id: str) -> str:
@@ -506,55 +627,8 @@ def forbid_locked_crf_update(before: dict[str, Any], data: dict[str, Any]) -> No
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="permission denied")
 
 
-def audit_diff(before: Any, after: Any, prefix: str = "") -> list[dict[str, Any]]:
-    if before is None or after is None:
-        return []
-    if not isinstance(before, dict) or not isinstance(after, dict):
-        return [{"field": prefix or "value", "before": before, "after": after}] if before != after else []
-
-    changes: list[dict[str, Any]] = []
-    for key in sorted(set(before.keys()) | set(after.keys())):
-        field_path = f"{prefix}.{key}" if prefix else str(key)
-        before_value = before.get(key)
-        after_value = after.get(key)
-        if isinstance(before_value, dict) and isinstance(after_value, dict):
-            changes.extend(audit_diff(before_value, after_value, field_path))
-        elif before_value != after_value:
-            changes.append({"field": field_path, "before": before_value, "after": after_value})
-    return changes
 
 
-def insert_audit(
-    conn: Any,
-    actor: dict[str, Any] | None,
-    action: str,
-    entity_type: str,
-    entity_id: str,
-    before: Any = None,
-    after: Any = None,
-    study_id: str = "LGL-1111",
-) -> None:
-    diff = audit_diff(before, after)
-    conn.execute(
-        """
-        INSERT INTO audit_logs (id, study_id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, diff_json, ip_address, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            f"AUD-{uuid4().hex[:10].upper()}",
-            study_id,
-            actor["id"] if actor else None,
-            user_role(actor) if actor else None,
-            action,
-            entity_type,
-            entity_id,
-            encode_json(before) if before is not None else None,
-            encode_json(after) if after is not None else None,
-            encode_json(diff),
-            None,
-            utc_now(),
-        ),
-    )
 
 
 def latest_published_crf_version_id(conn: Any, study_id: str) -> str:
@@ -660,17 +734,18 @@ def study_crf_field_names(conn: Any, study_id: str) -> set[str]:
 QUERY_NON_CRF_FIELDS: dict[str, set[str]] = {
     "visits": {"visit_date", "visit_type", "sle_dai", "medication", "sample_collection", "completeness", "status"},
     "consents": {"status", "signed_at", "version", "method"},
-    "samples": {"sample_count", "sample_type", "collected_at", "storage", "status"},
-    "omics_records": {"assay", "platform", "run_id", "status", "qc", "sent_at", "completed_at"},
+    "samples": {"sample_count", "sample_type", "collected_at", "storage", "note", "status"},
+    "omics_records": {"assay", "platform", "run_id", "status", "qc", "result_file_id", "sent_at", "completed_at"},
     "follow_up_records": {
         "follow_up_date",
         "follow_up_method",
         "survival_status",
         "disease_status",
         "efficacy_assessment",
+        "record_note",
         "lost_to_follow_up_reason",
     },
-    "patients": {"note", "disease_type", "clinical_data.数据完整度", "数据完整度", "data_completeness"},
+    "patients": {"patient_number", "note", "disease_type", "clinical_data.数据完整度", "数据完整度", "data_completeness"},
 }
 
 
@@ -899,6 +974,8 @@ def create_planned_visits_for_patient(
             ),
         )
         created_visit_ids.append(visit_id)
+        visit_row = fetch_visit_display(conn, visit_id)
+        log_operation(conn, actor, "CREATE", "visits", visit_id, study_id=patient["study_id"], after=visit_row, request_context={"generated_by": "create_patient"})
 
         for form_id in required_forms:
             entry_id = f"CRF-{uuid4().hex[:8].upper()}"
@@ -932,16 +1009,9 @@ def create_planned_visits_for_patient(
                 ),
             )
             created_crf_count += 1
+            crf_entry = row_to_crf_entry(fetch_one(conn, "SELECT * FROM crf_entries WHERE id = ?", (entry_id,)))
+            log_operation(conn, actor, "CREATE", "crf_entries", entry_id, study_id=patient["study_id"], after=crf_entry, request_context={"generated_by": "create_patient"})
 
-    insert_audit(
-        conn,
-        actor,
-        "create_planned_visits",
-        "visits",
-        patient["id"],
-        after={"visit_ids": created_visit_ids, "crf_entries": created_crf_count},
-        study_id=patient["study_id"],
-    )
     return {"visits": len(created_visit_ids), "crf_entries": created_crf_count}
 
 
@@ -951,12 +1021,21 @@ def health() -> dict[str, str]:
 
 
 @app.post("/seed")
-def seed() -> dict[str, str]:
+def seed(authorization: str | None = Header(default=None)) -> dict[str, str]:
+    sqlite_smoke_runtime = os.getenv("LINZIGHT_ALLOW_SQLITE_RUNTIME") == "1"
+    seed_endpoint_enabled = os.getenv("LINZIGHT_ENABLE_SEED_ENDPOINT") == "1"
+    if not sqlite_smoke_runtime:
+        if not seed_endpoint_enabled:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not found")
+        with connect() as conn:
+            user = authorize(authorization, "studies", "write", conn=conn)
+            if user_role(user) != "LZ_ADMIN":
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can seed the database")
     seed_database()
     return {"status": "seeded"}
 
 
-@app.post("/auth/login")
+@app.post("/auth/login", response_model=LoginResponse)
 def login(payload: LoginRequest) -> dict[str, Any]:
     with connect() as conn:
         row = conn.execute("SELECT * FROM users WHERE username = ?", (payload.username,)).fetchone()
@@ -969,8 +1048,11 @@ def login(payload: LoginRequest) -> dict[str, Any]:
                 "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
                 (hash_password(payload.password), utc_now(), row["id"]),
             )
+        now = utc_now()
+        before = row_to_user(row)
+        conn.execute("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?", (now, now, row["id"]))
         user = load_user(conn, row["id"])
-        insert_audit(conn, user, "login", "users", user["id"], after={"username": user["username"]}, study_id=first_accessible_study_id(conn, user) or "LGL-1111")
+        log_operation(conn, user, "LOGIN", "users", user["id"], before=before, after=user, request_context={"username": payload.username})
         return {"access_token": create_access_token(user["id"], user_role(user)), "token_type": "bearer", "user": user}
 
 
@@ -987,13 +1069,14 @@ def request_password_reset(payload: PasswordResetRequest) -> dict[str, str]:
         if row and row["status"] == "active":
             now = utc_now()
             token = secrets.token_urlsafe(32)
+            token_id = f"PRT-{uuid4().hex[:12].upper()}"
             expires_at = (datetime.now(timezone.utc) + timedelta(seconds=PASSWORD_RESET_TTL_SECONDS)).isoformat(timespec="seconds")
             conn.execute(
                 """
                 INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used_at, created_at)
                 VALUES (?, ?, ?, ?, NULL, ?)
                 """,
-                (f"PRT-{uuid4().hex[:12].upper()}", row["id"], password_reset_token_hash(token), expires_at, now),
+                (token_id, row["id"], password_reset_token_hash(token), expires_at, now),
             )
             public_url = os.getenv("LINZIGHT_PUBLIC_APP_URL", "http://127.0.0.1:5173").rstrip("/")
             reset_url = f"{public_url}/?reset_token={token}"
@@ -1008,6 +1091,16 @@ def request_password_reset(payload: PasswordResetRequest) -> dict[str, str]:
                 ]
             )
             email_status = send_email(row["username"], "LinZight password reset", body)["status"]
+            actor = row_to_user(row)
+            log_operation(
+                conn,
+                actor,
+                "PASSWORD_RESET_REQUEST",
+                "password_reset_tokens",
+                token_id,
+                after={"id": token_id, "user_id": row["id"], "expires_at": expires_at, "used_at": None},
+                request_context={"username": username, "email_status": email_status},
+            )
         elif smtp_configured():
             email_status = "sent"
     return {"status": "accepted", "email": email_status}
@@ -1029,14 +1122,15 @@ def confirm_password_reset(payload: PasswordResetConfirm) -> dict[str, str]:
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid or expired password reset token")
+        before = row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (row["user_id"],)))
         conn.execute("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?", (hash_password(payload.password), now, row["user_id"]))
         conn.execute("UPDATE password_reset_tokens SET used_at = ? WHERE id = ?", (now, row["id"]))
         user = row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (row["user_id"],)))
-        insert_audit(conn, user, "password_reset", "users", user["id"], after={"username": user["username"]}, study_id=first_accessible_study_id(conn, user) or "GLOBAL")
+        log_operation(conn, user, "PASSWORD_RESET_CONFIRM", "users", user["id"], before=before, after=user)
     return {"status": "updated"}
 
 
-@app.get("/auth/me")
+@app.get("/auth/me", response_model=UserPublic)
 def me(token: str | None = Query(default=None), authorization: str | None = Header(default=None)) -> dict[str, Any]:
     user_id = token_to_user_id(authorization=authorization, token=token)
     if user_id is None:
@@ -1052,7 +1146,7 @@ def me(token: str | None = Query(default=None), authorization: str | None = Head
 def logout(authorization: str | None = Header(default=None)) -> dict[str, str]:
     with connect() as conn:
         user = authorize(authorization, "studies", "read", conn=conn)
-        insert_audit(conn, user, "logout", "users", user["id"], after={"username": user["username"]}, study_id=first_accessible_study_id(conn, user) or "LGL-1111")
+        log_operation(conn, user, "LOGOUT", "users", user["id"], after=user)
         return {"status": "logged_out"}
 
 
@@ -1123,7 +1217,7 @@ def create_user(payload: UserCreate, authorization: str | None = Header(default=
                 (user_id,),
             ).fetchall()
         ]
-        insert_audit(conn, actor, "create", "users", user_id, after=created, study_id=study_id or first_accessible_study_id(conn, actor) or "LGL-1111")
+        log_operation(conn, actor, "CREATE", "users", user_id, study_id=study_id, after=created)
         return created
 
 
@@ -1138,7 +1232,7 @@ def update_user_status(user_id: str, payload: UserStatusUpdate, authorization: s
         conn.execute("UPDATE users SET status = ?, updated_at = ? WHERE id = ?", (payload.status, now, user_id))
         after = row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,)))
         after["study_scope"] = get_user_study_scope(conn, after)
-        insert_audit(conn, actor, "update_status", "users", user_id, before=before, after=after, study_id=first_accessible_study_id(conn, after) or first_accessible_study_id(conn, actor) or "LGL-1111")
+        log_operation(conn, actor, "STATUS_CHANGE", "users", user_id, before=before, after=after)
         return after
 
 
@@ -1225,7 +1319,7 @@ def update_user(user_id: str, payload: UserUpdate, study_id: str | None = None, 
         values.append(user_id)
         conn.execute(f"UPDATE users SET {', '.join(columns)} WHERE id = ?", values)
         after = enrich_user_record(conn, row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,))))
-        insert_audit(conn, actor, "update", "users", user_id, before=before, after=after, study_id=study_id or first_accessible_study_id(conn, actor) or "LGL-1111")
+        log_operation(conn, actor, "UPDATE", "users", user_id, study_id=study_id, before=before, after=after)
         return after
 
 
@@ -1253,7 +1347,7 @@ def update_global_role_study_scope(user_id: str, payload: GlobalRoleStudyScopeUp
                 (f"GRS-{uuid4().hex[:10].upper()}", user_id, scoped_study_id, now),
             )
         after = enrich_user_record(conn, row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,))))
-        insert_audit(conn, actor, "update_study_scope", "global_role_study_scope", user_id, before=before, after=after, study_id=first_accessible_study_id(conn, actor) or "LGL-1111")
+        log_operation(conn, actor, "UPDATE_SCOPE", "global_role_study_scope", user_id, before=before, after=after, request_context={"study_ids": unique_study_ids})
         return after
 
 
@@ -1305,13 +1399,25 @@ def create_study(payload: StudyCreate, authorization: str | None = Header(defaul
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study id or code already exists")
         conn.execute(
             """
-            INSERT INTO studies (id, code, name, indication, phase, status, owner_org, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO studies (id, code, name, indication, phase, status, owner_org, leading_pi_info, system_admin, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (data["id"], data["code"], data["name"], data["indication"], data["phase"], data["status"], data["owner_org"], now, now),
+            (
+                data["id"],
+                data["code"],
+                data["name"],
+                data["indication"],
+                data["phase"],
+                data["status"],
+                data["owner_org"],
+                data.get("leading_pi_info") or "",
+                data.get("system_admin") or "",
+                now,
+                now,
+            ),
         )
         study = row_to_study(fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (data["id"],)))
-        insert_audit(conn, actor, "create", "studies", study["id"], after=study, study_id=study["id"])
+        log_operation(conn, actor, "CREATE", "studies", study["id"], study_id=study["id"], after=study)
         return study
 
 
@@ -1339,7 +1445,7 @@ def update_study(study_id: str, payload: StudyUpdate, authorization: str | None 
         before = row_to_study(fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,)))
         columns: list[str] = []
         values: list[Any] = []
-        for key in ("code", "name", "indication", "phase", "status", "owner_org"):
+        for key in ("code", "name", "indication", "phase", "status", "owner_org", "leading_pi_info", "system_admin"):
             if data.get(key) is not None:
                 columns.append(f"{key} = ?")
                 values.append(data[key])
@@ -1350,7 +1456,7 @@ def update_study(study_id: str, payload: StudyUpdate, authorization: str | None 
         values.append(study_id)
         conn.execute(f"UPDATE studies SET {', '.join(columns)} WHERE id = ?", values)
         after = row_to_study(fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,)))
-        insert_audit(conn, actor, "update_lifecycle", "studies", study_id, before=before, after=after, study_id=study_id)
+        log_operation(conn, actor, "UPDATE", "studies", study_id, study_id=study_id, before=before, after=after)
         return after
 
 
@@ -1364,7 +1470,7 @@ def delete_study(study_id: str, authorization: str | None = Header(default=None)
         now = utc_now()
         conn.execute("UPDATE studies SET status = 'deleted', updated_at = ? WHERE id = ?", (now, study_id))
         after = row_to_study(fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,)))
-        insert_audit(conn, actor, "delete_soft", "studies", study_id, before=before, after=after, study_id=study_id)
+        log_operation(conn, actor, "DELETE", "studies", study_id, study_id=study_id, before=before, after=after)
         return after
 
 
@@ -1398,16 +1504,17 @@ def list_study_members(study_id: str, authorization: str | None = Header(default
         authorize(authorization, "study_members", "read", study_id=study_id, conn=conn)
         rows = conn.execute(
             """
-            SELECT
-              sm.id,
-              sm.study_id,
-              sm.user_id,
-              u.username,
-              u.display_name,
-              sm.study_role,
-              sm.status,
-              sm.created_at,
-              sm.updated_at
+	            SELECT
+	              sm.id,
+	              sm.study_id,
+	              sm.user_id,
+	              u.username,
+	              u.display_name,
+	              u.last_login_at,
+	              sm.study_role,
+	              sm.status,
+	              sm.created_at,
+	              sm.updated_at
             FROM study_members sm
             JOIN users u ON u.id = sm.user_id
             WHERE sm.study_id = ?
@@ -1424,6 +1531,8 @@ def create_study_member(study_id: str, payload: StudyMemberCreate, authorization
         user = authorize(authorization, "study_members", "write", study_id=study_id, conn=conn)
         fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,))
         fetch_one(conn, "SELECT * FROM users WHERE id = ?", (payload.user_id,))
+        before_row = conn.execute("SELECT * FROM study_members WHERE study_id = ? AND user_id = ?", (study_id, payload.user_id)).fetchone()
+        before = row_to_study_member(before_row) if before_row else {}
         now = utc_now()
         member_id = f"SMB-{uuid4().hex[:10].upper()}"
         conn.execute(
@@ -1441,14 +1550,15 @@ def create_study_member(study_id: str, payload: StudyMemberCreate, authorization
             fetch_one(
                 conn,
                 """
-                SELECT
-                  sm.id,
-                  sm.study_id,
-                  sm.user_id,
-                  u.username,
-                  u.display_name,
-                  sm.study_role,
-                  sm.status,
+	                SELECT
+	                  sm.id,
+	                  sm.study_id,
+	                  sm.user_id,
+	                  u.username,
+	                  u.display_name,
+	                  u.last_login_at,
+	                  sm.study_role,
+	                  sm.status,
                   sm.created_at,
                   sm.updated_at
                 FROM study_members sm
@@ -1458,7 +1568,7 @@ def create_study_member(study_id: str, payload: StudyMemberCreate, authorization
                 (study_id, payload.user_id),
             )
         )
-        insert_audit(conn, user, "upsert_member", "study_members", member["id"], after=member, study_id=study_id)
+        log_operation(conn, user, "UPSERT", "study_members", member["id"], study_id=study_id, before=before, after=member)
         return member
 
 
@@ -1488,6 +1598,8 @@ def upsert_study_visit_plan(study_id: str, payload: StudyVisitPlanCreate, author
     with connect() as conn:
         user = authorize(authorization, "crf_config", "write", study_id=study_id, conn=conn)
         fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,))
+        before_row = conn.execute("SELECT * FROM study_visit_plans WHERE study_id = ? AND code = ?", (study_id, data["code"])).fetchone()
+        before = row_to_study_visit_plan(before_row) if before_row else {}
         conn.execute(
             """
             INSERT INTO study_visit_plans
@@ -1523,8 +1635,8 @@ def upsert_study_visit_plan(study_id: str, payload: StudyVisitPlanCreate, author
             ),
         )
         plan = row_to_study_visit_plan(fetch_one(conn, "SELECT * FROM study_visit_plans WHERE study_id = ? AND code = ?", (study_id, data["code"])))
-        insert_audit(conn, user, "upsert_visit_plan", "study_visit_plans", plan["id"], after=plan, study_id=study_id)
         sync_study_configurations(conn)
+        log_operation(conn, user, "UPSERT", "study_visit_plans", plan["id"], study_id=study_id, before=before, after=plan)
         return plan
 
 
@@ -1555,8 +1667,8 @@ def update_study_visit_plan(study_id: str, plan_id: str, payload: StudyVisitPlan
         if result.rowcount == 0:
             raise not_found()
         after = row_to_study_visit_plan(fetch_one(conn, "SELECT * FROM study_visit_plans WHERE id = ? AND study_id = ?", (plan_id, study_id)))
-        insert_audit(conn, user, "update_visit_plan", "study_visit_plans", plan_id, before=before, after=after, study_id=study_id)
         sync_study_configurations(conn)
+        log_operation(conn, user, "UPDATE", "study_visit_plans", plan_id, study_id=study_id, before=before, after=after)
         return after
 
 
@@ -1582,7 +1694,15 @@ def create_study_crf_version(study_id: str, payload: StudyCrfVersionCreate, auth
             raise HTTPException(status_code=409, detail="CRF version already exists for this Study")
         now = utc_now()
         published_at = now if payload.status == "published" else None
+        retired_versions: list[dict[str, Any]] = []
         if payload.status == "published":
+            retired_versions = [
+                row_to_crf_version(row)
+                for row in conn.execute(
+                    "SELECT * FROM study_crf_versions WHERE study_id = ? AND status = 'published'",
+                    (study_id,),
+                ).fetchall()
+            ]
             conn.execute(
                 "UPDATE study_crf_versions SET status = 'retired', updated_at = ? WHERE study_id = ? AND status = 'published'",
                 (now, study_id),
@@ -1608,9 +1728,22 @@ def create_study_crf_version(study_id: str, payload: StudyCrfVersionCreate, auth
             ),
         )
         version = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ?", (version_id,)))
-        insert_audit(conn, user, "create_crf_version", "study_crf_versions", version_id, after=version, study_id=study_id)
         if payload.status == "published":
             sync_study_configurations(conn)
+        for retired in retired_versions:
+            retired_after = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ?", (retired["id"],)))
+            log_operation(
+                conn,
+                user,
+                "RETIRE",
+                "study_crf_versions",
+                retired["id"],
+                study_id=study_id,
+                before=retired,
+                after=retired_after,
+                request_context={"published_version_id": version_id},
+            )
+        log_operation(conn, user, "CREATE", "study_crf_versions", version_id, study_id=study_id, after=version)
         return version
 
 
@@ -1700,9 +1833,10 @@ def request_study_crf_migration(study_id: str, payload: StudyCrfMigrationApprova
         ).fetchone()
         if existing_pending:
             approval = row_to_crf_migration_approval(existing_pending)
+            before = crf_migration_approval_with_logs(conn, approval)
             insert_crf_migration_log(conn, user, approval["id"], study_id, "request", "reused", "Existing pending or approved migration request reused")
             approval = crf_migration_approval_with_logs(conn, approval)
-            insert_audit(conn, user, "reuse_crf_migration_approval", "crf_migration_approvals", approval["id"], after=approval, study_id=study_id)
+            log_operation(conn, user, "REUSE", "crf_migration_approvals", approval["id"], study_id=study_id, before=before, after=approval)
             return approval
 
         now = utc_now()
@@ -1729,7 +1863,7 @@ def request_study_crf_migration(study_id: str, payload: StudyCrfMigrationApprova
         approval = row_to_crf_migration_approval(fetch_one(conn, "SELECT * FROM crf_migration_approvals WHERE id = ?", (approval_id,)))
         insert_crf_migration_log(conn, user, approval_id, study_id, "request", "pending", f"Migration request created for target {target['version']}")
         approval = crf_migration_approval_with_logs(conn, approval)
-        insert_audit(conn, user, "request_crf_migration_approval", "crf_migration_approvals", approval_id, after=approval, study_id=study_id)
+        log_operation(conn, user, "CREATE", "crf_migration_approvals", approval_id, study_id=study_id, after=approval)
         return approval
 
 
@@ -1757,7 +1891,7 @@ def approve_study_crf_migration(study_id: str, migration_id: str, payload: Study
         after = row_to_crf_migration_approval(fetch_one(conn, "SELECT * FROM crf_migration_approvals WHERE id = ? AND study_id = ?", (migration_id, study_id)))
         insert_crf_migration_log(conn, user, migration_id, study_id, "approve", "approved", "Migration approved by a separate reviewer")
         after = crf_migration_approval_with_logs(conn, after)
-        insert_audit(conn, user, "approve_crf_migration", "crf_migration_approvals", migration_id, before=before, after=after, study_id=study_id)
+        log_operation(conn, user, "APPROVE", "crf_migration_approvals", migration_id, study_id=study_id, before=before, after=after)
         return after
 
 
@@ -1776,6 +1910,13 @@ def apply_study_crf_migration(study_id: str, migration_id: str, payload: StudyCr
         if target["status"] != "draft":
             raise HTTPException(status_code=400, detail="Target CRF version must still be a draft")
         now = utc_now()
+        retired_versions = [
+            row_to_crf_version(row)
+            for row in conn.execute(
+                "SELECT * FROM study_crf_versions WHERE study_id = ? AND id <> ? AND status = 'published'",
+                (study_id, target["id"]),
+            ).fetchall()
+        ]
         conn.execute(
             "UPDATE study_crf_versions SET status = 'retired', updated_at = ? WHERE study_id = ? AND id <> ? AND status = 'published'",
             (now, study_id, target["id"]),
@@ -1801,8 +1942,22 @@ def apply_study_crf_migration(study_id: str, migration_id: str, payload: StudyCr
         published = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ? AND study_id = ?", (target["id"], study_id)))
         insert_crf_migration_log(conn, user, migration_id, study_id, "apply", "applied", f"Target CRF version {published['version']} published")
         after = crf_migration_approval_with_logs(conn, after)
-        insert_audit(conn, user, "apply_crf_migration", "crf_migration_approvals", migration_id, before=before, after={**after, "published_version": published}, study_id=study_id)
         sync_study_configurations(conn)
+        log_operation(conn, user, "APPLY", "crf_migration_approvals", migration_id, study_id=study_id, before=before, after=after)
+        for retired in retired_versions:
+            retired_after = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ?", (retired["id"],)))
+            log_operation(
+                conn,
+                user,
+                "RETIRE",
+                "study_crf_versions",
+                retired["id"],
+                study_id=study_id,
+                before=retired,
+                after=retired_after,
+                request_context={"published_version_id": target["id"], "migration_id": migration_id},
+            )
+        log_operation(conn, user, "PUBLISH", "study_crf_versions", target["id"], study_id=study_id, before=target, after=published)
         return after
 
 
@@ -1817,8 +1972,16 @@ def update_study_crf_version(study_id: str, version_id: str, payload: StudyCrfVe
         now = utc_now()
         columns: list[str] = []
         values: list[Any] = []
+        retired_versions: list[dict[str, Any]] = []
         if "status" in data:
             if data["status"] == "published":
+                retired_versions = [
+                    row_to_crf_version(row)
+                    for row in conn.execute(
+                        "SELECT * FROM study_crf_versions WHERE study_id = ? AND id <> ? AND status = 'published'",
+                        (study_id, version_id),
+                    ).fetchall()
+                ]
                 conn.execute(
                     "UPDATE study_crf_versions SET status = 'retired', updated_at = ? WHERE study_id = ? AND id <> ? AND status = 'published'",
                     (now, study_id, version_id),
@@ -1839,9 +2002,22 @@ def update_study_crf_version(study_id: str, version_id: str, payload: StudyCrfVe
         if result.rowcount == 0:
             raise not_found()
         after = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ? AND study_id = ?", (version_id, study_id)))
-        insert_audit(conn, user, "update_crf_version", "study_crf_versions", version_id, before=before, after=after, study_id=study_id)
         if after["status"] == "published":
             sync_study_configurations(conn)
+        for retired in retired_versions:
+            retired_after = row_to_crf_version(fetch_one(conn, "SELECT * FROM study_crf_versions WHERE id = ?", (retired["id"],)))
+            log_operation(
+                conn,
+                user,
+                "RETIRE",
+                "study_crf_versions",
+                retired["id"],
+                study_id=study_id,
+                before=retired,
+                after=retired_after,
+                request_context={"published_version_id": version_id},
+            )
+        log_operation(conn, user, "UPDATE", "study_crf_versions", version_id, study_id=study_id, before=before, after=after)
         return after
 
 
@@ -1891,7 +2067,7 @@ def create_study_crf_field(study_id: str, payload: StudyCrfFieldCreate, authoriz
         )
         after_version = load_crf_version_for_fields(conn, study_id)
         created = next(field for field in crf_fields_from_version(after_version) if field["id"] == field_id)
-        insert_audit(conn, user, "create_crf_field", "study_crf_versions", version["id"], before=before, after=created, study_id=study_id)
+        log_operation(conn, user, "CREATE", "study_crf_fields", field_id, study_id=study_id, after=created)
         return created
 
 
@@ -1938,7 +2114,7 @@ def update_study_crf_field(study_id: str, field_id: str, payload: StudyCrfFieldU
         )
         after_version = load_crf_version_for_fields(conn, study_id)
         after = next(item for item in crf_fields_from_version(after_version) if item["id"] == field_id)
-        insert_audit(conn, user, "update_crf_field", "study_crf_versions", version["id"], before=before, after=after, study_id=study_id)
+        log_operation(conn, user, "UPDATE", "study_crf_fields", field_id, study_id=study_id, before=before, after=after)
         return after
 
 
@@ -1959,8 +2135,8 @@ def list_patients(
         user = authorize(authorization, "patients", "read", study_id=requested_study_id, conn=conn)
         append_study_filter(conn, user, where, params, "study_id", requested_study_id)
         if q:
-            where.append("(name LIKE ? OR hospital_no LIKE ? OR disease_type LIKE ?)")
-            params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
+            where.append("(patient_number LIKE ? OR name LIKE ? OR patient_name LIKE ? OR hospital_no LIKE ? OR disease_type LIKE ?)")
+            params.extend([f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"])
         if disease_type:
             where.append("disease_type = ?")
             params.append(disease_type)
@@ -1980,6 +2156,8 @@ def create_patient(payload: PatientCreate, path_study_id: str | None = None, aut
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match payload study_id")
         data["study_id"] = path_study_id
     patient_id = data.pop("id") or f"PAT-{uuid4().hex[:8].upper()}"
+    patient_number = data.get("patient_number") or data["name"]
+    patient_name = data.get("patient_name") or data["clinical_data"].get("姓名") or ""
     now = utc_now()
     try:
         with connect() as conn:
@@ -1988,12 +2166,14 @@ def create_patient(payload: PatientCreate, path_study_id: str | None = None, aut
             conn.execute(
                 """
                 INSERT INTO patients
-                  (id, study_id, name, hospital_no, sex, age, disease_type, organs_json, note, clinical_data_json, clinical_data_jsonb, clinical_data_version, clinical_data_format, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  (id, study_id, patient_number, patient_name, name, hospital_no, sex, age, disease_type, organs_json, note, clinical_data_json, clinical_data_jsonb, clinical_data_version, clinical_data_format, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     patient_id,
                     data["study_id"],
+                    patient_number,
+                    patient_name,
                     data["name"],
                     data["hospital_no"],
                     data["sex"],
@@ -2020,10 +2200,11 @@ def create_patient(payload: PatientCreate, path_study_id: str | None = None, aut
                 """,
                 (consent_id, data["study_id"], patient_id),
             )
-            insert_audit(conn, user, "create", "patients", patient_id, after=row, study_id=data["study_id"])
             row["generated_visit_count"] = created_plan_items["visits"]
             row["generated_crf_count"] = created_plan_items["crf_entries"]
             row["generated_consent_count"] = 1
+            log_operation(conn, user, "CREATE", "patients", patient_id, study_id=data["study_id"], after=row)
+            log_operation(conn, user, "CREATE", "consents", consent_id, study_id=data["study_id"], after={"id": consent_id, "patient_id": patient_id, "status": "待签署"})
             return apply_field_permissions_to_record(conn, user, row)
     except HTTPException:
         raise
@@ -2071,7 +2252,7 @@ def update_patient(patient_id: str, payload: PatientUpdate, authorization: str |
         if result.rowcount == 0:
             raise not_found()
         after = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
-        insert_audit(conn, user, "update", "patients", patient_id, before=before, after=after, study_id=after["study_id"])
+        log_operation(conn, user, "UPDATE", "patients", patient_id, study_id=after["study_id"], before=before, after=after)
         return apply_field_permissions_to_record(conn, user, after)
 
 
@@ -2079,10 +2260,12 @@ def update_patient(patient_id: str, payload: PatientUpdate, authorization: str |
 def delete_patient(patient_id: str, authorization: str | None = Header(default=None)) -> None:
     with connect() as conn:
         study_id = patient_study_id(conn, patient_id)
-        authorize(authorization, "patients", "write", study_id=study_id, conn=conn)
+        user = authorize(authorization, "patients", "write", study_id=study_id, conn=conn)
+        before = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
         result = conn.execute("DELETE FROM patients WHERE id = ?", (patient_id,))
         if result.rowcount == 0:
             raise not_found()
+        log_operation(conn, user, "DELETE", "patients", patient_id, study_id=study_id, before=before)
 
 
 @app.get("/studies/{path_study_id}/samples")
@@ -2128,8 +2311,8 @@ def create_sample(payload: SampleCreate, path_study_id: str | None = None, autho
             conn.execute(
                 """
                 INSERT INTO samples
-                  (id, study_id, patient_id, patient_name, hospital_no, sample_type, visit, collected_at, storage, status, linked_omics_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  (id, study_id, patient_id, patient_name, hospital_no, sample_type, visit, collected_at, storage, note, status, linked_omics_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     sample_id,
@@ -2141,6 +2324,7 @@ def create_sample(payload: SampleCreate, path_study_id: str | None = None, autho
                     data["visit"],
                     data["collected_at"],
                     data["storage"],
+                    data["note"],
                     data["status"],
                     encode_json(data["linked_omics"]),
                     now,
@@ -2148,7 +2332,7 @@ def create_sample(payload: SampleCreate, path_study_id: str | None = None, autho
                 ),
             )
             row = row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
-            insert_audit(conn, user, "create", "samples", sample_id, after=row, study_id=study_id)
+            log_operation(conn, user, "CREATE", "samples", sample_id, study_id=study_id, after=row)
             return row
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2193,7 +2377,7 @@ def update_sample(sample_id: str, payload: SampleUpdate, authorization: str | No
         if result.rowcount == 0:
             raise not_found()
         after = row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
-        insert_audit(conn, user, "update", "samples", sample_id, before=before, after=after, study_id=after["study_id"])
+        log_operation(conn, user, "UPDATE", "samples", sample_id, study_id=after["study_id"], before=before, after=after)
         return after
 
 
@@ -2201,10 +2385,11 @@ def update_sample(sample_id: str, payload: SampleUpdate, authorization: str | No
 def delete_sample(sample_id: str, authorization: str | None = Header(default=None)) -> None:
     with connect() as conn:
         sample = row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
-        authorize(authorization, "samples", "write", study_id=sample["study_id"], conn=conn)
+        user = authorize(authorization, "samples", "write", study_id=sample["study_id"], conn=conn)
         result = conn.execute("DELETE FROM samples WHERE id = ?", (sample_id,))
         if result.rowcount == 0:
             raise not_found()
+        log_operation(conn, user, "DELETE", "samples", sample_id, study_id=sample["study_id"], before=sample)
 
 
 @app.get("/studies/{path_study_id}/visits")
@@ -2305,7 +2490,7 @@ def update_visit(visit_id: str, payload: VisitUpdate, authorization: str | None 
         if result.rowcount == 0:
             raise not_found()
         after = fetch_visit_display(conn, visit_id)
-        insert_audit(conn, user, "update", "visits", visit_id, before=before, after=after, study_id=after["study_id"])
+        log_operation(conn, user, "UPDATE", "visits", visit_id, study_id=after["study_id"], before=before, after=after)
         return after
 
 
@@ -2343,6 +2528,16 @@ def list_follow_up_records(
         return apply_field_permissions_to_records(conn, user, rows)
 
 
+def follow_up_payload_from_structured_fields(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "访视": data.get("visit_id") or "",
+        "日期": data.get("follow_up_date") or "",
+        "类型": data.get("follow_up_method") or "",
+        "疗效评估": data.get("efficacy_assessment") or "",
+        "记录": data.get("record_note") or "",
+    }
+
+
 @app.post("/studies/{path_study_id}/follow-up-records", status_code=status.HTTP_201_CREATED)
 @app.post("/follow-up-records", status_code=status.HTTP_201_CREATED)
 def create_follow_up_record(payload: FollowUpRecordCreate, path_study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
@@ -2361,12 +2556,14 @@ def create_follow_up_record(payload: FollowUpRecordCreate, path_study_id: str | 
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="visit_id does not match patient or study")
         user = authorize(authorization, "follow_up_records", "write", study_id=study_id, conn=conn)
         recorded_at = data["recorded_at"] or now
+        follow_up_payload = data["payload"] or follow_up_payload_from_structured_fields(data)
+        payload_jsonb, payload_format, payload_version = sqlite_json_storage(conn, follow_up_payload)
         try:
             conn.execute(
                 """
                 INSERT INTO follow_up_records
-                  (id, study_id, patient_id, visit_id, follow_up_date, follow_up_method, followed_by, survival_status, disease_status, symptoms_signs, imaging_lab_summary, efficacy_assessment, metastasis_status, adverse_events, quality_of_life, lost_to_follow_up_reason, recorded_at, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  (id, study_id, patient_id, visit_id, follow_up_date, follow_up_method, followed_by, survival_status, disease_status, symptoms_signs, imaging_lab_summary, efficacy_assessment, record_note, payload_json, payload_jsonb, payload_version, payload_format, metastasis_status, adverse_events, quality_of_life, lost_to_follow_up_reason, recorded_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record_id,
@@ -2381,6 +2578,11 @@ def create_follow_up_record(payload: FollowUpRecordCreate, path_study_id: str | 
                     data["symptoms_signs"],
                     data["imaging_lab_summary"],
                     data["efficacy_assessment"],
+                    data["record_note"],
+                    encode_json(follow_up_payload),
+                    payload_jsonb,
+                    payload_version,
+                    payload_format,
                     data["metastasis_status"],
                     data["adverse_events"],
                     data["quality_of_life"],
@@ -2402,7 +2604,7 @@ def create_follow_up_record(payload: FollowUpRecordCreate, path_study_id: str | 
                     (record_id,),
                 )
             )
-            insert_audit(conn, user, "create", "follow_up_records", record_id, after=row, study_id=study_id)
+            log_operation(conn, user, "CREATE", "follow_up_records", record_id, study_id=study_id, after=row)
             return row
         except HTTPException:
             raise
@@ -2436,8 +2638,19 @@ def update_follow_up_record(record_id: str, payload: FollowUpRecordUpdate, autho
             visit_scope = visit_patient_scope(conn, data["visit_id"])
             if visit_scope["study_id"] != before["study_id"] or visit_scope["patient_id"] != before["patient_id"]:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="visit_id does not match patient or study")
-        columns = [f"{key} = ?" for key in data]
-        values = list(data.values())
+        structured_follow_up_keys = {"visit_id", "follow_up_date", "follow_up_method", "efficacy_assessment", "record_note"}
+        if "payload" not in data and structured_follow_up_keys.intersection(data):
+            data["payload"] = follow_up_payload_from_structured_fields({**before, **data})
+        columns: list[str] = []
+        values: list[Any] = []
+        for key, value in data.items():
+            if key == "payload":
+                payload_jsonb, payload_format, payload_version = sqlite_json_storage(conn, value)
+                columns.extend(["payload_json = ?", "payload_jsonb = ?", "payload_version = ?", "payload_format = ?"])
+                values.extend([encode_json(value), payload_jsonb, payload_version, payload_format])
+            else:
+                columns.append(f"{key} = ?")
+                values.append(value)
         columns.append("updated_at = ?")
         values.extend([utc_now(), record_id])
         try:
@@ -2456,7 +2669,7 @@ def update_follow_up_record(record_id: str, payload: FollowUpRecordUpdate, autho
                     (record_id,),
                 )
             )
-            insert_audit(conn, user, "update", "follow_up_records", record_id, before=before, after=after, study_id=after["study_id"])
+            log_operation(conn, user, "UPDATE", "follow_up_records", record_id, study_id=after["study_id"], before=before, after=after)
             return after
         except HTTPException:
             raise
@@ -2515,8 +2728,8 @@ def create_omics(payload: OmicsCreate, path_study_id: str | None = None, authori
             conn.execute(
                 """
                 INSERT INTO omics_records
-                  (id, study_id, testing_project_id, patient_id, patient_name, sample_id, sample_type, assay, platform, run_id, status, qc, sent_at, completed_at, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  (id, study_id, testing_project_id, patient_id, patient_name, sample_id, sample_type, assay, platform, run_id, status, qc, result_file_id, sent_at, completed_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record_id,
@@ -2531,6 +2744,7 @@ def create_omics(payload: OmicsCreate, path_study_id: str | None = None, authori
                     data["run_id"],
                     data["status"],
                     data["qc"],
+                    data["result_file_id"],
                     data["sent_at"],
                     data["completed_at"],
                     now,
@@ -2538,7 +2752,7 @@ def create_omics(payload: OmicsCreate, path_study_id: str | None = None, authori
                 ),
             )
             row = row_to_omics(fetch_one(conn, "SELECT * FROM omics_records WHERE id = ?", (record_id,)))
-            insert_audit(conn, user, "create", "omics_records", record_id, after=row, study_id=study_id)
+            log_operation(conn, user, "CREATE", "omics_records", record_id, study_id=study_id, after=row)
             return row
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2578,7 +2792,7 @@ def update_omics(record_id: str, payload: OmicsUpdate, authorization: str | None
         if result.rowcount == 0:
             raise not_found()
         after = row_to_omics(fetch_one(conn, "SELECT * FROM omics_records WHERE id = ?", (record_id,)))
-        insert_audit(conn, user, "update", "omics_records", record_id, before=before, after=after, study_id=after["study_id"])
+        log_operation(conn, user, "UPDATE", "omics_records", record_id, study_id=after["study_id"], before=before, after=after)
         return after
 
 
@@ -2586,10 +2800,11 @@ def update_omics(record_id: str, payload: OmicsUpdate, authorization: str | None
 def delete_omics(record_id: str, authorization: str | None = Header(default=None)) -> None:
     with connect() as conn:
         record = row_to_omics(fetch_one(conn, "SELECT * FROM omics_records WHERE id = ?", (record_id,)))
-        authorize(authorization, "omics", "write", study_id=record["study_id"], conn=conn)
+        user = authorize(authorization, "omics", "write", study_id=record["study_id"], conn=conn)
         result = conn.execute("DELETE FROM omics_records WHERE id = ?", (record_id,))
         if result.rowcount == 0:
             raise not_found()
+        log_operation(conn, user, "DELETE", "omics_records", record_id, study_id=record["study_id"], before=record)
 
 
 @app.get("/studies/{path_study_id}/consents")
@@ -2650,7 +2865,7 @@ def update_consent(consent_id: str, payload: ConsentUpdate, authorization: str |
         if result.rowcount == 0:
             raise not_found()
         after = row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
-        insert_audit(conn, user, "update", "consents", consent_id, before=before, after=after, study_id=before["study_id"])
+        log_operation(conn, user, "UPDATE", "consents", consent_id, study_id=after["study_id"], before=before, after=after)
         joined = conn.execute(
             """
             SELECT
@@ -2703,8 +2918,7 @@ def create_econsent_approval(consent_id: str, approval_type: str, comment: str, 
         approval = approval_with_actions(conn, approval_id)
         record_approval_action(conn, approval, actor, "submit", "submitted", comment)
         approval = approval_with_actions(conn, approval_id)
-        insert_audit(conn, actor, "request_econsent_status_change", "consents", consent_id, before=consent, after=pending_consent, study_id=consent["study_id"])
-        insert_audit(conn, actor, "request_econsent_approval", "approval_requests", approval_id, after=approval, study_id=consent["study_id"])
+        log_operation(conn, actor, "STATUS_CHANGE", "consents", consent_id, study_id=consent["study_id"], before=consent, after=pending_consent)
         return approval
 
 
@@ -2771,7 +2985,7 @@ def create_crf_entry(payload: CrfEntryCreate, path_study_id: str | None = None, 
             ).fetchone()
             resolved_crf_version_id = crf_version_id["id"] if hasattr(crf_version_id, "keys") else crf_version_id
             if not resolved_crf_version_id:
-                resolved_crf_version_id = "CRFV-LGL-1111-V0.1"
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="study has no published CRF version")
             form_id = data["form_id"] or data["module"]
             payload_jsonb, payload_format, payload_version = sqlite_json_storage(conn, data["payload"])
             conn.execute(
@@ -2800,7 +3014,7 @@ def create_crf_entry(payload: CrfEntryCreate, path_study_id: str | None = None, 
                 ),
             )
             row = row_to_crf_entry(fetch_one(conn, "SELECT * FROM crf_entries WHERE id = ?", (entry_id,)))
-            insert_audit(conn, user, "create", "crf_entries", entry_id, after=row, study_id=study_id)
+            log_operation(conn, user, "CREATE", "crf_entries", entry_id, study_id=study_id, after=row)
             return row
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2833,7 +3047,7 @@ def update_crf_entry(entry_id: str, payload: CrfEntryUpdate, authorization: str 
         if result.rowcount == 0:
             raise not_found()
         after = row_to_crf_entry(fetch_one(conn, "SELECT * FROM crf_entries WHERE id = ?", (entry_id,)))
-        insert_audit(conn, user, "update", "crf_entries", entry_id, before=before, after=after, study_id=after["study_id"])
+        log_operation(conn, user, "UPDATE", "crf_entries", entry_id, study_id=after["study_id"], before=before, after=after)
         return after
 
 
@@ -2938,26 +3152,17 @@ async def upload_file(
                 scan_result["message"],
             ),
         )
-        conn.execute(
-            """
-            INSERT INTO audit_logs (id, study_id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, ip_address, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                f"AUD-{uuid4().hex[:10].upper()}",
-                study_id,
-                user["id"],
-                user_role(user),
-                "upload",
-                "uploaded_files",
-                file_id,
-                None,
-                encode_json({"category": category, "original_filename": file.filename or stored_filename, "is_deidentified": is_deidentified}),
-                None,
-                now,
-            ),
-        )
-        return row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)))
+        if category == "omics_result" and omics_id:
+            before_omics = row_to_omics(fetch_one(conn, "SELECT * FROM omics_records WHERE id = ?", (omics_id,)))
+            conn.execute(
+                "UPDATE omics_records SET result_file_id = ?, updated_at = ? WHERE id = ?",
+                (file_id, now, omics_id),
+            )
+            after_omics = row_to_omics(fetch_one(conn, "SELECT * FROM omics_records WHERE id = ?", (omics_id,)))
+            log_operation(conn, user, "UPDATE", "omics_records", omics_id, study_id=study_id, before=before_omics, after=after_omics)
+        uploaded_file = row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)))
+        log_operation(conn, user, "UPLOAD", "uploaded_files", file_id, study_id=study_id, after=uploaded_file)
+        return uploaded_file
 
 
 @app.get("/files/{file_id}/download")
@@ -2972,7 +3177,6 @@ def download_file(file_id: str, authorization: str | None = Header(default=None)
         path = file_storage.path(file_row["storage_path"])
         if not Path(path).exists():
             raise not_found()
-        insert_audit(conn, user, "download", "uploaded_files", file_id, after={"filename": file_row["original_filename"], "sha256": file_row["sha256"]}, study_id=file_row["study_id"])
         return FileResponse(path, media_type=file_row["content_type"], filename=file_row["original_filename"])
 
 
@@ -2987,7 +3191,7 @@ def archive_file(file_id: str, authorization: str | None = Header(default=None))
             (now, file_id),
         )
         after = row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)))
-        insert_audit(conn, user, "archive", "uploaded_files", file_id, before=file_row, after=after, study_id=file_row["study_id"])
+        log_operation(conn, user, "ARCHIVE", "uploaded_files", file_id, study_id=after["study_id"], before=file_row, after=after)
         return after
 
 
@@ -3014,7 +3218,7 @@ def create_study_site(study_id: str, payload: SiteCreate, authorization: str | N
             (site_id, study_id, data["code"], data["name"], data["status"], now, now),
         )
         site = row_to_site(fetch_one(conn, "SELECT * FROM sites WHERE study_id = ? AND code = ?", (study_id, data["code"])))
-        insert_audit(conn, user, "upsert", "sites", site["id"], after=site, study_id=study_id)
+        log_operation(conn, user, "UPSERT", "sites", site["id"], study_id=study_id, after=site)
         return site
 
 
@@ -3036,7 +3240,7 @@ def assign_site_user(study_id: str, site_id: str, payload: SiteUserAssign, autho
             (assignment_id, study_id, site_id, data["user_id"], data["role"], data["status"], now, now),
         )
         site_user = row_to_site_user(fetch_one(conn, "SELECT * FROM site_users WHERE site_id = ? AND user_id = ?", (site_id, data["user_id"])))
-        insert_audit(conn, user, "assign", "site_users", site_user["id"], after=site_user, study_id=study_id)
+        log_operation(conn, user, "UPSERT", "site_users", site_user["id"], study_id=study_id, after=site_user)
         return site_user
 
 
@@ -3079,9 +3283,12 @@ def list_data_queries(
         return [row_to_data_query(row) for row in conn.execute(sql, params).fetchall()]
 
 
+@app.post("/studies/{path_study_id}/queries", status_code=status.HTTP_201_CREATED)
 @app.post("/queries", status_code=status.HTTP_201_CREATED)
-def create_data_query(payload: DataQueryCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def create_data_query(payload: DataQueryCreate, path_study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     data = dump_model(payload)
+    if path_study_id and path_study_id != data["study_id"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match payload")
     query_id = f"QRY-{uuid4().hex[:10].upper()}"
     now = utc_now()
     with connect() as conn:
@@ -3102,7 +3309,7 @@ def create_data_query(payload: DataQueryCreate, authorization: str | None = Head
             (query_id, data["study_id"], data["patient_id"], data["visit_id"], data["form_id"], data["field_name"], data["title"], data["description"], data["assigned_to"], user["id"], now, now),
         )
         query = row_to_data_query(fetch_one(conn, "SELECT * FROM data_queries WHERE id = ?", (query_id,)))
-        insert_audit(conn, user, "create", "data_queries", query_id, after=query, study_id=data["study_id"])
+        log_operation(conn, user, "CREATE", "data_queries", query_id, study_id=data["study_id"], after=query)
         return query
 
 
@@ -3127,7 +3334,7 @@ def update_data_query(query_id: str, payload: DataQueryUpdate, authorization: st
         values.extend([utc_now(), query_id])
         conn.execute(f"UPDATE data_queries SET {', '.join(columns)} WHERE id = ?", values)
         after = row_to_data_query(fetch_one(conn, "SELECT * FROM data_queries WHERE id = ?", (query_id,)))
-        insert_audit(conn, user, "update", "data_queries", query_id, before=before, after=after, study_id=after["study_id"])
+        log_operation(conn, user, "UPDATE", "data_queries", query_id, study_id=after["study_id"], before=before, after=after)
         return after
 
 
@@ -3179,6 +3386,10 @@ def analytics_summary(path_study_id: str | None = None, study_id: str | None = N
             f"SELECT COUNT(*) AS count FROM omics_records WHERE status = '结果归档' AND {scoped_patient_clause}",
             patient_ids,
         ).fetchone()["count"]
+        export_filter = " WHERE " + " AND ".join(where) if where else ""
+        ready_export_filter = f"{export_filter}{' AND' if where else ' WHERE'} status = 'ready'"
+        export_count = conn.execute(f"SELECT COUNT(*) AS count FROM export_jobs{export_filter}", params).fetchone()["count"]
+        ready_export_count = conn.execute(f"SELECT COUNT(*) AS count FROM export_jobs{ready_export_filter}", params).fetchone()["count"]
         return {
             "patient_count": patient_count,
             "disease_distribution": disease_distribution,
@@ -3192,7 +3403,120 @@ def analytics_summary(path_study_id: str | None = None, study_id: str | None = N
             "sample_patient_count": sample_patient_count,
             "active_patient_count": active_patient_count,
             "completed_patient_count": completed_patient_count,
+            "export_count": export_count,
+            "ready_export_count": ready_export_count,
         }
+
+
+def operation_logs_query(
+    conn: Any,
+    user: dict[str, Any],
+    *,
+    requested_study_id: str | None = None,
+    action: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    actor_id: str | None = None,
+    limit: int = 100,
+) -> tuple[str, list[Any]]:
+    where: list[str] = []
+    params: list[Any] = []
+    append_study_filter(conn, user, where, params, "study_id", requested_study_id)
+    if action:
+        where.append("action = ?")
+        params.append(action)
+    if entity_type:
+        where.append("entity_type = ?")
+        params.append(entity_type)
+    if entity_id:
+        where.append("entity_id = ?")
+        params.append(entity_id)
+    if actor_id:
+        where.append("actor_id = ?")
+        params.append(actor_id)
+    sql = "SELECT * FROM operation_logs"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    params.append(max(1, min(limit, 500)))
+    return sql, params
+
+
+@app.get("/studies/{path_study_id}/operation-logs")
+@app.get("/operation-logs")
+def list_operation_logs(
+    path_study_id: str | None = None,
+    study_id: str | None = None,
+    action: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    actor_id: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    authorization: str | None = Header(default=None),
+) -> list[dict[str, Any]]:
+    requested_study_id = path_study_id or study_id
+    with connect() as conn:
+        user = authorize(authorization, "studies", "read", study_id=requested_study_id, conn=conn)
+        sql, params = operation_logs_query(
+            conn,
+            user,
+            requested_study_id=requested_study_id,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            actor_id=actor_id,
+            limit=limit,
+        )
+        return [row_to_operation_log(row) for row in conn.execute(sql, params).fetchall()]
+
+
+@app.get("/studies/{path_study_id}/operation-logs/export")
+@app.get("/operation-logs/export")
+def export_operation_logs(
+    path_study_id: str | None = None,
+    study_id: str | None = None,
+    action: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    actor_id: str | None = None,
+    limit: int = Query(default=500, ge=1, le=500),
+    authorization: str | None = Header(default=None),
+) -> Response:
+    requested_study_id = path_study_id or study_id
+    with connect() as conn:
+        user = authorize(authorization, "studies", "read", study_id=requested_study_id, conn=conn)
+        sql, params = operation_logs_query(
+            conn,
+            user,
+            requested_study_id=requested_study_id,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            actor_id=actor_id,
+            limit=limit,
+        )
+        rows = [row_to_operation_log(row) for row in conn.execute(sql, params).fetchall()]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["id", "study_id", "actor_id", "actor_role", "action", "entity_type", "entity_id", "diff_count", "created_at"])
+    for row in rows:
+        writer.writerow([
+            row["id"],
+            row.get("study_id") or "",
+            row.get("actor_id") or "",
+            row.get("actor_role") or "",
+            row["action"],
+            row["entity_type"],
+            row["entity_id"],
+            len(row.get("diff") or []),
+            row["created_at"],
+        ])
+    filename = f"operation-logs-{requested_study_id or 'all'}-{utc_now()[:10]}.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/studies/{path_study_id}/quality/issues")
@@ -3367,6 +3691,7 @@ def run_quality_checks(path_study_id: str | None = None, study_id: str | None = 
         delete_where = ["status = 'open'"]
         delete_params: list[Any] = []
         append_study_filter(conn, user, delete_where, delete_params, "study_id", requested_study_id)
+        deleted_issue_count = conn.execute("SELECT COUNT(*) AS count FROM data_quality_issues WHERE " + " AND ".join(delete_where), delete_params).fetchone()["count"]
         conn.execute("DELETE FROM data_quality_issues WHERE " + " AND ".join(delete_where), delete_params)
         conn.executemany(
             """
@@ -3376,30 +3701,21 @@ def run_quality_checks(path_study_id: str | None = None, study_id: str | None = 
             """,
             issue_rows,
         )
-        conn.execute(
-            """
-            INSERT INTO audit_logs (id, study_id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, ip_address, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                f"AUD-{uuid4().hex[:10].upper()}",
-                requested_study_id,
-                user["id"],
-                user_role(user),
-                "quality_run",
-                "data_quality_issues",
-                "open",
-                None,
-                encode_json({"created": len(issue_rows)}),
-                None,
-                now,
-            ),
+        log_operation(
+            conn,
+            user,
+            "RUN",
+            "data_quality_issues",
+            requested_study_id or "study_scope",
+            study_id=requested_study_id,
+            after={"created": len(issue_rows), "deleted_open_issues": deleted_issue_count},
         )
     return {"status": "completed", "created": len(issue_rows)}
 
 
+@app.post("/studies/{path_study_id}/exports", status_code=status.HTTP_201_CREATED)
 @app.post("/exports", status_code=status.HTTP_201_CREATED)
-def create_export_job(payload: ExportJobCreate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def create_export_job(payload: ExportJobCreate, path_study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     data = dump_model(payload)
     export_id = f"EXP-{uuid4().hex[:8].upper()}"
     file_id = f"FIL-{uuid4().hex[:10].upper()}"
@@ -3409,7 +3725,9 @@ def create_export_job(payload: ExportJobCreate, authorization: str | None = Head
     export_path = export_dir / f"{export_id}.csv"
     with connect() as conn:
         temp_user = authorize(authorization, "exports", "write", conn=conn)
-        requested_study_id = require_study_context(str(data["scope"].get("study_id") or ""), "exports")
+        requested_study_id = require_study_context(str(path_study_id or data["scope"].get("study_id") or ""), "exports")
+        if data["scope"].get("study_id") and data["scope"]["study_id"] != requested_study_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match payload")
         user = authorize(authorization, "exports", "write", study_id=requested_study_id, conn=conn)
         patient_rows = [
             apply_field_permissions_to_record(conn, user, row_to_patient(row), mode="export")
@@ -3420,12 +3738,14 @@ def create_export_job(payload: ExportJobCreate, authorization: str | None = Head
         ]
         with export_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["study_id", "id", "name", "hospital_no", "sex", "age", "disease_type", "note"])
+            writer.writerow(["study_id", "id", "patient_number", "patient_name", "name", "hospital_no", "sex", "age", "disease_type", "note"])
             writer.writerows(
                 [
                     (
                         row["study_id"],
                         row["id"],
+                        row["patient_number"],
+                        row["patient_name"],
                         row["name"],
                         row["hospital_no"],
                         row["sex"],
@@ -3457,6 +3777,8 @@ def create_export_job(payload: ExportJobCreate, authorization: str | None = Head
                 now,
             ),
         )
+        file_row = row_to_file(fetch_one(conn, "SELECT * FROM uploaded_files WHERE id = ?", (file_id,)))
+        log_operation(conn, user, "CREATE", "uploaded_files", file_id, study_id=requested_study_id, after=file_row)
         conn.execute(
             """
             INSERT INTO export_jobs (id, study_id, requested_by, export_type, scope_json, status, file_id, created_at, completed_at)
@@ -3465,7 +3787,7 @@ def create_export_job(payload: ExportJobCreate, authorization: str | None = Head
             (export_id, requested_study_id, data["requested_by"] or user["id"], data["export_type"], encode_json({**data["scope"], "study_id": requested_study_id}), file_id, now, now),
         )
         job = row_to_export_job(fetch_one(conn, "SELECT * FROM export_jobs WHERE id = ?", (export_id,)))
-        insert_audit(conn, user, "export", "export_jobs", export_id, after=job, study_id=requested_study_id)
+        log_operation(conn, user, "CREATE", "export_jobs", export_id, study_id=requested_study_id, after=job)
         return job
 
 
@@ -3532,7 +3854,7 @@ def create_approval(payload: ApprovalRequestCreate, authorization: str | None = 
         approval = approval_with_actions(conn, approval_id)
         record_approval_action(conn, approval, actor, "submit" if initial_status == "submitted" else "draft", initial_status, data["comment"])
         approval = approval_with_actions(conn, approval_id)
-        insert_audit(conn, actor, "submit_approval", "approval_requests", approval_id, after=approval, study_id=data["study_id"])
+        log_operation(conn, actor, "CREATE", "approval_requests", approval_id, study_id=data["study_id"], after=approval)
         return approval
 
 
@@ -3547,7 +3869,6 @@ def approve_approval(approval_id: str, payload: ApprovalActionCreate, authorizat
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="requester cannot approve own request")
         record_approval_action(conn, approval, actor, "approve", "approved", payload.comment)
         after = approval_with_actions(conn, approval_id)
-        insert_audit(conn, actor, "approve", "approval_requests", approval_id, before=approval, after=after, study_id=approval["study_id"])
         return after
 
 
@@ -3560,7 +3881,6 @@ def reject_approval(approval_id: str, payload: ApprovalActionCreate, authorizati
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="approval must be submitted")
         record_approval_action(conn, approval, actor, "reject", "rejected", payload.comment)
         after = approval_with_actions(conn, approval_id)
-        insert_audit(conn, actor, "reject", "approval_requests", approval_id, before=approval, after=after, study_id=approval["study_id"])
         return after
 
 
@@ -3575,7 +3895,6 @@ def cancel_approval(approval_id: str, payload: ApprovalActionCreate, authorizati
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only requester or LZ_ADMIN can cancel")
         record_approval_action(conn, approval, actor, "cancel", "cancelled", payload.comment)
         after = approval_with_actions(conn, approval_id)
-        insert_audit(conn, actor, "cancel", "approval_requests", approval_id, before=approval, after=after, study_id=approval["study_id"])
         return after
 
 
@@ -3597,10 +3916,9 @@ def complete_approval(approval_id: str, payload: ApprovalActionCreate, authoriza
                 (next_status, signed_at, method, consent_id),
             )
             after_consent = row_to_consent(fetch_one(conn, "SELECT * FROM consents WHERE id = ?", (consent_id,)))
-            insert_audit(conn, actor, "apply_econsent_approval", "consents", consent_id, before=before_consent, after=after_consent, study_id=approval["study_id"])
+            log_operation(conn, actor, "STATUS_CHANGE", "consents", consent_id, study_id=after_consent["study_id"], before=before_consent, after=after_consent)
         record_approval_action(conn, approval, actor, "complete", "completed", payload.comment)
         after = approval_with_actions(conn, approval_id)
-        insert_audit(conn, actor, "complete", "approval_requests", approval_id, before=approval, after=after, study_id=approval["study_id"])
         return after
 
 
@@ -3643,19 +3961,25 @@ async def import_patients(
 ) -> dict[str, Any]:
     content = (await file.read()).decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
-    required = {"name", "hospital_no", "sex", "age", "disease_type"}
+    required = {"hospital_no", "sex", "age", "disease_type"}
     if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
-        raise HTTPException(status_code=400, detail="CSV must include name,hospital_no,sex,age,disease_type")
+        raise HTTPException(status_code=400, detail="CSV must include patient_number or name, plus hospital_no,sex,age,disease_type")
     now = utc_now()
     imported = 0
     with connect() as conn:
         user = authorize(authorization, "patients", "write", study_id=study_id, conn=conn)
         for row in reader:
+            patient_number = row.get("patient_number") or row.get("患者编号") or row.get("name") or ""
+            patient_name = row.get("patient_name") or row.get("患者姓名") or row.get("姓名") or ""
+            if not patient_number:
+                raise HTTPException(status_code=400, detail="CSV row must include patient_number or name")
             patient_id = row.get("id") or f"PAT-IMP-{uuid4().hex[:6].upper()}"
+            before_row = conn.execute("SELECT * FROM patients WHERE id = ?", (patient_id,)).fetchone()
+            before = row_to_patient(before_row) if before_row else {}
             organs = [item.strip() for item in (row.get("organs") or "").replace("/", "、").split("、") if item.strip()]
             clinical_data = {
-                "患者编号": row["name"],
-                "姓名": row["name"],
+                "患者编号": patient_number,
+                "姓名": patient_name,
                 "住院号": row["hospital_no"],
                 "性别": row["sex"],
                 "年龄": int(row["age"]),
@@ -3668,10 +3992,12 @@ async def import_patients(
             conn.execute(
                 """
                 INSERT INTO patients
-                  (id, study_id, name, hospital_no, sex, age, disease_type, organs_json, note, clinical_data_json, clinical_data_jsonb, clinical_data_version, clinical_data_format, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  (id, study_id, patient_number, patient_name, name, hospital_no, sex, age, disease_type, organs_json, note, clinical_data_json, clinical_data_jsonb, clinical_data_version, clinical_data_format, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   study_id = excluded.study_id,
+                  patient_number = excluded.patient_number,
+                  patient_name = excluded.patient_name,
                   name = excluded.name,
                   hospital_no = excluded.hospital_no,
                   sex = excluded.sex,
@@ -3688,7 +4014,9 @@ async def import_patients(
                 (
                     patient_id,
                     study_id,
-                    row["name"],
+                    patient_number,
+                    patient_name,
+                    row.get("name") or patient_number,
                     row["hospital_no"],
                     row["sex"],
                     int(row["age"]),
@@ -3703,55 +4031,10 @@ async def import_patients(
                     now,
                 ),
             )
+            after = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
+            log_operation(conn, user, "IMPORT_UPSERT", "patients", patient_id, study_id=study_id, before=before, after=after)
             imported += 1
-        conn.execute(
-            """
-            INSERT INTO audit_logs (id, study_id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, ip_address, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                f"AUD-{uuid4().hex[:10].upper()}",
-                study_id,
-                user["id"],
-                user_role(user),
-                "import",
-                "patients",
-                file.filename or "patients.csv",
-                None,
-                encode_json({"imported": imported}),
-                None,
-                now,
-            ),
-        )
     return {"status": "imported", "count": imported}
-
-
-@app.get("/studies/{path_study_id}/audit-logs")
-@app.get("/audit-logs")
-def list_audit_logs(
-    path_study_id: str | None = None,
-    entity_type: str | None = None,
-    entity_id: str | None = None,
-    study_id: str | None = None,
-    authorization: str | None = Header(default=None),
-) -> list[dict[str, Any]]:
-    requested_study_id = scoped_study_id(path_study_id, study_id, "audit_logs")
-    sql = "SELECT * FROM audit_logs"
-    params: list[Any] = []
-    where: list[str] = []
-    with connect() as conn:
-        user = authorize(authorization, "audit", "read", study_id=requested_study_id, conn=conn)
-        append_study_filter(conn, user, where, params, "study_id", requested_study_id)
-        if entity_type:
-            where.append("entity_type = ?")
-            params.append(entity_type)
-        if entity_id:
-            where.append("entity_id = ?")
-            params.append(entity_id)
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY created_at DESC"
-        return [row_to_audit_log(row) for row in conn.execute(sql, params).fetchall()]
 
 
 @app.get("/patients/{patient_id}/panorama")

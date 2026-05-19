@@ -18,6 +18,7 @@
     "browser:matrix": "node scripts/browser-matrix.mjs",
     "demo:e2e": "node scripts/demo-e2e.mjs",
     "release:check": "node scripts/release-check.mjs",
+    "backup:postgres": "node scripts/postgres-backup-drill.mjs",
     "backup:sqlite": "node scripts/backup-sqlite.mjs",
     "restore:sqlite": "node scripts/restore-sqlite.mjs",
     "export:postgres-migration": "node scripts/sqlite-to-postgres-export.mjs",

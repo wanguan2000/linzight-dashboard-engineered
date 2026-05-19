@@ -46,6 +46,7 @@ class UserPublic(BaseModel):
     role: UserRole
     legacy_role: str | None = None
     status: str = "active"
+    last_login_at: str | None = None
     study_scope: dict[str, Any] | None = None
     study_memberships: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -98,6 +99,8 @@ class GlobalRoleStudyScopeUpdate(BaseModel):
 
 class PatientBase(BaseModel):
     study_id: str = "LGL-1111"
+    patient_number: str | None = None
+    patient_name: str = ""
     name: str
     hospital_no: str
     sex: Sex
@@ -114,6 +117,8 @@ class PatientCreate(PatientBase):
 
 class PatientUpdate(BaseModel):
     study_id: str | None = None
+    patient_number: str | None = None
+    patient_name: str | None = None
     name: str | None = None
     hospital_no: str | None = None
     sex: Sex | None = None
@@ -133,6 +138,7 @@ class SampleBase(BaseModel):
     visit: str
     collected_at: str
     storage: str
+    note: str = ""
     status: SampleStatus
     linked_omics: list[str] = Field(default_factory=list)
 
@@ -150,6 +156,7 @@ class SampleUpdate(BaseModel):
     visit: str | None = None
     collected_at: str | None = None
     storage: str | None = None
+    note: str | None = None
     status: SampleStatus | None = None
     linked_omics: list[str] | None = None
 
@@ -166,6 +173,7 @@ class OmicsBase(BaseModel):
     run_id: str
     status: OmicsStatus
     qc: QcStatus
+    result_file_id: str | None = None
     sent_at: str
     completed_at: str = "-"
 
@@ -186,6 +194,7 @@ class OmicsUpdate(BaseModel):
     run_id: str | None = None
     status: OmicsStatus | None = None
     qc: QcStatus | None = None
+    result_file_id: str | None = None
     sent_at: str | None = None
     completed_at: str | None = None
 
@@ -236,6 +245,8 @@ class FollowUpRecordBase(BaseModel):
     symptoms_signs: str = ""
     imaging_lab_summary: str = ""
     efficacy_assessment: str = ""
+    record_note: str = ""
+    payload: dict[str, Any] = Field(default_factory=dict)
     metastasis_status: str = ""
     adverse_events: str = ""
     quality_of_life: str = ""
@@ -268,6 +279,8 @@ class FollowUpRecordUpdate(BaseModel):
     symptoms_signs: str | None = None
     imaging_lab_summary: str | None = None
     efficacy_assessment: str | None = None
+    record_note: str | None = None
+    payload: dict[str, Any] | None = None
     metastasis_status: str | None = None
     adverse_events: str | None = None
     quality_of_life: str | None = None
@@ -376,21 +389,6 @@ class DataQualityIssue(BaseModel):
     resolved_at: str | None = None
 
 
-class AuditLog(BaseModel):
-    id: str
-    study_id: str
-    actor_id: str | None = None
-    actor_role: UserRole | None = None
-    action: str
-    entity_type: str
-    entity_id: str
-    before: dict[str, Any] | None = None
-    after: dict[str, Any] | None = None
-    diff: list[dict[str, Any]] = Field(default_factory=list)
-    ip_address: str | None = None
-    created_at: str
-
-
 class AnalysisSummary(BaseModel):
     patient_count: int
     disease_distribution: dict[str, int]
@@ -398,6 +396,14 @@ class AnalysisSummary(BaseModel):
     omics_count: int
     completed_omics_count: int
     data_completeness_avg: float
+    visit_count: int = 0
+    crf_count: int = 0
+    consent_signed_count: int = 0
+    sample_patient_count: int = 0
+    active_patient_count: int = 0
+    completed_patient_count: int = 0
+    export_count: int = 0
+    ready_export_count: int = 0
 
 
 class StudyCreate(BaseModel):
@@ -408,6 +414,8 @@ class StudyCreate(BaseModel):
     phase: str = "RWD"
     status: Literal["draft", "active", "terminated", "deleted"] = "active"
     owner_org: str = "LinZight"
+    leading_pi_info: str = ""
+    system_admin: str = ""
 
 
 class StudyUpdate(BaseModel):
@@ -417,6 +425,8 @@ class StudyUpdate(BaseModel):
     phase: str | None = None
     status: Literal["draft", "active", "terminated", "deleted"] | None = None
     owner_org: str | None = None
+    leading_pi_info: str | None = None
+    system_admin: str | None = None
 
 
 class StudyMemberCreate(BaseModel):

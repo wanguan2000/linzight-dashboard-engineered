@@ -74,7 +74,6 @@ ROLE_ACTIONS: dict[str, set[tuple[str, str]]] = {
         ("exports", "write"),
         ("quality", "read"),
         ("quality", "write"),
-        ("audit", "read"),
     },
     "LZ_AUDITOR": {
         ("studies", "read"),
@@ -88,7 +87,6 @@ ROLE_ACTIONS: dict[str, set[tuple[str, str]]] = {
         ("files", "read"),
         ("exports", "read"),
         ("quality", "read"),
-        ("audit", "read"),
     },
     "STUDY_PI": {
         ("studies", "read"),
@@ -148,7 +146,6 @@ ROLE_ACTIONS: dict[str, set[tuple[str, str]]] = {
         ("quality", "write"),
         ("visits", "read"),
         ("visits", "write"),
-        ("audit", "read"),
     },
     "STUDY_DATA_MANAGER": {
         ("studies", "read"),
@@ -164,7 +161,6 @@ ROLE_ACTIONS: dict[str, set[tuple[str, str]]] = {
         ("exports", "write"),
         ("quality", "read"),
         ("quality", "write"),
-        ("audit", "read"),
     },
 }
 
@@ -299,13 +295,6 @@ PERMISSION_MATRIX: list[dict[str, Any]] = [
         "resource": "exports",
         "action": "write",
         "endpoints": ["POST /approvals", "POST /approvals/{approval_id}/approve", "POST /approvals/{approval_id}/reject", "POST /approvals/{approval_id}/cancel", "POST /approvals/{approval_id}/complete"],
-    },
-    {
-        "module": "Audit",
-        "operation": "Read audit logs",
-        "resource": "audit",
-        "action": "read",
-        "endpoints": ["GET /audit-logs"],
     },
 ]
 

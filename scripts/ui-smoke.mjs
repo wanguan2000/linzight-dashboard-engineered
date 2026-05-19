@@ -62,7 +62,7 @@ const requiredSystemStrings = [
   'Conditional Logic',
   'Change Details',
   'LZXK-01',
-  'Study member, CRF version, export, and permission policy changes are recorded in the audit log.',
+  'Study member, CRF version, export, and permission policy changes are checked against the current Study.',
 ];
 
 for (const text of requiredSystemStrings) {

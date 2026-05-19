@@ -26,7 +26,7 @@ function gitLsFiles() {
 }
 
 const packageJson = readJson('package.json');
-for (const script of ['lint', 'build', 'export:html', 'export:openapi', 'smoke:api', 'smoke:crf-semantics', 'smoke:ui', 'smoke:static-runtime', 'smoke:performance', 'smoke:docker', 'browser:matrix', 'demo:e2e', 'deploy:staging', 'release:check', 'backup:sqlite', 'restore:sqlite', 'test']) {
+for (const script of ['lint', 'build', 'export:html', 'export:openapi', 'smoke:api', 'smoke:crf-semantics', 'smoke:ui', 'smoke:static-runtime', 'smoke:performance', 'smoke:docker', 'browser:matrix', 'demo:e2e', 'deploy:staging', 'release:check', 'backup:postgres', 'backup:sqlite', 'restore:sqlite', 'test']) {
   assert(packageJson.scripts?.[script], `package.json missing script "${script}"`);
 }
 
@@ -54,6 +54,7 @@ for (const path of [
   'Dockerfile.frontend',
   'docker-compose.yml',
   'scripts/backup-sqlite.mjs',
+  'scripts/postgres-backup-drill.mjs',
   'scripts/browser-matrix.mjs',
   'scripts/crf-semantics-smoke.mjs',
   'scripts/demo-e2e.mjs',

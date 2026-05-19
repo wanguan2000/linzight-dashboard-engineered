@@ -14,13 +14,35 @@ Expected backend response:
 {"status":"ok","service":"linzight-demo-api"}
 ```
 
-## Backup Command
+## PostgreSQL Backup Drill
+
+```bash
+npm run backup:postgres
+```
+
+The PostgreSQL drill runs `pg_dump --format=custom`, verifies the dump with `pg_restore --list`, records table row counts, and writes:
+
+- `backups/postgres-<timestamp>/linzight.dump`
+- `backups/postgres-<timestamp>/manifest.json`
+- `reports/postgres-backup-drill.json`
+
+The script inventories upload filenames and sizes only. It does not copy upload payloads by default; production object storage must use its own versioning and restore process.
+
+Restore must be rehearsed into a separate staging database before any destructive production restore:
+
+```bash
+createdb linzight_restore_drill
+pg_restore --dbname postgresql:///linzight_restore_drill backups/postgres-<timestamp>/linzight.dump
+DATABASE_URL=postgresql:///linzight_restore_drill npm run smoke:api
+```
+
+## Legacy SQLite Backup Command
 
 ```bash
 npm run backup:sqlite
 ```
 
-The backup script captures the configured SQLite database and upload directory into `backups/`.
+The legacy backup script captures the configured SQLite database and upload directory into `backups/`. It is not the formal GA runtime backup path.
 
 ## Restore Drill
 
@@ -43,6 +65,6 @@ Compare `exports/postgres-migration/manifest.json` row counts after loading into
 - Docker healthcheck is healthy.
 - API smoke passes against a temporary database.
 - Docker smoke passes against Compose services.
-- `audit_logs` contains login, write, export, approval, file download, and archive actions.
+- GA runtime does not create `audit_logs`; approval status history is kept in `approval_actions`, while file download/archive access remains permission-checked at request time.
 - Uploaded files include `sha256`, `scan_status`, `archive_status`, and `storage_backend`.
-- Backup and restore commands have been rehearsed before release.
+- PostgreSQL backup drill has generated a verified custom-format dump before release.

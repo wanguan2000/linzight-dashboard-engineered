@@ -37,7 +37,6 @@
 | Data Management | 运行质控和创建 Query | `POST /studies/{study_id}/quality/run`, `POST /queries` | `LZ_ADMIN`, `LZ_CRC`, `LZ_DATA_MANAGER`, `STUDY_CONFIG_ADMIN`, `STUDY_DATA_MANAGER` |
 | Data Management | 导出和下载数据 | `POST /exports`, `GET /studies/{study_id}/exports`, `GET /exports/{export_id}/download` | `LZ_ADMIN`, `LZ_DATA_MANAGER`, `STUDY_CONFIG_ADMIN`, `STUDY_DATA_MANAGER` |
 | Approval Center | 审批提交/批准/拒绝/取消/完成 | `POST /approvals*` | `LZ_ADMIN`, `LZ_DATA_MANAGER`, `STUDY_CONFIG_ADMIN`, `STUDY_DATA_MANAGER`; 提交人不能自批 |
-| Audit | 读取审计日志 | `GET /studies/{study_id}/audit-logs` | `LZ_ADMIN`, `LZ_DATA_MANAGER`, `LZ_AUDITOR`, `STUDY_CONFIG_ADMIN`, `STUDY_DATA_MANAGER` |
 
 ## UI 规则
 
@@ -45,8 +44,8 @@
 - LZ 平台角色可在 LZ 系统管理态进入首页工作台、患者队列管理、样本及检测、临床数据采集、患者旅程、导出/报表和 Study 系统管理，跨 Study 查看授权范围内业务数据。
 - 单个 Study Workspace 内的系统管理只显示当前 Study 的 `STUDY_*` 成员、Study 角色权限矩阵和当前 Study 配置；不得显示 LZ 系统管理员、`LZ_ADMIN` 行、平台角色列、跨 Study scope 操作或 Study 新建/终止/删除入口。
 - 跨 Study 读取必须按 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总；普通 Study Workspace API 必须是 `/studies/{study_id}/...`，不能新增无 Study 上下文的业务 list。
-- Study 生命周期状态为 `terminated` 或 `deleted` 时，后端必须拒绝患者、CRF、访视、随访、样本、组学、文件、质控和导出等业务写入；系统管理和审计读取仍保留。
-- `STUDY_CONFIG_ADMIN` 是本 Study 系统管理员：拥有本 Study 内患者、知情同意、CRF、访视、随访、样本、检测、文件、Query、质控、导出、审批、审计和 Study 配置的全部权限；不能新建/终止/删除 Study，也不能配置平台级角色的跨 Study scope。
+- Study 生命周期状态为 `terminated` 或 `deleted` 时，后端必须拒绝患者、CRF、访视、随访、样本、组学、文件、质控和导出等业务写入；系统管理读取仍保留。
+- `STUDY_CONFIG_ADMIN` 是本 Study 系统管理员：拥有本 Study 内患者、知情同意、CRF、访视、随访、样本、检测、文件、Query、质控、导出、审批和 Study 配置的全部权限；不能新建/终止/删除 Study，也不能配置平台级角色的跨 Study scope。
 - 一个用户可以拥有多个 Study membership；每个 Study membership 独立绑定一个 Study 角色：Study Admin（`STUDY_CONFIG_ADMIN`）、Study PI（`STUDY_PI`）、Study CRC（`STUDY_CRC`）或 Study DM（`STUDY_DATA_MANAGER`）。前端账号编辑面板必须按每个 Study 绑定展示其在本矩阵中的具体权限。
 - 当前版本先使用后端应用层过滤；真实患者生产上线前应在 PostgreSQL 相同 Study 边界上补 RLS。
 - 有权限：按钮可点击，成功/失败必须给出状态反馈。

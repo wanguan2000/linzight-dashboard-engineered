@@ -7,11 +7,9 @@ from typing import Any
 
 try:
     from .database import ROLE_VALUES, connect, encode_json, initialize_schema, sqlite_json_storage, sync_study_configurations, utc_now
-    from .permissions import role_can
     from .security import DEFAULT_DEMO_PASSWORD, hash_password
 except ImportError:  # Allows `cd backend && python seed.py`.
     from database import ROLE_VALUES, connect, encode_json, initialize_schema, sqlite_json_storage, sync_study_configurations, utc_now
-    from permissions import role_can
     from security import DEFAULT_DEMO_PASSWORD, hash_password
 
 
@@ -686,7 +684,7 @@ def seed_database() -> None:
     with connect() as conn:
         conn.executescript(
             """
-            DELETE FROM audit_logs;
+            DELETE FROM operation_logs;
             DELETE FROM approval_actions;
             DELETE FROM approval_requests;
             DELETE FROM data_queries;
@@ -700,14 +698,12 @@ def seed_database() -> None:
             DELETE FROM visits;
             DELETE FROM study_visit_plans;
             DELETE FROM consents;
-            DELETE FROM role_permissions;
             DELETE FROM field_permissions;
             DELETE FROM password_reset_tokens;
             DELETE FROM global_role_study_scope;
             DELETE FROM study_members;
             DELETE FROM study_configurations;
             DELETE FROM study_crf_versions;
-            DELETE FROM crf_templates;
             DELETE FROM users;
             DELETE FROM patients;
             DELETE FROM studies;
@@ -783,31 +779,6 @@ def seed_database() -> None:
             """,
             [(*scope, now) for scope in GLOBAL_SCOPE_ROWS],
         )
-        conn.executemany(
-            "INSERT INTO role_permissions (role, resource, action) VALUES (?, ?, ?)",
-            [
-                (role, resource, action)
-                for role in ROLE_VALUES
-                for resource in [
-                    "studies",
-                    "study_members",
-                    "patients",
-                    "consents",
-                    "visits",
-                    "follow_up_records",
-                    "crf",
-                    "crf_config",
-                    "samples",
-                    "omics",
-                    "files",
-                    "exports",
-                    "quality",
-                    "audit",
-                ]
-                for action in ["read", "write"]
-                if role_can(role, resource, action)
-            ],
-        )
         field_permission_rows = []
         sensitive_fields = [
             ("patients", "name", "name"),
@@ -832,13 +803,6 @@ def seed_database() -> None:
             """,
             field_permission_rows,
         )
-        conn.execute(
-            """
-            INSERT INTO crf_templates (id, name, version, schema_json, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("CRFT-SLE-V0.1", "SLE 临床数据记录表", SLE_CRF_VERSION, encode_json(SLE_CRF_SCHEMA), "active", now, now),
-        )
         conn.executemany(
             """
             INSERT INTO study_crf_versions
@@ -846,10 +810,10 @@ def seed_database() -> None:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                (
-                    "CRFV-LGL-1111-V0.1",
-                    "LGL-1111",
-                    "CRFT-SLE-V0.1",
+	                (
+	                    "CRFV-LGL-1111-V0.1",
+	                    "LGL-1111",
+	                    None,
                     SLE_CRF_VERSION,
                     "published",
                     encode_json(SLE_CRF_SCHEMA),
@@ -859,10 +823,10 @@ def seed_database() -> None:
                     now,
                     now,
                 ),
-                (
-                    "CRFV-RWD-NMO-2026-V1.0",
-                    "RWD-NMO-2026",
-                    "CRFT-SLE-V0.1",
+	                (
+	                    "CRFV-RWD-NMO-2026-V1.0",
+	                    "RWD-NMO-2026",
+	                    None,
                     "V1.0",
                     "published",
                     encode_json({**SLE_CRF_SCHEMA, "version": "V1.0", "studyId": "RWD-NMO-2026"}),
@@ -872,10 +836,10 @@ def seed_database() -> None:
                     now,
                     now,
                 ),
-                (
-                    "CRFV-LZXK-01-V1.0",
-                    LUNG_RESISTANCE_STUDY_ID,
-                    "CRFT-SLE-V0.1",
+	                (
+	                    "CRFV-LZXK-01-V1.0",
+	                    LUNG_RESISTANCE_STUDY_ID,
+	                    None,
                     "V1.0",
                     "published",
                     encode_json(lung_crf_schema()),
@@ -1082,97 +1046,6 @@ def seed_database() -> None:
                 ("APR-ACT-SEED-001", "APR-SEED-ECONSENT-001", "LGL-1111", "USR-002", "submit", "draft", "submitted", "患者要求撤回知情同意。", now),
                 ("APR-ACT-SEED-002", "APR-SEED-ECONSENT-002", LUNG_RESISTANCE_STUDY_ID, "USR-010", "submit", "draft", "submitted", "申请重新签署。", now),
                 ("APR-ACT-SEED-003", "APR-SEED-ECONSENT-002", LUNG_RESISTANCE_STUDY_ID, "USR-005", "approve", "submitted", "approved", "同意重新签署。", now),
-            ],
-        )
-        conn.execute(
-            """
-            INSERT INTO audit_logs (id, study_id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, ip_address, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                "AUD-SEED-001",
-                "LGL-1111",
-                "USR-005",
-                "LZ_ADMIN",
-                "seed",
-                "database",
-                "linzight_demo",
-                None,
-                encode_json(
-                    {
-                        "patients": 70,
-                        "studies": [study[0] for study in STUDY_ROWS],
-                        "lzxk_01_patients": 20,
-                        "visit_plans": len(STUDY_VISIT_PLAN_ROWS),
-                        "follow_up_records": len(rows["follow_up_records"]),
-                        "lzxk_01_follow_up_records": len([record for record in rows["follow_up_records"] if record[1] == LUNG_RESISTANCE_STUDY_ID]),
-                        "crf_template_version": SLE_CRF_VERSION,
-                        "crf_fields": len(SLE_CRF_FIELDS),
-                        "lzxk_01_crf_fields": len(LUNG_CRF_FIELDS),
-                    }
-                ),
-                "127.0.0.1",
-                now,
-            ),
-        )
-        conn.executemany(
-            """
-            INSERT INTO audit_logs
-              (id, study_id, actor_id, actor_role, action, entity_type, entity_id, before_json, after_json, diff_json, ip_address, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                (
-                    "AUD-SEED-DIFF-001",
-                    "LGL-1111",
-                    "USR-007",
-                    "LZ_CRF_ADMIN",
-                    "update_crf_field",
-                    "study_crf_versions",
-                    "CRFV-LGL-1111-V0.1",
-                    encode_json({"id": "sle_v01_037", "name": "SLEDAI评分", "required": False, "validation_rule": ""}),
-                    encode_json({"id": "sle_v01_037", "name": "SLEDAI评分", "required": True, "validation_rule": "integer 0-105"}),
-                    encode_json([
-                        {"field": "required", "before": False, "after": True},
-                        {"field": "validation_rule", "before": "", "after": "integer 0-105"},
-                    ]),
-                    "127.0.0.1",
-                    now,
-                ),
-                (
-                    "AUD-SEED-DIFF-002",
-                    LUNG_RESISTANCE_STUDY_ID,
-                    "USR-011",
-                    "STUDY_CONFIG_ADMIN",
-                    "update_visit_plan",
-                    "study_visit_plans",
-                    "SVP-LZXK-01-V2",
-                    encode_json({"code": "V2", "window_after_days": 14, "required_samples": ["血液"]}),
-                    encode_json({"code": "V2", "window_after_days": 21, "required_samples": ["血液", "胸水"]}),
-                    encode_json([
-                        {"field": "window_after_days", "before": 14, "after": 21},
-                        {"field": "required_samples", "before": ["血液"], "after": ["血液", "胸水"]},
-                    ]),
-                    "127.0.0.1",
-                    now,
-                ),
-                (
-                    "AUD-SEED-DIFF-003",
-                    LUNG_RESISTANCE_STUDY_ID,
-                    "USR-005",
-                    "LZ_ADMIN",
-                    "complete_approval",
-                    "approval_requests",
-                    "APR-SEED-ECONSENT-002",
-                    encode_json({"status": "approved", "completed_at": None}),
-                    encode_json({"status": "completed", "completed_at": now}),
-                    encode_json([
-                        {"field": "status", "before": "approved", "after": "completed"},
-                        {"field": "completed_at", "before": None, "after": now},
-                    ]),
-                    "127.0.0.1",
-                    now,
-                ),
             ],
         )
 

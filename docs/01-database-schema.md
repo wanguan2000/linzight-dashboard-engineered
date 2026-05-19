@@ -6,17 +6,16 @@
 - SQLite 仅用于隔离 smoke、旧测试库备份恢复和迁移导出脚本，必须显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 后才可使用 `DATABASE_URL=sqlite:///./backend/linzight_demo.db`
 - 本地文件目录：`LINZIGHT_UPLOADS_DIR=./uploads`
 
-当前后端正式运行时使用 PostgreSQL；显式 SQLite 测试库支持 `jsonb()` 时，CRF payload 会以 JSONB（二进制 JSON）BLOB 保存，不支持时自动回退到 TEXT JSON。PostgreSQL runtime 当前以兼容 JSON 文本保存。API 层统一解码为 JSON object，因此前端不需要直接处理底层存储格式。
+当前后端正式运行时使用 PostgreSQL，所有 schema、payload、scope 等 JSON 列在 PostgreSQL 中使用原生 `JSONB`。显式 SQLite 测试库支持 `jsonb()` 时，CRF payload 会以 SQLite JSONB（二进制 JSON）BLOB 保存，不支持时自动回退到 TEXT JSON。API 层统一解码为 JSON object，因此前端不需要直接处理底层存储格式。
 
 ## 核心实体
 
 | 表 | 用途 | 主链路位置 |
 | --- | --- | --- |
 | `studies` | RWD EDC Study 主表 | 多研究隔离 |
-| `users` | 系统账号与角色 | 登录、权限、审计 |
+| `users` | 系统账号与角色 | 登录、权限 |
 | `study_members` | Study 成员与研究级角色 | 研究内权限 |
 | `global_role_study_scope` | 平台级角色授权 Study 范围 | 跨研究权限 |
-| `role_permissions` | 角色资源动作矩阵 | 权限体系 |
 | `patients` | 70 个模拟患者主档 | 患者列表、患者详情 |
 | `study_visit_plans` | 每个 Study 的访视计划配置 | 研究配置、自动生成访视 |
 | `study_configurations` | Study 配置总表 | 病种语义、当前 CRF、访视计划、知情同意模板、检测 profile |
@@ -29,13 +28,12 @@
 | `uploaded_files` | 本地上传文件元数据 | 文件上传、结果文件 |
 | `export_jobs` | 导出任务与文件关联 | 数据分析、导出 |
 | `data_quality_issues` | 数据完整性与校验问题 | 质控 |
-| `audit_logs` | 操作审计 | 审计日志 |
-| `crf_templates` | CRF 模板库 | CRF 配置 |
 | `study_crf_versions` | Study 独立 CRF 版本 | CRF 发布与版本 |
+| `operation_logs` | 后端增删改/状态动作日志 | GA 审计底座 |
 
 ## 角色范围
 
-`users.role_code` 是当前权限判断使用的角色编码。`users.role` 仅保留旧 Demo 登录兼容值。
+`users.role_code` 是当前权限判断使用的角色编码。`users.role` 仅保留旧 Demo 登录兼容值。角色资源动作矩阵由 `backend/permissions.py` 维护，正式库不再保留旧版 `role_permissions` 表。
 
 平台级角色：
 
@@ -56,7 +54,7 @@
 
 ## 关键关系
 
-- `study_id` 是 RWD EDC 核心隔离字段。`patients`、`samples`、`omics_records`、`consents`、`visits`、`follow_up_records`、`crf_entries`、`uploaded_files`、`export_jobs`、`data_quality_issues`、`audit_logs` 均包含该字段。
+- `study_id` 是 RWD EDC 核心隔离字段。`patients`、`samples`、`omics_records`、`consents`、`visits`、`follow_up_records`、`crf_entries`、`uploaded_files`、`export_jobs` 和 `data_quality_issues` 均包含该字段。
 - `patients` 是患者中心主表，`samples`、`omics_records`、`consents`、`visits`、`follow_up_records`、`crf_entries`、`uploaded_files`、`data_quality_issues` 均可按 `patient_id` 汇总成 Patient Journey。
 - `study_visit_plans.study_id` 关联 `studies.id`，保存该 Study 的访视编码、名称、访视类型、相对基线天数、访视窗口、必填 CRF 表单和样本要求。
 - `study_configurations.study_id` 是 Study 配置总表主键；`active_crf_version_id` 指向当前 published CRF，`visit_plan_json` 保存 active plan profile/codes，`consent_template` 绑定 Study 知情同意模板，`testing_profile_json` 保存样本/检测 profile。
@@ -67,20 +65,20 @@
 - `omics_records.sample_id` 关联 `samples.id`，用于样本送检到组学结果的链路追踪。
 - `uploaded_files` 可关联患者、样本、组学记录或知情同意记录，文件实体统一落本地 `uploads` 目录。
 - `export_jobs.file_id` 指向导出文件元数据，便于数据分析页展示导出状态。
-- `audit_logs` 记录所有关键实体变更，保留 `before_json` 与 `after_json` 便于后续审计追溯。
+- `operation_logs` 记录后端所有核心写操作，包括 `CREATE / UPDATE / DELETE / UPSERT / STATUS_CHANGE / LOGIN / UPLOAD / ARCHIVE / EXPORT / APPROVAL` 等动作。日志保存 `study_id`、操作者、实体类型、实体 ID、before/after/diff JSONB 和时间戳；GA 不恢复前端 Audit Diff 模块，日志作为后台审计底座保留。
 - 显式测试 seed 包含 `LZXK-01` 真实世界肺癌耐药研究，默认 20 名患者，并生成独立 Study 成员、CRF V1.0、组织/胸水样本和 `TP-LUNG-RESIST-OMICS` 检测项目记录；正式空库不会自动创建这些数据。
 
 ## CRF JSONB 存储
 
-CRF 宽表数据采用双轨存储，兼顾 PostgreSQL runtime、SQLite JSONB 查询性能和迁移可读性：
+CRF 宽表数据采用双轨存储，兼顾 PostgreSQL JSONB 查询能力、SQLite smoke 兼容性和迁移可读性：
 
-| 表 | JSONB BLOB 字段 | TEXT JSON 兼容字段 | 版本字段 | 格式字段 |
+| 表 | JSONB 字段 | 兼容副本字段 | 版本字段 | 格式字段 |
 | --- | --- | --- | --- | --- |
 | `patients` | `clinical_data_jsonb` | `clinical_data_json` | `clinical_data_version` | `clinical_data_format` |
 | `crf_entries` | `payload_jsonb` | `payload_json` | `payload_version` | `payload_format` |
 
-- `*_jsonb`：PostgreSQL runtime 当前写入 JSON 文本；SQLite 支持 `jsonb()` 时写入 BLOB，并支持 `json_extract()`、`json()` 等 SQLite JSON 函数读取。
-- `*_json`：保留 TEXT JSON 作为可读兼容副本，也用于不支持 `jsonb()` 的环境。
+- PostgreSQL：`*_json` 与 `*_jsonb` 均为原生 `JSONB`，`clinical_data_format` / `payload_format` 记录为 `jsonb`。
+- SQLite smoke：`*_json` 保持 TEXT JSON，`*_jsonb` 在 SQLite 支持 `jsonb()` 时写入 BLOB，否则写入 TEXT JSON。
 - `*_version`：来自 payload 内的 `CRF版本`，当前 SLE CRF schema 为 `V0.1`。
 - `*_format`：记录实际写入格式，当前支持 `jsonb`、`json` 和历史迁移值 `legacy`。
 
@@ -98,5 +96,4 @@ v1 先覆盖主链路查询：
 - `follow_up_records(study_id, patient_id, follow_up_date, follow_up_method)`：避免同一患者同一日期同一方式重复录入。
 - `crf_entries(patient_id)`：CRF 模块查询。
 - `uploaded_files(patient_id)`：患者文件汇总。
-- `audit_logs(entity_type, entity_id)`：实体审计追溯。
 - `data_quality_issues(patient_id, status)`：患者质控问题过滤。

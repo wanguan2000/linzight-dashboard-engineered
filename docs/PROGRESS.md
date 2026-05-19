@@ -9,19 +9,19 @@
   - 登录后保持现有前端 UI 风格进入主应用，并在 Topbar/Sidebar 展示当前用户与角色。
   - 保留现有模块导航，主链路入口为：登录 → 患者列表 → 患者详情/Patient Journey → CRF 录入 → 样本及检测 → 数据分析。
 - [x] 2. 设计数据库表结构
-  - 扩展 SQLite schema：用户、角色权限、CRF、上传文件、导出任务、数据质控、审计日志。
+  - 扩展 SQLite schema：用户、角色权限、CRF、上传文件、导出任务、数据质控和操作日志。
   - 新增 `docs/01-database-schema.md`，记录核心实体、关系、角色范围、索引策略与 PostgreSQL 配置保留方式。
   - 新增 `backend/.env.example`，保留 SQLite、PostgreSQL、本地 uploads 配置入口。
 - [x] 3. 定义 API 接口
-  - 新增 `docs/02-api-contract.md`，定义登录、患者、CRF、样本、多组学、文件上传、Journey、分析、导出、审计接口。
-  - 扩展 `backend/schemas.py`，补齐认证、CRF、文件、导出、数据质控、审计、分析摘要的 Pydantic 模型。
+  - 新增 `docs/02-api-contract.md`，定义登录、患者、CRF、样本、多组学、文件上传、Journey、分析、导出和后台操作日志口径。
+  - 扩展 `backend/schemas.py`，补齐认证、CRF、文件、导出、数据质控、后台操作日志和分析摘要的 Pydantic 模型。
 - [x] 4. 建立前后端联调的数据协议
   - 新增 `src/services/contracts.ts`，集中定义后端 snake_case 响应类型。
   - 调整 `src/services/api.ts`，保持现有 fallback 行为，只负责后端响应到前端组件数据的转换。
   - 新增 `docs/03-frontend-backend-protocol.md`，记录字段映射、fallback 规则、Journey 聚合结构与错误格式。
 - [x] 5. 后端开发
   - 重写 `backend/seed.py`，生成 70 个模拟患者，覆盖 NPSLE、Non-NPSLE、MS、NMOSD、HC 与 LZXK-01 肺癌耐药队列，并生成关联访视、CRF、样本、多组学和知情同意数据。
-  - 补齐 FastAPI 主链路接口：登录、CRF、文件上传、Patient Journey、分析摘要、导出、审计查询。
+  - 补齐 FastAPI 主链路接口：登录、CRF、文件上传、Patient Journey、分析摘要、导出和后台操作日志。
   - 文件上传使用本地 `uploads/` 目录，导出任务可生成队列 CSV。
   - 更新 README 后端接口和数据说明。
 - [x] 6. 权限与账户体系
@@ -32,20 +32,20 @@
   - 2026-05-07：新增 `LZXK-01` 真实世界肺癌耐药研究，默认生成 20 名患者及 Study PI/CRC/配置管理员/数据管理员角色，平台 LZ_CRC 与 LZ_CRF_ADMIN 授权覆盖该 Study。
 - [x] 7. 文件上传与隐私处理
   - 后端文件上传增加分类白名单和去标识化校验，`clinical`、`omics_result`、`analysis_export` 必须标记 `is_deidentified=true`。
-  - 上传成功后自动写入 `audit_logs`。
+  - 上传成功后自动写入后台操作日志。
   - 前端“样本及检测”页面新增结果文件上传入口，默认按组学结果文件标记去标识化。
 - [x] 8. 数据导入导出
   - 后端新增 `GET /exports/{export_id}/download`，支持下载导出任务生成的 CSV 文件。
-  - 后端新增 `POST /imports/patients`，支持最小患者 CSV 导入并写入审计。
+  - 后端新增 `POST /imports/patients`，支持最小患者 CSV 导入并写入后台操作日志。
   - 前端数据分析页的导出按钮已接入 `/exports`，默认登录角色调整为研究配置管理员以便主链路可直接试跑导出。
 - [x] 9. 数据完整性与校验
   - 后端新增 `/quality/run` 和 `/quality/issues`，可扫描临床完整度、样本缺失和知情同意状态并生成 `data_quality_issues`。
-  - 质控运行写入审计日志。
+  - 质控运行写入后台操作日志。
   - 前端数据分析页新增“运行校验”入口和结果状态展示。
 - [x] 10. 审计日志
-  - 新增统一 `insert_audit` helper。
-  - 患者、样本、组学、CRF、文件上传、导入、导出、质控运行均已有审计记录覆盖。
-  - `/audit-logs` 可按 `entity_type` 和 `entity_id` 查询操作轨迹。
+  - GA 版本移除 standalone Audit Diff 模块和 `/audit-logs` API。
+  - 患者、样本、组学、CRF、文件上传、导入、导出、质控运行等写操作由后台 `operation_logs` 覆盖。
+  - 操作轨迹作为数据库审计底座保留，不作为前端生产页面展示。
 - [x] 11. 测试
   - 完成主链路 API smoke：登录 → 患者列表 → CRF 录入 → 文件上传 → Patient Journey → 数据分析 → 导出下载。
   - 完成后端 Python 编译、前端 `npm run check`、静态 HTML 导出。

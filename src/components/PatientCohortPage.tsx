@@ -71,8 +71,10 @@ function currentStudyDefaultDisease(studyId?: string): DiseaseType {
 function makeDraftPatient(studyId?: string): PatientRecord {
   const today = new Date().toISOString().slice(2, 10).replace(/-/g, '');
   return {
-    studyId: studyId ?? '',
-    name: `NEW-${today}`,
+	    studyId: studyId ?? '',
+	    patientNumber: `NEW-${today}`,
+	    patientName: '',
+	    name: `NEW-${today}`,
     hospitalNo: '',
     sex: '女',
     age: 45,
@@ -350,6 +352,7 @@ interface PatientTableProps {
 
 function PatientTable({ patients, onEditPatient, onViewPatient, activePatientName, canEdit = true, showStudyId = false }: PatientTableProps) {
   const { t } = useI18n();
+  const [revealedPatientIds, setRevealedPatientIds] = useState<Set<string>>(new Set());
 
   return (
     <div className="patient-table-wrap">
@@ -357,6 +360,7 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
         <thead>
           <tr>
             <th>{t('患者编号')}</th>
+            <th>{t('患者姓名')}</th>
             {showStudyId ? <th>{t('Study ID')}</th> : null}
             <th>{t('住院号')}</th>
             <th>{t('性别')}</th>
@@ -373,9 +377,31 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
         <tbody>
           {patients.map((patient) => {
             const completeness = calculateClinicalCompleteness(patient.clinicalData);
+            const revealKey = patient.id ?? `${patient.studyId}-${patient.name}`;
+            const patientNameInitials = patient.patientNameInitials || patient.patientName || '-';
+            const canRevealPatientName = Boolean(patient.patientName && patient.patientName !== patientNameInitials);
+            const showFullPatientName = revealedPatientIds.has(revealKey) && canRevealPatientName;
               return (
               <tr className={patient.name === activePatientName ? 'is-active' : undefined} key={`${patient.studyId}-${patient.name}`}>
                 <td data-label={t('患者编号')}>{patient.name}</td>
+                <td data-label={t('患者姓名')}>
+                  <div className="patient-actions">
+                    <span>{showFullPatientName ? patient.patientName : patientNameInitials}</span>
+                    {canRevealPatientName ? (
+                      <button
+                        type="button"
+                        onClick={() => setRevealedPatientIds((current) => {
+                          const next = new Set(current);
+                          if (next.has(revealKey)) next.delete(revealKey);
+                          else next.add(revealKey);
+                          return next;
+                        })}
+                      >
+                        {t(showFullPatientName ? '隐藏姓名' : '授权查看')}
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
                 {showStudyId ? <td data-label={t('Study ID')}><span className="status-pill status-pill--info">{patient.studyId}</span></td> : null}
                 <td data-label={t('住院号')}>{patient.hospitalNo}</td>
                 <td data-label={t('性别')}>{t(patient.sex)}</td>
@@ -404,7 +430,7 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
           })}
           {!patients.length && (
             <tr>
-              <td colSpan={showStudyId ? 12 : 11}>{t('暂无匹配患者')}</td>
+	              <td colSpan={showStudyId ? 13 : 12}>{t('暂无匹配患者')}</td>
             </tr>
           )}
         </tbody>
@@ -452,8 +478,10 @@ export function PatientListModule({
         const query = search.trim().toLowerCase();
         if (!query) return true;
         return [
-          patient.name,
-          patient.hospitalNo,
+	          patient.name,
+	          patient.patientName ?? '',
+	          patient.patientNameInitials ?? '',
+	          patient.hospitalNo,
           patient.diseaseType,
           patient.organs.join(' '),
           sampleText(patient),
@@ -510,7 +538,7 @@ export function PatientListModule({
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder={t('输入患者编号、住院号或疾病类型')}
+              placeholder={t('输入患者编号、患者姓名、住院号或疾病类型')}
             />
             <Icon name="search" />
           </div>
@@ -662,7 +690,7 @@ export function PatientCohortPage({
 
     void fetchWorkspaceDataset()
       .then((dataset) => {
-        if (!ignore && dataset.patients.length) {
+        if (!ignore) {
           setPatients(dataset.patients);
         }
       })
@@ -679,8 +707,10 @@ export function PatientCohortPage({
         const query = search.trim().toLowerCase();
         if (!query) return true;
         return [
-          patient.name,
-          patient.hospitalNo,
+	          patient.name,
+	          patient.patientName ?? '',
+	          patient.patientNameInitials ?? '',
+	          patient.hospitalNo,
           patient.diseaseType,
           patient.organs.join(' '),
           sampleText(patient),
@@ -772,15 +802,17 @@ export function PatientCohortPage({
       setSaveStatus('请先选择一个 Study，再保存患者');
       return;
     }
-    if (!draftPatient.name.trim() || !draftPatient.hospitalNo.trim()) {
-      setSaveStatus('患者编号和住院号为必填项');
+	    if (!draftPatient.name.trim() || !draftPatient.hospitalNo.trim()) {
+	      setSaveStatus('患者编号和住院号为必填项');
       return;
     }
 
     const nextPatient = {
       ...draftPatient,
-      studyId: targetStudyId,
-      name: draftPatient.name.trim(),
+	      studyId: targetStudyId,
+	      patientNumber: draftPatient.patientNumber?.trim() || draftPatient.name.trim(),
+	      patientName: draftPatient.patientName?.trim() ?? '',
+	      name: draftPatient.name.trim(),
       hospitalNo: draftPatient.hospitalNo.trim(),
       note: draftPatient.note.trim()
     };
@@ -799,13 +831,7 @@ export function PatientCohortPage({
       setDraftPatient(null);
       setSaveStatus(editorMode === 'create' ? `患者已创建：${saved.name}` : `患者已保存：${saved.name}`);
     } catch (error) {
-      setPatients((rows) => {
-        const exists = rows.some((patient) => patient.id === nextPatient.id || patient.name === nextPatient.name);
-        if (exists) return rows.map((patient) => (patient.id === nextPatient.id || patient.name === nextPatient.name ? nextPatient : patient));
-        return [nextPatient, ...rows];
-      });
-      onPatientChange(nextPatient);
-      setSaveStatus(isPermissionError(error) ? '当前角色没有患者写入权限，变更仅保存在本页' : '后端不可用，患者变更已保存在本页');
+      setSaveStatus(isPermissionError(error) ? '保存失败：当前角色没有患者写入权限' : '保存失败：后端未接受患者变更');
     }
   }
 
@@ -865,7 +891,7 @@ export function PatientCohortPage({
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder={t('输入患者编号、住院号或疾病类型')}
+	                  placeholder={t('输入患者编号、患者姓名、住院号或疾病类型')}
                 />
                 <Icon name="search" />
               </div>
@@ -946,11 +972,15 @@ export function PatientCohortPage({
                     <input value={draftPatient.studyId || selectedPatientWriteStudyId || ''} readOnly />
                   )}
                 </label>
-                <label>
-                  <span>{t('患者编号')}</span>
-                  <input value={draftPatient.name} onChange={(event) => patchDraftPatient({ name: event.target.value })} />
-                </label>
-                <label>
+	                <label>
+	                  <span>{t('患者编号')}</span>
+	                  <input value={draftPatient.name} onChange={(event) => patchDraftPatient({ name: event.target.value })} />
+	                </label>
+	                <label>
+	                  <span>{t('患者姓名')}</span>
+	                  <input value={draftPatient.patientName ?? ''} onChange={(event) => patchDraftPatient({ patientName: event.target.value })} />
+	                </label>
+	                <label>
                   <span>{t('住院号')}</span>
                   <input value={draftPatient.hospitalNo} onChange={(event) => patchDraftPatient({ hospitalNo: event.target.value })} />
                 </label>

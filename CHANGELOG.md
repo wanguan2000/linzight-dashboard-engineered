@@ -10,6 +10,27 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 - Formal backend runtime now rejects `sqlite:///...` database URLs unless `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` is explicitly set for isolated smoke tests or legacy migration tooling.
 - Release, setup, deployment, architecture, API, and handoff docs now state PostgreSQL as the formal GA database and describe SQLite only as a test/export utility.
+- Docker Compose now connects the backend to the host Homebrew PostgreSQL 17.10 `linzight_dashboard_engineered` database by default instead of starting an internal PostgreSQL 16 service.
+- GA scope now keeps PostgreSQL RLS as a post-GA hardening item while preserving backend application-layer Study authorization.
+- Frontend production pages no longer seed sample/omics/system-management state from static data when the backend is empty, and failed writes now remain failed instead of being marked as locally saved.
+- GA PostgreSQL core data model now exposes formal patient, sample, omics, and follow-up fields: `patient_number`, sample `note`, omics `result_file_id`, and follow-up `record_note`.
+- Patient master data now stores `patient_name` separately and defaults the UI to pinyin initials, with full-name reveal restricted by backend field permissions to LZ Admin, Study Admin, Study CRC, and LZ CRC.
+- Follow-up records now store configurable JSON `payload` values governed by `study_configurations.follow_up_schema`, matching the existing Study-scoped CRF JSON model.
+- PostgreSQL formal runtime now converts all JSON payload/schema/scope columns to native `JSONB` instead of text-backed JSON.
+- Study Registry now stores and displays `leading_pi_info` and `system_admin`, while account/role lists display backend `last_login_at` instead of a hardcoded Last Login placeholder.
+- Formal PostgreSQL runtime no longer creates legacy `role_permissions` and `crf_templates` tables; `010_drop_legacy_unused_tables` removes them from existing GA databases.
+- Standalone audit log module was removed from the GA runtime; `011_drop_audit_module` drops `audit_logs`, backend write paths no longer call audit hooks, and frontend System Management no longer calls or displays Audit Diff.
+- Backend operation logging was added through `operation_logs`; core create/update/delete/status/upload/export/approval actions now persist actor, Study, entity, before/after, diff, and timestamp JSONB records without restoring the frontend Audit Diff module.
+- The `/seed` endpoint is disabled in formal PostgreSQL runtime by default; it is only open for isolated SQLite smoke runs or when explicitly enabled and called by an authorized LZ Admin.
+- Operation log querying and CSV export were added through `/operation-logs` and `/studies/{study_id}/operation-logs`, with System Management showing backend-sourced logs under the current Study scope.
+- Study-scoped Query and export creation now use `/studies/{study_id}/...` routes, with backend path/payload Study validation.
+
+### Fixed
+
+- Backend CRF entry creation now rejects Studies without a published CRF version instead of falling back to `CRFV-LGL-1111-V0.1`.
+- Backend-authenticated users are no longer overwritten by matching local demo usernames.
+- Omics result uploads now link the uploaded result file back to `omics_records.result_file_id`.
+- Sample status options now align with the backend enum and no longer submit `检测完成` as a sample status.
 
 ## [1.0.1] - 2026-05-18
 
@@ -95,13 +116,15 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Backend SQLite connections now honor `LINZIGHT_DATABASE_URL`, allowing smoke tests and local installs to use an isolated database path.
 - Dashboard welcome copy now reflects the authenticated user instead of a hard-coded demo PI.
 - Field-level privacy rules now mask direct identifiers for data-manager/auditor roles and remove non-exportable identifiers from CSV exports.
-- Approval requests now use a persisted status machine for export, de-identified export, and CRF publish workflows, with action history and audit logs.
-- File handling now goes through a local storage adapter with mock virus scanning, archive status fields, permission-checked downloads, and access audit logs.
+- Approval requests now use a persisted status machine for export, de-identified export, and CRF publish workflows, with action history.
+- File handling now goes through a local storage adapter with mock virus scanning, archive status fields, and permission-checked downloads.
 - Database productionization now records schema versions, includes an optional PostgreSQL Compose profile, and provides a SQLite table export script for PostgreSQL migration rehearsals.
 - Browser interaction regression scaffolding was added with a Playwright-first runner and explicit limitation reporting when Playwright is not installed.
 - Product foundations now include Study-scoped Query management APIs, multi-site configuration/assignment APIs, and a monitoring/backup drill document.
 - System Management now exposes full Query Management and Site Configuration panels wired to the Study-scoped Query, site, and site-user assignment APIs.
-- Previously inert or frontend-only buttons across cohort, consent, clinical data capture, samples/testing, analytics, and system management now either call backend APIs, create audit-backed records, export real files, or present an explicit disabled state.
+- Previously inert or frontend-only buttons across cohort, consent, clinical data capture, samples/testing, analytics, and system management now either call backend APIs, create persisted records, export real files, or present an explicit disabled state.
+- Patient Journey no longer generates synthetic diagnosis/admission/treatment events or artificial biomarker trends in production views, and Dashboard export progress now reads `export_jobs` instead of reusing omics counts.
+- Sample/testing result-file cells now resolve `omics_records.result_file_id` through `uploaded_files`, showing the real original filename plus scan/archive status instead of exposing the raw file id.
 - English locale coverage was expanded across login, module navigation, patient cohort, informed consent, clinical data capture, sample testing, patient journey, data analysis, and system management.
 - Additional English-locale cleanup covers dashboard KPI helpers, workflow cards, enrollment trend, smart summary markers, sample/testing detail panels, omics result panels, data-analysis pipeline, and system-management overview text.
 - Release hygiene now blocks accidental tracking of local env files, local databases, upload payloads, dependency folders, build caches, private keys, SQLite files, and large non-resource files.

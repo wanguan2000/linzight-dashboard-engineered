@@ -46,7 +46,7 @@
 - 数据口径：所有全局管理列表、详情、导出、审计、文件和 Query 都必须显示 `Study ID`，并提供 Study selector 或明确的 `ALL_STUDIES` 范围。
 - 数据质量：字段级 Query、访视窗口超窗预警和 CRF 字段名校验已有 Demo first pass；正式发布前继续补字段字典单位、范围、逻辑校验、漏访原因、样本温控/转运/冻存位置和组学结果结构化解析。
 - 合规流程：审计 before/after diff、导出任务审计、eConsent 撤回/重签审批已有 Demo first pass；正式发布前继续补 reviewer UX、审批报表、扫描件归档和真实审计留痕策略。
-- 生产基础：PostgreSQL schema/index/constraint/seed 分层迁移、对象存储/病毒扫描适配点、staging deploy dry-run 和 performance smoke 已有 RC first pass；正式发布前仍需托管 PostgreSQL runtime adapter、真实 OSS/S3/ClamAV 或供应商网关、集中身份源、密钥管理、TLS、监控告警、备份恢复演练和隐私数据发布检查。
+- 生产基础：PostgreSQL schema/index/constraint/seed 分层迁移、对象存储/病毒扫描适配点、staging deploy dry-run 和 performance smoke 已有 RC first pass；GA 本地运行目标已切到 Homebrew PostgreSQL 17.10。正式发布前仍需托管 PostgreSQL runtime adapter、真实 OSS/S3/ClamAV 或供应商网关、集中身份源、密钥管理、TLS、监控告警、备份恢复演练和隐私数据发布检查；PostgreSQL RLS 作为 GA 后强化项推进。
 - 自动化验证：API contract、权限越权、导出下载、移动端卡片视图、静态 HTML 导出、静态 runtime smoke、性能 smoke 和 `browser:matrix` 已纳入本地或 CI gate；正式发布前继续扩展到多浏览器截图基线。
 
 ## 技术债

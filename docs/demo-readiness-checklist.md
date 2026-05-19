@@ -19,13 +19,13 @@ The script starts a temporary seeded backend and a temporary Vite frontend, then
 | --- | --- | --- |
 | LZ system admin | `admin@demo.linzight` | All Study operational view; every patient row carries `Study ID`. |
 | Lung Study CRC | `lung-crc@demo.linzight` | `LZXK-01` only; can run patient, CRF, consent, sample, Journey, analytics and quality-to-Query flow. |
-| Lung Study data manager | `lung-dm@demo.linzight` | `LZXK-01` only; can run quality Query plus System Management Query, approval and audit views. |
+| Lung Study data manager | `lung-dm@demo.linzight` | `LZXK-01` only; can run quality Query plus System Management Query and Approval Center views. |
 
 Validated chain:
 
-`登录 -> 患者队列 -> CRF -> 知情/eConsent -> 样本/检测 -> Journey -> 数据分析 -> Query -> 审批 -> 审计`
+`登录 -> 患者队列 -> CRF -> 知情/eConsent -> 样本/检测 -> Journey -> 数据分析 -> Query -> 审批`
 
-Study CRC does not open System Management by design. Its customer-facing Query path is Data Analysis quality issue to Query. Approval and audit are shown through Data Manager or Admin.
+Study CRC does not open System Management by design. Its customer-facing Query path is Data Analysis quality issue to Query. Approval Center is shown through Data Manager or Admin; backend operation logs are verified by API smoke, not shown as a standalone page.
 
 ## 可演示
 
@@ -36,7 +36,7 @@ Study CRC does not open System Management by design. Its customer-facing Query p
 - 新增患者、新增样本、新增检测、新建随访都是表单式交互，并写入明确的 `study_id`。
 - 数据分析页可运行质量校验，访视窗口问题可以生成 Query，并显示创建后的 Query 编号。
 - eConsent 撤回/重签通过 Approval Center，不再直接静默改状态。
-- System Management 可展示当前 Study 的 CRF 字段、CRF 版本、Query、Approval Center 和 Audit Diff。
+- System Management 可展示当前 Study 的 CRF 字段、CRF 版本、Query 和 Approval Center。
 - 静态 HTML 导出包含八个业务模块，适合无后端的页面 walkthrough。
 - 移动端 390px 主表格已卡片化，适合演示“可用”，但不是移动优先产品。
 
@@ -45,13 +45,13 @@ Study CRC does not open System Management by design. Its customer-facing Query p
 - 锁库和脱敏审批作为内部治理流程，客户演示阶段不主动展开。
 - 真实对象存储、外部病毒扫描、PostgreSQL staging migration 已有适配点或导出包，但不作为生产就绪承诺展示。
 - Docker Compose、SQLite backup/restore、OpenAPI 导出用于工程交付说明，不作为临床客户主演示链路。
-- 审计 diff 可展示“修改前/后值”，但不要承诺已覆盖全部法规级审计场景。
+- GA 版本已移除 standalone audit log 模块，不展示 Audit Diff。
 
 ## 正式产品仍未完成
 
 - 生产级身份源、SSO、组织/中心权限同步、字段级权限和审批授权矩阵。
 - PostgreSQL 正式 migration、索引、约束、备份恢复演练和数据保留策略。
-- 对象存储、病毒扫描、文件归档和长期可追溯下载审计的真实基础设施。
+- 对象存储、病毒扫描、文件归档和长期可追溯下载/操作日志查询的真实基础设施。
 - Query 的 reviewer 工作台、批量处理、SLA、通知和报表。
 - eConsent 撤回/重签的签署文件、扫描件、签署方式、审批原因和完整审计报表。
 - 访视窗口规则的日历化、超窗原因、漏访原因、中心维度配置和提醒。
@@ -61,5 +61,5 @@ Study CRC does not open System Management by design. Its customer-facing Query p
 ## Demo 口径
 
 - 这是 `v1.0.2` GA 功能测试版本，可用于填写测试数据；正式 Docker 启动为空库，仅保留首个 LZ 系统管理员。正式运行数据库固定为 PostgreSQL，SQLite 只允许隔离 smoke/旧迁移工具显式开启。真实患者生产上线前仍需完成生产身份源、对象存储、数据库安全策略、备份恢复和合规签字。
-- 演示重点是 Study 隔离、Study 绑定 CRF、患者中心数据链路、质量到 Query、eConsent 审批和审计闭环。
+- 演示重点是 Study 隔离、Study 绑定 CRF、患者中心数据链路、质量到 Query 和 eConsent 审批闭环。
 - 如被问到“正式上线还差什么”，使用上面的正式产品未完成清单，不要把 Demo 适配点说成已生产落地。

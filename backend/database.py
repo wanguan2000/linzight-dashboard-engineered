@@ -198,8 +198,75 @@ def translate_insert_or_ignore(query: str) -> str:
     return f"{translated.rstrip().rstrip(';')} ON CONFLICT DO NOTHING"
 
 
+JSONB_ARRAY_COLUMNS = {"organs_json", "required_forms_json", "required_samples_json", "linked_omics_json"}
+JSONB_NULLABLE_COLUMNS = {"clinical_data_jsonb", "payload_jsonb"}
+JSONB_COLUMNS = {
+    *JSONB_ARRAY_COLUMNS,
+    *JSONB_NULLABLE_COLUMNS,
+    "clinical_data_json",
+    "visit_plan_json",
+    "testing_profile_json",
+    "follow_up_schema_json",
+    "payload_json",
+    "scope_json",
+    "schema_json",
+    "preview_json",
+    "before_json",
+    "after_json",
+    "diff_json",
+    "request_context_json",
+}
+
+
+def postgres_jsonb_column_definition(column: str) -> str | None:
+    if column not in JSONB_COLUMNS:
+        return None
+    if column in JSONB_NULLABLE_COLUMNS:
+        return "JSONB"
+    default = "[]" if column in JSONB_ARRAY_COLUMNS else "{}"
+    return f"JSONB NOT NULL DEFAULT '{default}'::jsonb"
+
+
+def translate_jsonb_column_definitions(sql: str) -> str:
+    def replace_line(match: re.Match[str]) -> str:
+        prefix, column, column_type, rest = match.groups()
+        definition = postgres_jsonb_column_definition(column)
+        if definition is None:
+            return match.group(0)
+        suffix = rest
+        comma = ""
+        semicolon = ""
+        if suffix.endswith(","):
+            comma = ","
+            suffix = suffix[:-1]
+        if suffix.endswith(";"):
+            semicolon = ";"
+            suffix = suffix[:-1]
+        return f"{prefix}{column} {definition}{comma}{semicolon}"
+
+    translated = re.sub(
+        r"(?im)^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s+(TEXT|BLOB)\b([^\n]*)$",
+        replace_line,
+        sql,
+    )
+
+    def replace_add_column(match: re.Match[str]) -> str:
+        prefix, column, column_type, rest = match.groups()
+        definition = postgres_jsonb_column_definition(column)
+        if definition is None:
+            return match.group(0)
+        return f"{prefix}{column} {definition}{rest}"
+
+    return re.sub(
+        r"(?i)\b(ADD\s+COLUMN(?:\s+IF\s+NOT\s+EXISTS)?\s+)([A-Za-z_][A-Za-z0-9_]*)\s+(TEXT|BLOB)\b([^,;]*)",
+        replace_add_column,
+        translated,
+    )
+
+
 def translate_runtime_sql(query: str) -> str:
     translated = translate_insert_or_ignore(query)
+    translated = translate_jsonb_column_definitions(translated)
     translated = re.sub(r"\bBLOB\b", "TEXT", translated, flags=re.IGNORECASE)
     return replace_qmark_placeholders(translated)
 
@@ -238,9 +305,9 @@ def translate_schema_sql(statement: str) -> str:
             raw_line,
             flags=re.IGNORECASE,
         )
-        line = re.sub(r"\bBLOB\b", "TEXT", line, flags=re.IGNORECASE)
         lines.append(line)
     translated = "\n".join(lines)
+    translated = translate_jsonb_column_definitions(translated)
     translated = re.sub(r",\s*\)", "\n)", translated)
     return translate_runtime_sql(translated)
 
@@ -270,17 +337,19 @@ def initialize_schema() -> None:
     with connect() as conn:
         conn.executescript(
             """
-            CREATE TABLE IF NOT EXISTS studies (
-              id TEXT PRIMARY KEY,
-              code TEXT NOT NULL UNIQUE,
-              name TEXT NOT NULL,
-              indication TEXT NOT NULL,
-              phase TEXT NOT NULL DEFAULT 'RWD',
-              status TEXT NOT NULL DEFAULT 'active',
-              owner_org TEXT NOT NULL DEFAULT 'LinZight',
-              created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL
-            );
+	            CREATE TABLE IF NOT EXISTS studies (
+	              id TEXT PRIMARY KEY,
+	              code TEXT NOT NULL UNIQUE,
+	              name TEXT NOT NULL,
+	              indication TEXT NOT NULL,
+	              phase TEXT NOT NULL DEFAULT 'RWD',
+	              status TEXT NOT NULL DEFAULT 'active',
+	              owner_org TEXT NOT NULL DEFAULT 'LinZight',
+	              leading_pi_info TEXT NOT NULL DEFAULT '',
+	              system_admin TEXT NOT NULL DEFAULT '',
+	              created_at TEXT NOT NULL,
+	              updated_at TEXT NOT NULL
+	            );
 
             CREATE TABLE IF NOT EXISTS schema_migrations (
               version TEXT PRIMARY KEY,
@@ -291,6 +360,8 @@ def initialize_schema() -> None:
             CREATE TABLE IF NOT EXISTS patients (
               id TEXT PRIMARY KEY,
               study_id TEXT NOT NULL DEFAULT 'LGL-1111',
+              patient_number TEXT NOT NULL DEFAULT '',
+              patient_name TEXT NOT NULL DEFAULT '',
               name TEXT NOT NULL UNIQUE,
               hospital_no TEXT NOT NULL UNIQUE,
               sex TEXT NOT NULL,
@@ -332,6 +403,7 @@ def initialize_schema() -> None:
               visit_plan_json TEXT NOT NULL DEFAULT '{}',
               consent_template TEXT NOT NULL,
               testing_profile_json TEXT NOT NULL DEFAULT '{}',
+              follow_up_schema_json TEXT NOT NULL DEFAULT '{}',
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
               FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE,
@@ -348,6 +420,7 @@ def initialize_schema() -> None:
               visit TEXT NOT NULL,
               collected_at TEXT NOT NULL,
               storage TEXT NOT NULL,
+              note TEXT NOT NULL DEFAULT '',
               status TEXT NOT NULL,
               linked_omics_json TEXT NOT NULL DEFAULT '[]',
               created_at TEXT NOT NULL,
@@ -368,6 +441,7 @@ def initialize_schema() -> None:
               run_id TEXT NOT NULL,
               status TEXT NOT NULL,
               qc TEXT NOT NULL,
+              result_file_id TEXT,
               sent_at TEXT NOT NULL,
               completed_at TEXT NOT NULL DEFAULT '-',
               created_at TEXT NOT NULL,
@@ -417,10 +491,15 @@ def initialize_schema() -> None:
               symptoms_signs TEXT NOT NULL DEFAULT '',
               imaging_lab_summary TEXT NOT NULL DEFAULT '',
               efficacy_assessment TEXT NOT NULL DEFAULT '',
+              record_note TEXT NOT NULL DEFAULT '',
               metastasis_status TEXT NOT NULL DEFAULT '',
               adverse_events TEXT NOT NULL DEFAULT '',
               quality_of_life TEXT NOT NULL DEFAULT '',
               lost_to_follow_up_reason TEXT NOT NULL DEFAULT '',
+              payload_json TEXT NOT NULL DEFAULT '{}',
+              payload_jsonb BLOB,
+              payload_version TEXT NOT NULL DEFAULT 'legacy',
+              payload_format TEXT NOT NULL DEFAULT 'json',
               recorded_at TEXT NOT NULL,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
@@ -428,17 +507,18 @@ def initialize_schema() -> None:
               FOREIGN KEY (visit_id) REFERENCES visits(id) ON DELETE SET NULL
             );
 
-            CREATE TABLE IF NOT EXISTS users (
-              id TEXT PRIMARY KEY,
-              username TEXT NOT NULL UNIQUE,
-              display_name TEXT NOT NULL,
-              role TEXT NOT NULL DEFAULT 'investigator',
-              role_code TEXT NOT NULL DEFAULT 'STUDY_PI',
-              password_hash TEXT NOT NULL,
-              status TEXT NOT NULL DEFAULT 'active',
-              created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL
-            );
+	            CREATE TABLE IF NOT EXISTS users (
+	              id TEXT PRIMARY KEY,
+	              username TEXT NOT NULL UNIQUE,
+	              display_name TEXT NOT NULL,
+	              role TEXT NOT NULL DEFAULT 'investigator',
+	              role_code TEXT NOT NULL DEFAULT 'STUDY_PI',
+	              password_hash TEXT NOT NULL,
+	              status TEXT NOT NULL DEFAULT 'active',
+	              last_login_at TEXT,
+	              created_at TEXT NOT NULL,
+	              updated_at TEXT NOT NULL
+	            );
 
             CREATE TABLE IF NOT EXISTS password_reset_tokens (
               id TEXT PRIMARY KEY,
@@ -448,13 +528,6 @@ def initialize_schema() -> None:
               used_at TEXT,
               created_at TEXT NOT NULL,
               FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS role_permissions (
-              role TEXT NOT NULL,
-              resource TEXT NOT NULL,
-              action TEXT NOT NULL,
-              PRIMARY KEY (role, resource, action)
             );
 
             CREATE TABLE IF NOT EXISTS field_permissions (
@@ -550,19 +623,20 @@ def initialize_schema() -> None:
               FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
             );
 
-            CREATE TABLE IF NOT EXISTS audit_logs (
+            CREATE TABLE IF NOT EXISTS operation_logs (
               id TEXT PRIMARY KEY,
-              study_id TEXT NOT NULL DEFAULT 'LGL-1111',
+              study_id TEXT,
               actor_id TEXT,
               actor_role TEXT,
               action TEXT NOT NULL,
               entity_type TEXT NOT NULL,
               entity_id TEXT NOT NULL,
-              before_json TEXT,
-              after_json TEXT,
-              diff_json TEXT,
-              ip_address TEXT,
+              before_json TEXT NOT NULL DEFAULT '{}',
+              after_json TEXT NOT NULL DEFAULT '{}',
+              diff_json TEXT NOT NULL DEFAULT '[]',
+              request_context_json TEXT NOT NULL DEFAULT '{}',
               created_at TEXT NOT NULL,
+              FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE SET NULL,
               FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL
             );
 
@@ -589,16 +663,6 @@ def initialize_schema() -> None:
               FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE
             );
 
-            CREATE TABLE IF NOT EXISTS crf_templates (
-              id TEXT PRIMARY KEY,
-              name TEXT NOT NULL,
-              version TEXT NOT NULL,
-              schema_json TEXT NOT NULL DEFAULT '{}',
-              status TEXT NOT NULL DEFAULT 'active',
-              created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL
-            );
-
             CREATE TABLE IF NOT EXISTS study_crf_versions (
               id TEXT PRIMARY KEY,
               study_id TEXT NOT NULL,
@@ -613,7 +677,6 @@ def initialize_schema() -> None:
               updated_at TEXT NOT NULL,
               UNIQUE (study_id, version),
               FOREIGN KEY (study_id) REFERENCES studies(id) ON DELETE CASCADE,
-              FOREIGN KEY (template_id) REFERENCES crf_templates(id) ON DELETE SET NULL,
               FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             );
 
@@ -746,8 +809,11 @@ def initialize_schema() -> None:
             CREATE INDEX IF NOT EXISTS idx_follow_up_records_patient_id ON follow_up_records(patient_id);
             CREATE INDEX IF NOT EXISTS idx_crf_entries_patient_id ON crf_entries(patient_id);
             CREATE INDEX IF NOT EXISTS idx_uploaded_files_patient_id ON uploaded_files(patient_id);
-            CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
             CREATE INDEX IF NOT EXISTS idx_quality_patient_status ON data_quality_issues(patient_id, status);
+            CREATE INDEX IF NOT EXISTS idx_operation_logs_study_id ON operation_logs(study_id);
+            CREATE INDEX IF NOT EXISTS idx_operation_logs_entity ON operation_logs(entity_type, entity_id);
+            CREATE INDEX IF NOT EXISTS idx_operation_logs_actor_id ON operation_logs(actor_id);
+            CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at ON operation_logs(created_at);
             CREATE INDEX IF NOT EXISTS idx_study_members_study_id ON study_members(study_id);
             CREATE INDEX IF NOT EXISTS idx_study_members_user_id ON study_members(user_id);
             CREATE INDEX IF NOT EXISTS idx_crf_migration_approvals_study_id ON crf_migration_approvals(study_id);
@@ -782,10 +848,13 @@ def seed_default_field_permissions(conn: sqlite3.Connection) -> None:
         ("patients", "住址", "address"),
     ]
     masked_roles = {"LZ_DATA_MANAGER", "LZ_AUDITOR", "STUDY_DATA_MANAGER"}
+    patient_name_full_access_roles = {"LZ_ADMIN", "STUDY_CONFIG_ADMIN", "STUDY_CRC", "LZ_CRC"}
     rows = []
     for role in ROLE_VALUES:
         for resource, field_name, mask_rule in sensitive_fields:
-            should_mask = role in masked_roles and role != "LZ_ADMIN"
+            should_mask = role not in patient_name_full_access_roles if field_name == "patient_name" else role in masked_roles and role != "LZ_ADMIN"
+            if field_name == "patient_name" and should_mask:
+                mask_rule = "pinyin_initials"
             rows.append((role, resource, field_name, 1, 0 if should_mask else 1, mask_rule if should_mask else "none", now, now))
     conn.executemany(
         """
@@ -794,6 +863,16 @@ def seed_default_field_permissions(conn: sqlite3.Connection) -> None:
         """,
         rows,
     )
+    for role in ROLE_VALUES:
+        should_mask = role not in patient_name_full_access_roles
+        conn.execute(
+            """
+            UPDATE field_permissions
+            SET can_view = 1, can_export = ?, mask_rule = ?, updated_at = ?
+            WHERE role = ? AND resource = 'patients' AND field_name = 'patient_name'
+            """,
+            (0 if should_mask else 1, "pinyin_initials" if should_mask else "none", now, role),
+        )
 
 
 def record_schema_version(conn: sqlite3.Connection) -> None:
@@ -827,6 +906,7 @@ def study_configuration_defaults(study_id: str, indication: str, active_crf_vers
                 "sample_types": ["血液", "组织", "胸水"],
                 "assays": ["NGS panel", "ctDNA", "病理复核"],
             },
+            "follow_up_schema": default_follow_up_schema("lung_resistance_v1"),
         }
     return {
         "study_id": study_id,
@@ -843,6 +923,27 @@ def study_configuration_defaults(study_id: str, indication: str, active_crf_vers
             "assays": ["WGS", "TCR/BCR", "Olink/Simoa", "蛋白组", "代谢组"],
             "indication": indication,
         },
+        "follow_up_schema": default_follow_up_schema("immune_neurology_v1"),
+    }
+
+
+def default_follow_up_schema(profile: str) -> dict[str, Any]:
+    return {
+        "profile": profile,
+        "version": "v1",
+        "sections": [
+            {
+                "id": "follow_up",
+                "title": "患者随访",
+                "fields": [
+                    {"id": "visit", "name": "访视", "type": "Text", "required": True},
+                    {"id": "date", "name": "日期", "type": "Date", "required": True},
+                    {"id": "type", "name": "类型", "type": "Dropdown", "required": True, "options": ["门诊", "电话", "线上", "家访", "其他"]},
+                    {"id": "efficacy", "name": "疗效评估", "type": "Text", "required": False},
+                    {"id": "record", "name": "记录", "type": "Textarea", "required": False},
+                ],
+            }
+        ],
     }
 
 
@@ -878,14 +979,15 @@ def sync_study_configurations(conn: sqlite3.Connection) -> None:
         conn.execute(
             """
             INSERT INTO study_configurations
-              (study_id, disease_area, active_crf_version_id, visit_plan_json, consent_template, testing_profile_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              (study_id, disease_area, active_crf_version_id, visit_plan_json, consent_template, testing_profile_json, follow_up_schema_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(study_id) DO UPDATE SET
               disease_area = excluded.disease_area,
               active_crf_version_id = excluded.active_crf_version_id,
               visit_plan_json = excluded.visit_plan_json,
               consent_template = excluded.consent_template,
               testing_profile_json = excluded.testing_profile_json,
+              follow_up_schema_json = excluded.follow_up_schema_json,
               updated_at = excluded.updated_at
             """,
             (
@@ -895,6 +997,7 @@ def sync_study_configurations(conn: sqlite3.Connection) -> None:
                 encode_json(config["visit_plan"]),
                 config["consent_template"],
                 encode_json(config["testing_profile"]),
+                encode_json(config["follow_up_schema"]),
                 now,
                 now,
             ),
@@ -925,6 +1028,8 @@ def json_payload_version(value: Any) -> str:
 def sqlite_json_storage(conn: sqlite3.Connection, value: Any) -> tuple[bytes | str, str, str]:
     json_text = encode_json(value)
     version = json_payload_version(value)
+    if is_postgres_connection(conn):
+        return json_text, "jsonb", version
     if sqlite_supports_jsonb(conn):
         return conn.execute("SELECT jsonb(?)", (json_text,)).fetchone()[0], "jsonb", version
     return json_text, "json", version
@@ -961,15 +1066,13 @@ def migrate_json_storage(conn: sqlite3.Connection) -> None:
             ("retention_until", "TEXT"),
         ],
     )
-    ensure_columns(conn, "audit_logs", [("diff_json", "TEXT")])
-
     if is_postgres_connection(conn):
         conn.execute(
             """
             UPDATE patients
             SET
               clinical_data_jsonb = clinical_data_json,
-              clinical_data_format = 'json',
+              clinical_data_format = 'jsonb',
               clinical_data_version = COALESCE(clinical_data_version, 'legacy')
             WHERE clinical_data_jsonb IS NULL
             """
@@ -979,7 +1082,7 @@ def migrate_json_storage(conn: sqlite3.Connection) -> None:
             UPDATE crf_entries
             SET
               payload_jsonb = payload_json,
-              payload_format = 'json',
+              payload_format = 'jsonb',
               payload_version = COALESCE(payload_version, 'legacy')
             WHERE payload_jsonb IS NULL
             """
@@ -1031,7 +1134,15 @@ def migrate_json_storage(conn: sqlite3.Connection) -> None:
 
 
 def migrate_study_schema(conn: sqlite3.Connection) -> None:
-    ensure_columns(conn, "users", [("role_code", "TEXT NOT NULL DEFAULT 'STUDY_PI'")])
+    ensure_columns(
+        conn,
+        "studies",
+        [
+            ("leading_pi_info", "TEXT NOT NULL DEFAULT ''"),
+            ("system_admin", "TEXT NOT NULL DEFAULT ''"),
+        ],
+    )
+    ensure_columns(conn, "users", [("role_code", "TEXT NOT NULL DEFAULT 'STUDY_PI'"), ("last_login_at", "TEXT")])
     conn.execute(
         """
         UPDATE users
@@ -1050,10 +1161,12 @@ def migrate_study_schema(conn: sqlite3.Connection) -> None:
         """
     )
 
+    ensure_columns(conn, "patients", [("patient_number", "TEXT NOT NULL DEFAULT ''"), ("patient_name", "TEXT NOT NULL DEFAULT ''")])
+    conn.execute("UPDATE patients SET patient_number = name WHERE patient_number = '' OR patient_number IS NULL")
     ensure_columns(
         conn,
         "samples",
-        [("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'")],
+        [("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'"), ("note", "TEXT NOT NULL DEFAULT ''")],
     )
     ensure_columns(
         conn,
@@ -1061,11 +1174,24 @@ def migrate_study_schema(conn: sqlite3.Connection) -> None:
         [
             ("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'"),
             ("testing_project_id", "TEXT NOT NULL DEFAULT 'TP-SLE-OMICS'"),
+            ("result_file_id", "TEXT"),
         ],
     )
     ensure_columns(conn, "consents", [("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'")])
     ensure_columns(conn, "visits", [("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'"), ("visit_plan_id", "TEXT")])
-    ensure_columns(conn, "follow_up_records", [("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'")])
+    ensure_columns(conn, "study_configurations", [("follow_up_schema_json", "TEXT NOT NULL DEFAULT '{}'")])
+    ensure_columns(
+        conn,
+        "follow_up_records",
+        [
+            ("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'"),
+            ("record_note", "TEXT NOT NULL DEFAULT ''"),
+            ("payload_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("payload_jsonb", "BLOB"),
+            ("payload_version", "TEXT NOT NULL DEFAULT 'legacy'"),
+            ("payload_format", "TEXT NOT NULL DEFAULT 'json'"),
+        ],
+    )
     ensure_columns(
         conn,
         "crf_entries",
@@ -1078,7 +1204,6 @@ def migrate_study_schema(conn: sqlite3.Connection) -> None:
     ensure_columns(conn, "uploaded_files", [("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'")])
     ensure_columns(conn, "export_jobs", [("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'")])
     ensure_columns(conn, "data_quality_issues", [("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'")])
-    ensure_columns(conn, "audit_logs", [("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'")])
 
     for table in ("samples", "omics_records", "consents", "visits", "follow_up_records", "crf_entries", "uploaded_files", "data_quality_issues"):
         if table == "uploaded_files":
@@ -1141,7 +1266,6 @@ def migrate_study_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_crf_entries_study_id ON crf_entries(study_id);
         CREATE INDEX IF NOT EXISTS idx_uploaded_files_study_id ON uploaded_files(study_id);
         CREATE INDEX IF NOT EXISTS idx_export_jobs_study_id ON export_jobs(study_id);
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_study_id ON audit_logs(study_id);
         CREATE INDEX IF NOT EXISTS idx_quality_study_id ON data_quality_issues(study_id);
         CREATE INDEX IF NOT EXISTS idx_visit_plans_study_id ON study_visit_plans(study_id);
         CREATE INDEX IF NOT EXISTS idx_visits_visit_plan_id ON visits(visit_plan_id);
@@ -1167,9 +1291,11 @@ def ensure_columns(conn: sqlite3.Connection, table: str, columns: list[tuple[str
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
-def decode_json(value: str | bytes | bytearray | memoryview | None, default: Any) -> Any:
+def decode_json(value: Any, default: Any) -> Any:
     if not value:
         return default
+    if isinstance(value, (dict, list)):
+        return value
     if isinstance(value, (bytes, bytearray, memoryview)):
         return decode_sqlite_jsonb(bytes(value), default)
     return json.loads(value)
@@ -1189,6 +1315,8 @@ def decode_sqlite_jsonb(value: bytes, default: Any) -> Any:
 
 def row_to_patient(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
+    item["patient_number"] = item.get("patient_number") or item.get("name")
+    item["patient_name"] = item.get("patient_name") or ""
     item["organs"] = decode_json(item.pop("organs_json"), [])
     clinical_data_json = item.pop("clinical_data_json", None)
     clinical_data_jsonb = item.pop("clinical_data_jsonb", None)
@@ -1224,11 +1352,19 @@ def row_to_study_configuration(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
     item["visit_plan"] = decode_json(item.pop("visit_plan_json"), {})
     item["testing_profile"] = decode_json(item.pop("testing_profile_json"), {})
+    item["follow_up_schema"] = decode_json(item.pop("follow_up_schema_json"), {})
     return item
 
 
 def row_to_follow_up_record(row: sqlite3.Row) -> dict[str, Any]:
-    return dict(row)
+    item = dict(row)
+    payload_json = item.pop("payload_json", None)
+    payload_jsonb = item.pop("payload_jsonb", None)
+    payload = decode_json(payload_jsonb if payload_jsonb is not None else payload_json, {})
+    item["payload"] = payload
+    item["payload_version"] = item.get("payload_version") or json_payload_version(payload)
+    item["payload_format"] = item.get("payload_format") or ("jsonb" if payload_jsonb is not None else "json")
+    return item
 
 
 def row_to_consent(row: sqlite3.Row) -> dict[str, Any]:
@@ -1274,6 +1410,15 @@ def row_to_approval_action(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 
 
+def row_to_operation_log(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    item["before"] = decode_json(item.pop("before_json"), {})
+    item["after"] = decode_json(item.pop("after_json"), {})
+    item["diff"] = decode_json(item.pop("diff_json"), [])
+    item["request_context"] = decode_json(item.pop("request_context_json"), {})
+    return item
+
+
 def row_to_site(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
 
@@ -1315,14 +1460,6 @@ def row_to_export_job(row: sqlite3.Row) -> dict[str, Any]:
 
 def row_to_quality_issue(row: sqlite3.Row) -> dict[str, Any]:
     return dict(row)
-
-
-def row_to_audit_log(row: sqlite3.Row) -> dict[str, Any]:
-    item = dict(row)
-    item["before"] = decode_json(item.pop("before_json"), None)
-    item["after"] = decode_json(item.pop("after_json"), None)
-    item["diff"] = decode_json(item.pop("diff_json", None), [])
-    return item
 
 
 def fetch_one(conn: sqlite3.Connection, query: str, args: tuple[Any, ...]) -> sqlite3.Row:

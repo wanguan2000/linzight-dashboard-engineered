@@ -239,10 +239,6 @@ export function toAuthenticatedUser(user: DemoUser): AuthenticatedUser {
 export function normalizeAuthenticatedUser(value: unknown): AuthenticatedUser | null {
   if (!value || typeof value !== 'object') return null;
   const candidate = value as Partial<AuthenticatedUser>;
-  if (candidate.username) {
-    const currentDemoUser = demoUsers.find((user) => user.username.toLowerCase() === candidate.username?.toLowerCase());
-    if (currentDemoUser) return toAuthenticatedUser(currentDemoUser);
-  }
   if (
     candidate.id &&
     candidate.name &&
@@ -283,7 +279,7 @@ export function userCanAccessStudy(user: Pick<AuthenticatedUser, 'studyScope'>, 
 
 export function accessibleStudyIdsForUser(user?: Pick<AuthenticatedUser, 'studyScope'> | null) {
   if (!user?.studyScope?.scopeType) return [];
-  if (user.studyScope.scopeType === 'all_studies') return studyOptions.map((study) => study.id);
+  if (user.studyScope.scopeType === 'all_studies') return user.studyScope.studyIds ?? [];
   return user.studyScope.studyIds ?? [];
 }
 
@@ -302,7 +298,7 @@ export function narrowAuthenticatedUserToStudy(user: AuthenticatedUser, studyId:
 }
 
 export function visibleStudyLabel(user?: Pick<AuthenticatedUser, 'studyScope'> | null) {
-  if (!user) return 'LGL-1111';
+  if (!user) return '未登录';
   if (!user.studyScope?.scopeType) return '未授权 Study';
   if (user.studyScope.scopeType === 'all_studies') return '全部 Study';
   return user.studyScope.studyIds?.join(' / ') || '未授权 Study';

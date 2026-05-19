@@ -30,7 +30,7 @@ The command writes `exports/postgres-migration/manifest.json`, one CSV and one J
 Staging cutover rehearsal should be:
 
 1. Seed or migrate into a staging PostgreSQL database.
-2. Review JSON payload columns and convert clinical payload columns to `jsonb` where required.
+2. Verify JSON payload/schema/scope/audit columns are native PostgreSQL `jsonb` after migration.
 3. Run API smoke and browser matrix against the staging API.
 4. Freeze writes, take backups, perform final import, then run smoke checks again.
 

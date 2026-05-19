@@ -20,6 +20,7 @@ export type ApiUser = {
   role: ApiUserRole;
   legacy_role?: string | null;
   status: string;
+  last_login_at?: string | null;
   study_scope?: StudyScope;
   study_memberships?: StudyMembership[];
 };
@@ -62,14 +63,16 @@ export type ApiStudy = {
   phase: string;
   status: 'draft' | 'active' | 'terminated' | 'deleted';
   owner_org: string;
+  leading_pi_info: string;
+  system_admin: string;
   created_at: string;
   updated_at: string;
 };
 
 export type ApiStudyCreate = Pick<ApiStudy, 'id' | 'code' | 'name' | 'indication'> &
-  Partial<Pick<ApiStudy, 'phase' | 'status' | 'owner_org'>>;
+  Partial<Pick<ApiStudy, 'phase' | 'status' | 'owner_org' | 'leading_pi_info' | 'system_admin'>>;
 
-export type ApiStudyUpdate = Partial<Pick<ApiStudy, 'code' | 'name' | 'indication' | 'phase' | 'status' | 'owner_org'>>;
+export type ApiStudyUpdate = Partial<Pick<ApiStudy, 'code' | 'name' | 'indication' | 'phase' | 'status' | 'owner_org' | 'leading_pi_info' | 'system_admin'>>;
 
 export type ApiLoginResponse = {
   access_token: string;
@@ -89,6 +92,9 @@ export type ApiPasswordResetConfirm = {
 export type ApiPatient = {
   id: string;
   study_id: string;
+  patient_number?: string;
+  patient_name?: string;
+  patient_name_initials?: string;
   name: string;
   hospital_no: string;
   sex: '男' | '女';
@@ -111,6 +117,7 @@ export type ApiSample = {
   visit: string;
   collected_at: string;
   storage: string;
+  note: string;
   status: SampleRecord['status'];
   linked_omics: string[];
 };
@@ -128,6 +135,7 @@ export type ApiOmics = {
   run_id: string;
   status: OmicsRecord['status'];
   qc: OmicsRecord['qc'];
+  result_file_id?: string | null;
   sent_at: string;
   completed_at: string;
 };
@@ -185,6 +193,16 @@ export type ApiStudyConfiguration = {
     assays?: string[];
     [key: string]: unknown;
   };
+  follow_up_schema: {
+    profile?: string;
+    version?: string;
+    sections?: Array<{
+      id: string;
+      title: string;
+      fields: Array<Record<string, unknown>>;
+    }>;
+    [key: string]: unknown;
+  };
   created_at: string;
   updated_at: string;
 };
@@ -195,6 +213,7 @@ export type ApiStudyMember = {
   user_id: string;
   username: string;
   display_name: string;
+  last_login_at?: string | null;
   study_role: 'STUDY_PI' | 'STUDY_CRC' | 'STUDY_CONFIG_ADMIN' | 'STUDY_DATA_MANAGER';
   status: string;
   created_at: string;
@@ -298,6 +317,10 @@ export type ApiFollowUpRecord = {
   symptoms_signs: string;
   imaging_lab_summary: string;
   efficacy_assessment: string;
+  record_note: string;
+  payload: Record<string, string | number | boolean | null>;
+  payload_version?: string;
+  payload_format?: 'jsonb' | 'json' | 'legacy';
   metastasis_status: string;
   adverse_events: string;
   quality_of_life: string;
@@ -457,24 +480,22 @@ export type ApiQualityIssue = {
   resolved_at: string | null;
 };
 
-export type ApiAuditDiff = {
-  field: string;
-  before: unknown;
-  after: unknown;
-};
-
-export type ApiAuditLog = {
+export type ApiOperationLog = {
   id: string;
-  study_id: string;
+  study_id: string | null;
   actor_id: string | null;
-  actor_role: string | null;
+  actor_role: ApiUserRole | string | null;
   action: string;
   entity_type: string;
   entity_id: string;
-  before: unknown;
-  after: unknown;
-  diff: ApiAuditDiff[];
-  ip_address: string | null;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  diff: Array<{
+    field: string;
+    before: unknown;
+    after: unknown;
+  }>;
+  request_context: Record<string, unknown>;
   created_at: string;
 };
 
@@ -491,6 +512,8 @@ export type ApiAnalysisSummary = {
   sample_patient_count?: number;
   active_patient_count?: number;
   completed_patient_count?: number;
+  export_count?: number;
+  ready_export_count?: number;
 };
 
 export type ApiPanorama = {

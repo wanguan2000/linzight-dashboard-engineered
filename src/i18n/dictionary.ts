@@ -48,8 +48,8 @@ const exactEnglish: Record<string, string> = {
   'LZ 系统管理 · 全局配置与索引': 'LZ System Admin · Global configuration and index',
   '进入 Study Workspace': 'Enter Study Workspace',
   '研究编号 / study_id': 'Study ID / study_id',
-  '平台级账号，可跨 Study 管理研究、成员、CRF、质控、导出和审计。':
-    'Platform accounts can manage studies, members, CRF, quality, exports, and audit across Studies.',
+  '平台级账号，可跨 Study 管理研究、成员、CRF、质控和导出。':
+    'Platform accounts can manage studies, members, CRF, quality, and exports across Studies.',
   '管理入口': 'Admin entry',
   '全局管理': 'Global admin',
   'LZ 全局管理': 'LZ Global Admin',
@@ -73,11 +73,30 @@ const exactEnglish: Record<string, string> = {
     'The LZ admin page is not a business tenant; business operations must enter a single Study Workspace.',
   'LZ 平台跨 Study 汇总业务数据，读写仍逐个校验 study_id。':
     'The LZ platform aggregates business data across Studies, while reads and writes are still checked by study_id.',
+  'Operation Logs | 操作日志': 'Operation Logs',
+  '后端记录所有核心增删改、审批、导出、文件和登录操作。':
+    'The backend records all core create, update, delete, approval, export, file, and sign-in operations.',
+  '操作日志正在从后端刷新...': 'Refreshing operation logs from the backend...',
+  '操作日志已刷新：': 'Operation logs refreshed: ',
+  '操作日志 CSV 正在生成...': 'Generating operation log CSV...',
+  '操作日志 CSV 已生成': 'Operation log CSV generated',
+  '后端不可用或当前角色无操作日志读取权限': 'Backend unavailable, or the current role cannot read operation logs',
+  '后端不可用或当前角色无操作日志导出权限': 'Backend unavailable, or the current role cannot export operation logs',
+  '操作日志筛选': 'Operation log filters',
+  'LZ Admin 可查看全局日志；Study 用户只能查看所属 Study 日志。':
+    'LZ Admin can view global logs; Study users can only view logs for their Study scope.',
+  '当前仅显示本 Study scope 内的操作日志。': 'Only operation logs inside the current Study scope are shown.',
+  '无字段差异': 'No field diff',
+  '暂无操作日志': 'No operation logs yet',
   'Study Registry | Study 管理': 'Study Registry | Study Management',
   '新建 Study 表单': 'Create Study form',
   '新建用户表单': 'Create user form',
   '编辑用户表单': 'Edit user form',
   '请输入 Study 名称': 'Enter Study name',
+  'Leading PI 信息': 'Leading PI information',
+  '请输入 leading PI 姓名/单位/联系方式': 'Enter leading PI name, institution, or contact',
+  '请输入系统管理员姓名或邮箱': 'Enter system administrator name or email',
+  '对应 StudyID': 'StudyID',
   '适应症 / 疾病领域': 'Indication / disease area',
   '请输入适应症或疾病领域': 'Enter indication or disease area',
   '提交新建': 'Submit create',
@@ -302,14 +321,14 @@ const exactEnglish: Record<string, string> = {
   '管理和审核 LGL-1111 研究患者队列。': 'Manage and review the LGL-1111 study patient cohort.',
   '按 Study 权限管理和审核研究患者队列。': 'Manage and review study patient cohorts by Study permissions.',
   '知情同意管理': 'Informed Consent Management',
-  '管理患者授权、版本签署与审计轨迹。': 'Manage patient authorization, version signing, and audit trails.',
+  '管理患者授权、版本签署与电子归档状态。': 'Manage patient authorization, version signing, and electronic archive status.',
   '采集和审核 LGL-1111 研究结构化临床数据。': 'Capture and review structured clinical data for LGL-1111.',
   '采集和审核当前授权 Study 的结构化临床数据。': 'Capture and review structured clinical data for the authorized Study.',
   '管理样本采集、检测项目、结果文件和检测进度。': 'Manage sample collection, tests, result files, and testing progress.',
   '查看单患者从筛选、知情同意、临床随访到样本检测的全景数据。':
     'View the complete single-patient journey from screening and consent to follow-up and sample testing.',
   '导出 / 报表': 'Exports / Reports',
-  '生成研究数据集、患者全景报表与审计导出。': 'Generate study datasets, patient panorama reports, and audit exports.',
+  '生成研究数据集、患者全景报表与归档数据包。': 'Generate study datasets, patient panorama reports, and archived data packages.',
   '管理账户、角色、字段配置和权限策略。': 'Manage accounts, roles, field configuration, and permission policies.',
   '管理 Study 成员、平台角色、权限策略和 CRF 版本。': 'Manage Study members, platform roles, permission policies, and CRF versions.',
   '搜索患者、住院号、疾病类型，或询问 LinZight AI...': 'Search patient, hospital number, disease type, or ask LinZight AI...',
@@ -317,8 +336,8 @@ const exactEnglish: Record<string, string> = {
     'Ask LinZight AI... For example: list patients pending signature or summarize withdrawals',
   '询问样本采集、检测状态、结果文件或患者样本情况...': 'Ask about sample collection, testing status, result files, or patient samples...',
   '询问单患者病程、样本结果、下次随访风险...': 'Ask about patient timeline, sample results, or next follow-up risk...',
-  '询问报表生成、数据导出、SDTM 草稿或审计记录...': 'Ask about reports, data export, SDTM drafts, or audit records...',
-  '询问角色权限、字段配置或系统审计...': 'Ask about role permissions, field configuration, or system audits...',
+  '询问报表生成、数据导出、SDTM 草稿或归档状态...': 'Ask about reports, data export, SDTM drafts, or archive status...',
+  '询问角色权限、字段配置或 Study 绑定...': 'Ask about role permissions, field configuration, or Study bindings...',
 
   '研究关键指标': 'Study key metrics',
   '看板可视化': 'Dashboard visualization',
@@ -362,7 +381,7 @@ const exactEnglish: Record<string, string> = {
   '用药变化': 'Medication change',
   '随访访视': 'Follow-up visit',
   '数据锁库': 'Database lock',
-  '导出审计': 'Export audit',
+  '导出归档': 'Export archive',
   '已处理样本': 'Processed samples',
   '检测归档率': 'Testing archive rate',
   '检测项目': 'Testing items',
@@ -428,6 +447,9 @@ const exactEnglish: Record<string, string> = {
   '当前': 'Current',
   '样本采集汇总': 'Sample collection summary',
   '患者编号': 'Patient ID',
+  '患者姓名': 'Patient name',
+  '授权查看': 'Authorize',
+  '隐藏姓名': 'Hide name',
   '住院号': 'Hospital No.',
   '性别': 'Sex',
   '年龄': 'Age',
@@ -452,6 +474,7 @@ const exactEnglish: Record<string, string> = {
   '新建患者': 'New patient',
   '患者搜索': 'Patient search',
   '输入患者编号、住院号或疾病类型': 'Enter patient ID, hospital number, or disease type',
+  '输入患者编号、患者姓名、住院号或疾病类型': 'Enter patient ID, patient name, hospital number, or disease type',
   '年龄范围': 'Age range',
   '排序': 'Sort',
   '上一页': 'Previous page',
@@ -598,9 +621,9 @@ const exactEnglish: Record<string, string> = {
   '当前研究站点账户结构': 'Current study site account structure',
   'Create Account新增账户': 'Create Account',
   '新增账户': 'Add account',
-  'Study 成员、CRF 版本、导出和权限策略变更均进入审计日志。':
-    'Study member, CRF version, export, and permission policy changes are recorded in the audit log.',
-  '账户创建、权限策略变更均进入审计日志。': 'Account creation and permission policy changes are recorded in the audit log.',
+  'Study 成员、CRF 版本、导出和权限策略变更均按当前 Study 校验。':
+    'Study member, CRF version, export, and permission policy changes are checked against the current Study.',
+  '账户创建、权限策略变更均按当前 Study 和平台角色校验。': 'Account creation and permission policy changes are checked against the current Study and platform role.',
   'User Accounts & Roles List | 用户账户与角色列表': 'User Accounts & Roles List',
   '按角色和状态管理研究团队账号': 'Manage study team accounts by role and status',
   'Field & CRF Configuration | CRF 与字段配置': 'Field & CRF Configuration',
@@ -687,7 +710,7 @@ const exactEnglish: Record<string, string> = {
   'Query 与质控 / Query & QC': 'Query & QC',
   '数据冻结与锁定 / Freeze & Lock': 'Freeze & Lock',
   '导出与分析 / Export & Analytics': 'Export & Analytics',
-  '审计日志 / Audit Logs': 'Audit Logs',
+  '权限校验 / Permission Checks': 'Permission Checks',
   'active': 'Active',
   'disabled': 'Disabled',
   'open': 'Open',
@@ -739,17 +762,17 @@ const exactEnglish: Record<string, string> = {
   '校验失败：请确认当前角色具备质控权限': 'Validation failed: confirm quality control permission',
   '可导出报表': 'Exportable reports',
   '数据库记录': 'Database records',
-  '审计轨迹': 'Audit trail',
+  '归档状态': 'Archive status',
   '待复核': 'Pending review',
   '下载': 'Download',
   '患者全景数据包': 'Patient panorama data package',
   '临床数据完整性报表': 'Clinical data completeness report',
   '样本采集与送检台账': 'Sample collection and testing ledger',
-  '知情同意审计轨迹': 'Consent audit trail',
+  '知情同意归档状态': 'Consent archive status',
   '单患者 / Journey': 'Single patient / Journey',
   'LGL-1111 全队列': 'LGL-1111 full cohort',
   '样本 / 组学检测': 'Samples / omics testing',
-  'Consent Audit': 'Consent Audit',
+  'Consent Archive': 'Consent Archive',
   '患者、样本、组学检测': 'Patients, samples, omics tests',
   '含知情同意与数据修改': 'Includes consent and data changes',
   'SDTM 数据集草稿': 'SDTM dataset draft',
@@ -760,7 +783,7 @@ const exactEnglish: Record<string, string> = {
   '临床 CRF': 'Clinical CRF',
   '样本台账': 'Sample ledger',
   '多组学结果': 'Multi-omics results',
-  '知情同意审计': 'Consent audit',
+  '知情同意归档': 'Consent archive',
   '数据包归档': 'Data package archive',
   '可导出': 'Exportable',
   '格式': 'Format',
@@ -793,6 +816,7 @@ const exactEnglish: Record<string, string> = {
   '撤回': 'Withdraw',
   '重签': 'Re-sign',
   '当前版本': 'Current version',
+  '当前模板': 'Current template',
   '当前患者': 'Current patient',
   '伦理批准': 'IRB approved',
   '知情同意书章节': 'Consent form sections',
@@ -945,11 +969,17 @@ const exactEnglish: Record<string, string> = {
   'SQLite 实时': 'SQLite live',
   'SQLite JSONB': 'SQLite JSONB',
   'SQLite JSON': 'SQLite JSON',
+  'PostgreSQL API': 'PostgreSQL API',
+  'PostgreSQL JSONB': 'PostgreSQL JSONB',
+  'PostgreSQL JSON': 'PostgreSQL JSON',
   '等待保存': 'Waiting to save',
   '草稿保存中...': 'Saving draft...',
   '提交中...': 'Submitting...',
   '草稿已保存到后端': 'Draft saved to backend',
   'CRF 已提交到后端': 'CRF submitted to backend',
+  '保存失败：请先选择后端患者记录': 'Save failed: select a backend patient record first',
+  '保存失败：后端未接受 CRF 草稿': 'Save failed: backend did not accept the CRF draft',
+  '提交失败：后端未接受 CRF': 'Submit failed: backend did not accept the CRF',
   '草稿已保存到本地': 'Draft saved locally',
   'CRF 已提交到本地': 'CRF submitted locally',
   '后端不可用，草稿已保存在本页': 'Backend unavailable; draft saved on this page',
@@ -970,6 +1000,14 @@ const exactEnglish: Record<string, string> = {
   '平台级用户状态需要后端用户状态 API，当前已禁用': 'Platform user status changes require a backend user-status API and are disabled for now',
   '快捷操作已在顶部工作台接入': 'Quick actions are connected in the main workbench',
   '等待样本操作': 'Waiting for sample action',
+  '保存失败：新增样本未写入后端': 'Save failed: new sample was not written to backend',
+  '保存失败：新增检测未写入后端': 'Save failed: new test was not written to backend',
+  '患者主数据导出': 'Patient master data export',
+  '质控问题导出': 'Quality issue export',
+  '归档状态导出': 'Archive status export',
+  '请选择 Study': 'Select a Study',
+  '来自后端 Study API': 'From backend Study API',
+  '严重开放问题': 'Open critical issues',
 
   '基本信息': 'Basic info',
   '目前病情评估': 'Current disease assessment',
@@ -1122,7 +1160,7 @@ const phraseEnglish = ([
     '登录后进入患者队列、CRF 录入、样本登记、多组学检测、Patient Journey 与数据分析主链路。',
     'Sign in to access patient cohorts, CRF entry, sample registration, multi-omics testing, Patient Journey, and analytics workflows.'
   ],
-  ['平台级账号，可跨 Study 管理研究、成员、CRF、质控、导出和审计。', 'Platform accounts can manage studies, members, CRF, quality, exports, and audit across Studies.'],
+  ['平台级账号，可跨 Study 管理研究、成员、CRF、质控和导出。', 'Platform accounts can manage studies, members, CRF, quality, and exports across Studies.'],
   ['LZ 系统管理 · 全部或授权 Study', 'LZ System Admin · All or assigned Studies'],
   ['真实世界肺癌耐药研究', 'Real-world Lung Cancer Resistance Study'],
   ['免疫相关性神经系统疾病 RWD 研究', 'Immune-related Neurological Disease RWD Study'],
@@ -1285,7 +1323,6 @@ const phraseEnglish = ([
   ['队列', 'cohort'],
   ['数据', 'data'],
   ['完整性', 'completeness'],
-  ['审计', 'audit'],
   ['报表', 'report'],
   ['导出', 'export'],
   ['角色', 'role'],
@@ -1496,6 +1533,14 @@ const dynamicRules: DynamicRule[] = [
     format: (visit) => `Follow-up ${translateToEnglish(visit)} written to follow_up_records`
   },
   {
+    pattern: /^保存失败：随访 (.+) 未写入后端$/,
+    format: (visit) => `Save failed: follow-up ${translateToEnglish(visit)} was not written to backend`
+  },
+  {
+    pattern: /^保存失败：样本 (.+) 未写入后端$/,
+    format: (id) => `Save failed: sample ${id} was not written to backend`
+  },
+  {
     pattern: /^后端不可用，随访 (.+) 已保存在本页$/,
     format: (visit) => `Backend unavailable; follow-up ${translateToEnglish(visit)} saved on this page`
   },
@@ -1514,6 +1559,10 @@ const dynamicRules: DynamicRule[] = [
   {
     pattern: /^检测 (.+) 已同步后端$/,
     format: (id) => `Test ${id} synced to backend`
+  },
+  {
+    pattern: /^保存失败：检测 (.+) 未写入后端$/,
+    format: (id) => `Save failed: test ${id} was not written to backend`
   },
   {
     pattern: /^后端不可用，检测 (.+) 更新已保存在本页$/,
@@ -1544,6 +1593,10 @@ const dynamicRules: DynamicRule[] = [
     format: (filename) => `Consent file ${filename} upload failed; check backend connectivity and file permission`
   },
   {
+    pattern: /^(.+)失败：后端未接受知情同意变更$/,
+    format: (action) => `${translateToEnglish(action)} failed: backend did not accept the consent change`
+  },
+  {
     pattern: /^账户 (.+) 已(.+)；生产环境需接入用户状态 API$/,
     format: (email, action) => `Account ${email} ${action === '停用' ? 'disabled' : 'enabled'}; production needs user status API linkage`
   },
@@ -1558,6 +1611,10 @@ const dynamicRules: DynamicRule[] = [
   {
     pattern: /^Study site 已同步后端：(.+) \/ (.+)$/,
     format: (study, site) => `Study site synced to backend: ${study} / ${site}`
+  },
+  {
+    pattern: /^保存失败：Study site 未写入后端$/,
+    format: () => 'Save failed: Study site was not written to backend'
   },
   {
     pattern: /^Site 用户分配正在同步后端：(.+) \/ (.+)$/,
@@ -1590,6 +1647,10 @@ const dynamicRules: DynamicRule[] = [
   {
     pattern: /^后端不可用或当前角色无用户创建权限，账户已保存在本页$/,
     format: () => 'Backend unavailable or current role lacks user creation permission; account saved on this page'
+  },
+  {
+    pattern: /^保存失败：账户 (.+) 状态未写入后端$/,
+    format: (email) => `Save failed: account ${email} status was not written to backend`
   },
   {
     pattern: /^已定位账户 (.+)，可继续按角色或状态筛选$/,
@@ -1711,6 +1772,14 @@ const dynamicRules: DynamicRule[] = [
   {
     pattern: /^CRF 字段已同步后端：(.+)$/,
     format: (id) => `CRF field synced to backend: ${id}`
+  },
+  {
+    pattern: /^保存失败：CRF 字段 (.+) 未写入后端$/,
+    format: (id) => `Save failed: CRF field ${id} was not written to backend`
+  },
+  {
+    pattern: /^保存失败：后端未接受 CRF 字段创建$/,
+    format: () => 'Save failed: backend did not accept CRF field creation'
   },
   {
     pattern: /^后端不可用或当前角色无 CRF 配置写入权限，字段 (.+) 状态已保存在本页$/,

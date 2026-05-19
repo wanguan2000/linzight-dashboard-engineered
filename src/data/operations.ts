@@ -1,6 +1,6 @@
 import { calculateClinicalCompleteness, patientRecords, samplePlanForDisease, type PatientRecord } from './patientCohort';
 
-export type SampleStatus = '已采集' | '已送检' | '检测中' | '检测完成' | '结果回传' | '待处理';
+export type SampleStatus = '已采集' | '已送检' | '检测中' | '结果回传' | '待处理';
 export type OmicsQcStatus = '通过' | '未通过' | '待确认';
 export type ConsentStatus = '待签署' | '已签署' | '撤回审批中' | '已撤回' | '重签审批中' | '已重签';
 export type SampleLibraryCode =
@@ -41,6 +41,7 @@ export interface SampleRecord {
   visit: string;
   collectedAt: string;
   storage: string;
+  note?: string;
   status: SampleStatus;
   linkedOmics: string[];
 }
@@ -58,6 +59,7 @@ export interface OmicsRecord {
   runId: string;
   status: '样本接收' | '文库构建' | '测序完成' | '数据分析' | '结果归档';
   qc: OmicsQcStatus;
+  resultFileId?: string;
   sentAt: string;
   completedAt: string;
 }
@@ -109,6 +111,8 @@ export interface FollowUpRecord {
   symptomsSigns: string;
   imagingLabSummary: string;
   efficacyAssessment: string;
+  recordNote?: string;
+  payload?: Record<string, string | number | boolean | null>;
   metastasisStatus: string;
   adverseEvents: string;
   qualityOfLife: string;
@@ -420,7 +424,7 @@ export const reportRecords: ReportRecord[] = [
   { id: 'RPT-002', name: '临床数据完整性报表', type: 'XLSX', scope: 'LGL-1111 全队列', status: '可导出', updatedAt: '2026-04-27 09:10' },
   { id: 'RPT-003', name: '样本采集与送检台账', type: 'CSV', scope: '样本 / 组学检测', status: '可导出', updatedAt: '2026-04-27 08:50' },
   { id: 'RPT-004', name: 'SDTM 数据集草稿', type: 'ZIP', scope: 'DM / LB / VS / SUPP', status: '需复核', updatedAt: '2026-04-26 18:40' },
-  { id: 'RPT-005', name: '知情同意审计轨迹', type: 'PDF', scope: 'Consent Audit', status: '生成中', updatedAt: '2026-04-26 17:30' }
+  { id: 'RPT-005', name: '知情同意归档状态', type: 'PDF', scope: 'Consent Archive', status: '生成中', updatedAt: '2026-04-26 17:30' }
 ];
 
 export const clinicalSections = [
@@ -441,7 +445,7 @@ export const workflowEvents = [
   '样本采集',
   '多组学检测',
   '随访管理',
-  '导出审计'
+  '导出归档'
 ];
 
 export function getSelectedPatient(selectedPatient?: PatientRecord | null) {

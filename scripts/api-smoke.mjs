@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
@@ -8,7 +8,8 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..');
 const tempDir = mkdtempSync(join(tmpdir(), 'linzight-api-smoke-'));
 const uploadsDir = join(tempDir, 'uploads');
-const databaseUrl = `sqlite:///${join(tempDir, 'linzight-smoke.db')}`;
+const databasePath = join(tempDir, 'linzight-smoke.db');
+const databaseUrl = `sqlite:///${databasePath}`;
 const pythonFromVenv = join(repoRoot, 'backend', '.venv', 'bin', 'python');
 const python = existsSync(pythonFromVenv) ? pythonFromVenv : 'python3';
 const port = 18080 + Math.floor(Math.random() * 1000);
@@ -21,6 +22,33 @@ function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function sqliteScalar(sql) {
+  const code = [
+    'import sqlite3, sys',
+    'conn = sqlite3.connect(sys.argv[1])',
+    'try:',
+    '    value = conn.execute(sys.argv[2]).fetchone()[0]',
+    '    print("" if value is None else value)',
+    'finally:',
+    '    conn.close()',
+  ].join('\n');
+  return Number(execFileSync(python, ['-c', code, databasePath, sql], { encoding: 'utf8' }).trim());
+}
+
+function assertOperationLogs() {
+  const operationLogCount = sqliteScalar('SELECT COUNT(*) FROM operation_logs');
+  assert(operationLogCount >= 40, `operation_logs should capture core write flows, got ${operationLogCount}`);
+  assert(sqliteScalar("SELECT COUNT(*) FROM operation_logs WHERE action = 'PASSWORD_RESET_REQUEST' AND entity_type = 'password_reset_tokens'") >= 1, 'password reset request should be operation-logged');
+  assert(sqliteScalar("SELECT COUNT(*) FROM operation_logs WHERE action = 'CREATE' AND entity_type = 'patients'") >= 1, 'patient create should be operation-logged');
+  assert(sqliteScalar("SELECT COUNT(*) FROM operation_logs WHERE action = 'CREATE' AND entity_type = 'samples'") >= 1, 'sample create should be operation-logged');
+  assert(sqliteScalar("SELECT COUNT(*) FROM operation_logs WHERE action = 'CREATE' AND entity_type = 'omics_records'") >= 1, 'omics create should be operation-logged');
+  assert(sqliteScalar("SELECT COUNT(*) FROM operation_logs WHERE action = 'UPLOAD' AND entity_type = 'uploaded_files'") >= 1, 'file upload should be operation-logged');
+  assert(sqliteScalar("SELECT COUNT(*) FROM operation_logs WHERE action = 'ARCHIVE' AND entity_type = 'uploaded_files'") >= 1, 'file archive should be operation-logged');
+  assert(sqliteScalar("SELECT COUNT(*) FROM operation_logs WHERE entity_type = 'approval_requests'") >= 1, 'approval requests should be operation-logged');
+  assert(sqliteScalar("SELECT COUNT(*) FROM operation_logs WHERE action = 'RUN' AND entity_type = 'data_quality_issues'") >= 1, 'quality run should be operation-logged');
+  assert(sqliteScalar("SELECT COUNT(*) FROM operation_logs WHERE before_json IS NULL OR after_json IS NULL OR diff_json IS NULL OR request_context_json IS NULL") === 0, 'operation log JSON payload columns must not be null');
 }
 
 function startServer() {
@@ -127,6 +155,26 @@ async function uploadConsentFile(token, consentId, patientId) {
   return data;
 }
 
+async function uploadOmicsResultFile(token, patientId, sampleId, omicsId) {
+  const body = new globalThis.FormData();
+  body.append('category', 'omics_result');
+  body.append('patient_id', patientId);
+  body.append('sample_id', sampleId);
+  body.append('omics_id', omicsId);
+  body.append('is_deidentified', 'true');
+  body.append('file', new globalThis.Blob(['smoke omics result'], { type: 'text/plain' }), 'smoke-omics-result.txt');
+
+  const response = await fetch(`${baseUrl}/files`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body,
+  });
+  const raw = await response.text();
+  const data = raw ? JSON.parse(raw) : null;
+  assert(response.status === 201, `omics result upload expected 201, got ${response.status}: ${raw}`);
+  return data;
+}
+
 async function downloadText(path, token) {
   const response = await fetch(`${baseUrl}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -205,6 +253,11 @@ async function runSmoke() {
   const dataManager = await login('lung-dm@demo.linzight');
   const lzDataManager = await login('lz-dm@demo.linzight');
   const lzAdmin = await login('admin@demo.linzight');
+  const resetRequest = await request('/auth/password-reset/request', {
+    method: 'POST',
+    body: { username: 'lung-crc@demo.linzight' },
+  });
+  assert(resetRequest.data.status === 'accepted', 'password reset request should be accepted without leaking account state');
 
   assert(configAdmin.user.role === 'STUDY_CONFIG_ADMIN', 'config admin role mismatch');
   assert(crfAdmin.user.role === 'LZ_CRF_ADMIN', 'CRF admin role mismatch');
@@ -661,9 +714,18 @@ async function runSmoke() {
   });
   assert(omics.status === 201, 'omics create should return 201');
   assert(omics.data.study_id === 'LZXK-01', 'omics should inherit patient study_id');
+  const omicsResultFile = await uploadOmicsResultFile(crc.access_token, patient.id, sample.data.id, omics.data.id);
+  assert(omicsResultFile.category === 'omics_result', 'uploaded omics result should use omics_result category');
+  assert(omicsResultFile.omics_id === omics.data.id, 'uploaded omics result should link omics_id');
+  assert(omicsResultFile.sample_id === sample.data.id, 'uploaded omics result should link sample_id');
+  assert(omicsResultFile.scan_status === 'clean', 'uploaded omics result should be scanner-clean');
   const scopedOmics = await request('/studies/LZXK-01/omics', { token: crc.access_token });
   assert(scopedOmics.data.length > 0, 'scoped omics list should not be empty');
   assert(scopedOmics.data.every((row) => row.study_id === 'LZXK-01'), 'omics list leaked another study');
+  const uploadedOmics = scopedOmics.data.find((row) => row.id === omics.data.id);
+  assert(uploadedOmics?.result_file_id === omicsResultFile.id, 'omics result upload should backfill result_file_id');
+  const scopedOmicsFiles = await request('/studies/LZXK-01/files', { token: crc.access_token });
+  assert(scopedOmicsFiles.data.some((row) => row.id === omicsResultFile.id && row.original_filename === 'smoke-omics-result.txt'), 'scoped file list should expose omics result metadata');
   await request('/studies/LGL-1111/omics', { token: crc.access_token, expectedStatus: 403 });
 
   const query = await request('/queries', {
@@ -799,8 +861,14 @@ async function runSmoke() {
     expectedStatus: 403,
   });
   const exportedCsv = await downloadText(`/exports/${exportJob.data.id}/download`, dataManager.access_token);
-  const exportedFirstDataRow = exportedCsv.trim().split('\n')[1].split(',');
-  assert(exportedFirstDataRow[2] === '' && exportedFirstDataRow[3] === '', 'data manager export should remove direct identifiers');
+  const [exportedHeaderLine, exportedFirstRowLine] = exportedCsv.trim().split('\n');
+  const exportedHeader = exportedHeaderLine.split(',');
+  const exportedFirstDataRow = exportedFirstRowLine.split(',');
+  for (const column of ['patient_name', 'name', 'hospital_no']) {
+    const columnIndex = exportedHeader.indexOf(column);
+    assert(columnIndex >= 0, `patient export should include ${column} column`);
+    assert(exportedFirstDataRow[columnIndex] === '', `data manager export should remove ${column}`);
+  }
   const fieldPermissions = await request('/field-permissions?resource=patients', { token: dataManager.access_token });
   assert(fieldPermissions.data.every((item) => item.role === 'STUDY_DATA_MANAGER'), 'non-admin field permissions response should be role-scoped');
   assert(fieldPermissions.data.some((item) => item.field_name === 'name' && item.mask_rule === 'name'), 'field permissions should expose patient name masking rule');
@@ -813,7 +881,6 @@ async function runSmoke() {
   assert(!matrixByOperation.get('Create, update, terminate, or delete Studies')?.allowed_roles.includes('STUDY_CONFIG_ADMIN'), 'permission matrix should keep Study lifecycle changes LZ_ADMIN-only');
   assert(matrixByOperation.get('Export and download data')?.allowed_roles.includes('STUDY_DATA_MANAGER'), 'permission matrix should allow Study data manager exports');
   assert(matrixByOperation.get('Export and download data')?.allowed_roles.includes('STUDY_CONFIG_ADMIN'), 'permission matrix should allow Study Admin exports in its Study');
-  assert(matrixByOperation.get('Read audit logs')?.allowed_roles.includes('LZ_AUDITOR'), 'permission matrix should allow auditors to read audit logs');
 
   const exportApproval = await request('/approvals', {
     method: 'POST',
@@ -888,19 +955,21 @@ async function runSmoke() {
   });
   assert(rejectedCrfPublish.data.status === 'rejected', 'CRF publish approval should reject');
 
-  const audits = await request('/studies/LZXK-01/audit-logs?entity_type=study_crf_versions', { token: configAdmin.access_token });
-  assert(audits.data.some((entry) => entry.action === 'update_crf_field'), 'CRF update audit log missing');
-  const crfFieldAudit = audits.data.find((entry) => entry.action === 'update_crf_field');
-  assert(Array.isArray(crfFieldAudit?.diff) && crfFieldAudit.diff.some((change) => change.field === 'required'), 'audit log should include structured before/after diff');
-  assert(audits.data.every((entry) => entry.study_id === 'LZXK-01'), 'audit log list leaked another study');
-  const dataManagerAudits = await request('/studies/LZXK-01/audit-logs', { token: dataManager.access_token });
-  assert(dataManagerAudits.data.every((entry) => entry.study_id === 'LZXK-01'), 'data manager audit list leaked another study');
-  await request('/studies/LGL-1111/audit-logs', { token: dataManager.access_token, expectedStatus: 403 });
-  await request('/audit-logs', { token: lzAdmin.access_token, expectedStatus: 400 });
+  const adminOperationLogs = await request('/operation-logs?limit=100', { token: lzAdmin.access_token });
+  assert(adminOperationLogs.data.some((log) => log.entity_type === 'patients' && log.action === 'CREATE'), 'global operation logs should include patient create');
+  assert(adminOperationLogs.data.some((log) => log.entity_type === 'password_reset_tokens' && log.action === 'PASSWORD_RESET_REQUEST'), 'global operation logs should include password reset request');
+  const scopedOperationLogs = await request('/studies/LZXK-01/operation-logs?limit=100', { token: dataManager.access_token });
+  assert(scopedOperationLogs.data.length > 0, 'Study-scoped operation logs should not be empty after smoke writes');
+  assert(scopedOperationLogs.data.every((log) => log.study_id === 'LZXK-01'), 'Study-scoped operation logs leaked another Study');
+  await request('/studies/LGL-1111/operation-logs', { token: dataManager.access_token, expectedStatus: 403 });
+  const operationLogCsv = await downloadText('/studies/LZXK-01/operation-logs/export?limit=20', dataManager.access_token);
+  assert(operationLogCsv.startsWith('id,study_id,actor_id,actor_role,action,entity_type,entity_id,diff_count,created_at'), 'operation log CSV export header mismatch');
+
   const logout = await request('/auth/logout', { method: 'POST', token: crc.access_token });
   assert(logout.data.status === 'logged_out', 'logout should acknowledge the signed-token session');
+  assertOperationLogs();
 
-  console.log('API smoke passed: auth, study isolation, user provisioning, CRF config, consent upload, samples, omics, export permissions, audit logs.');
+  console.log('API smoke passed: auth, study isolation, user provisioning, CRF config, consent upload, samples, omics, export permissions, approvals, and operation logs.');
 }
 
 async function stopServer() {

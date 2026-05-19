@@ -68,7 +68,7 @@ export const workflowItems: WorkflowItem[] = [
   { label: '基线访视', icon: 'visits', count: '2,842 / 2,842', percent: 100, status: 'over' },
   { label: '样本采集', icon: 'samples', count: '2,104 / 2,842', percent: 74 },
   { label: '随访访视', icon: 'activity', count: '1,307 / 2,842', percent: 46, status: 'low' },
-  { label: '导出审计', icon: 'shield', count: '—', percent: 0, status: 'empty' }
+  { label: '导出归档', icon: 'shield', count: '—', percent: 0, status: 'empty' }
 ];
 
 export const omicsStats = [

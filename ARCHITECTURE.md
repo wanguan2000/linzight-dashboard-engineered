@@ -2,7 +2,7 @@
 
 ## 项目整体架构
 
-`linzight-dashboard-engineered` 是一个前端优先的真实世界研究 dashboard，配套 FastAPI 后端。正式运行数据库固定为 PostgreSQL；本地临时 smoke、旧 SQLite 备份和迁移导出工具只有在显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 时才可使用 `sqlite:///...` 数据库 URL。正式 Docker 首次启动为空库，仅创建首个 LZ 系统管理员，Study 和业务数据由用户创建或导入。
+`linzight-dashboard-engineered` 是一个前端优先的真实世界研究 dashboard，配套 FastAPI 后端。正式运行数据库固定为 PostgreSQL；本地 GA 运行目标为 Homebrew PostgreSQL 17.10 的 `linzight_dashboard_engineered`，Docker Compose 后端默认连接宿主机同一库。本地临时 smoke、旧 SQLite 备份和迁移导出工具只有在显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 时才可使用 `sqlite:///...` 数据库 URL。正式首次启动为空库，仅创建首个 LZ 系统管理员，Study 和业务数据由用户创建或导入。
 
 ```text
 React/Vite UI
@@ -34,7 +34,7 @@ RWD EDC 主链路以 `study_id` 作为隔离边界。后端在统一权限函数
 
 ## 后端结构
 
-后端为 GA 功能测试 API，正式运行使用 PostgreSQL；真实患者生产上线前仍需集中身份源、托管密钥、PostgreSQL RLS、生产对象存储和备份恢复演练。
+后端为 GA 功能测试 API，正式运行使用 PostgreSQL；GA 版本先使用应用层 Study 过滤和权限校验，PostgreSQL RLS 移入 GA 后强化项。真实患者生产上线前仍需集中身份源、托管密钥、生产对象存储和备份恢复演练。
 
 - `backend/main.py`：FastAPI 路由、本地签名 Bearer token、CRUD、导出、导入、质量规则和患者全景接口。
 - `backend/database.py`：PostgreSQL/SQLite 连接、schema 初始化、Study/权限/CRF 版本表、JSON/JSONB 兼容迁移、row mapper、上传目录配置；SQLite 入口受 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 限制。
@@ -90,9 +90,12 @@ RWD EDC 主链路以 `study_id` 作为隔离边界。后端在统一权限函数
 - 测试 seed 数据：`backend/seed.py`。
 - CRF V0.1 schema：`resource/sle-crf-v0.1.schema.json`，由 `resource/SLE临床数据记录表.csv` 派生；前端通过 `src/data/crfTemplate.ts` 读取，后端 seed 直接读取同一份 JSON。
 - `LZXK-01` Study：测试 seed 中的真实世界肺癌耐药研究，默认生成 20 名患者，并在 Study CRF V1.0 中追加肺癌耐药字段；正式空库不会自动创建该 Study。
-- CRF JSON 存储：正式 PostgreSQL runtime 当前使用兼容文本 JSON 存储。SQLite 隔离测试库支持 `jsonb()` 时，`patients.clinical_data_jsonb` 与 `crf_entries.payload_jsonb` 保存二进制 JSONB BLOB。API mapper 解码后仍返回 JSON object，并暴露 `*_version` 与 `*_format`。
-- Study 配置总表：`study_configurations` 绑定 `study_id`、`disease_area`、当前 published `active_crf_version_id`、active visit-plan codes、知情同意模板和检测 profile。后端新建患者时必须找到当前 Study 的 published CRF，否则拒绝创建，避免空 CRF 或默认 LGL 回退。
-- Study 隔离：`patients`、`consents`、`visits`、`follow_up_records`、`crf_entries`、`samples`、`omics_records`、`uploaded_files`、`export_jobs`、`data_quality_issues`、`audit_logs` 均包含 `study_id`；`omics_records.testing_project_id` 表示样本检测项目编号。
+- CRF JSON 存储：正式 PostgreSQL runtime 使用原生 `JSONB` 保存 CRF schema、患者 CRF payload、随访 payload、Study 配置和导出 scope。SQLite 隔离测试库支持 `jsonb()` 时，`patients.clinical_data_jsonb` 与 `crf_entries.payload_jsonb` 保存二进制 JSONB BLOB。API mapper 解码后仍返回 JSON object，并暴露 `*_version` 与 `*_format`。
+- Study 配置总表：`study_configurations` 绑定 `study_id`、`disease_area`、当前 published `active_crf_version_id`、active visit-plan codes、知情同意模板、检测 profile 和 `follow_up_schema`。后端新建患者时必须找到当前 Study 的 published CRF，否则拒绝创建，避免空 CRF 或默认 LGL 回退。
+- Study 隔离：`patients`、`consents`、`visits`、`follow_up_records`、`crf_entries`、`samples`、`omics_records`、`uploaded_files`、`export_jobs` 和 `data_quality_issues` 均包含 `study_id`；`omics_records.testing_project_id` 表示样本检测项目编号。
+- GA 核心数据模型：`patients.patient_number` 保存业务患者编号，`patients.patient_name` 保存患者姓名并按角色脱敏为拼音首字母，`samples.note` 保存样本注释，`omics_records.result_file_id` 指向组学结果文件，`follow_up_records.record_note` 保存随访记录正文；患者到样本是一对多，样本到检测是一对多，Patient Journey 只从这些 PostgreSQL 表和文件表聚合。
+- Study Registry 主数据：`studies.leading_pi_info` 保存 leading PI 信息，`studies.system_admin` 保存该 Study 系统管理员展示值；用户表 `users.last_login_at` 由登录接口写入，用于用户账户与角色列表的 Last Login 列。
+- 患者 CRF 与随访 JSON：患者 CRF 由 `study_crf_versions.schema_json` 配置，`crf_entries.payload` 保存 JSON；患者随访由 `study_configurations.follow_up_schema` 配置，`follow_up_records.payload` 保存 JSON。默认 CRF section 为病程记录、住院、治疗方案、检查；默认随访字段为访视、日期、类型、疗效评估、记录。
 - 访视计划：`study_visit_plans` 按 Study 保存 V1/V2/V3 等时间点配置、访视窗口、必填 CRF 表单和样本要求；`visits.visit_plan_id` 指向该配置，患者实际访视不再由前端或 seed 硬编码。
 - 随访记录：`follow_up_records` 隶属于患者信息，可选关联 `visits.id`，用于患者旅程展示出院后或门诊间隔随访事实，不放入 CRF 版本配置表。
 - API 契约参考：`API.md`、`docs/02-api-contract.md`、`docs/03-frontend-backend-protocol.md`。

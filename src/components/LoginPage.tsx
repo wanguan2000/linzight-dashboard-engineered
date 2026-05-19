@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import linzightLogo from '../assets/linzight-logo.svg';
-import { accessibleStudyIdsForUser, isPlatformRole, studyOptions, type AuthenticatedUser } from '../data/auth';
+import { accessibleStudyIdsForUser, isPlatformRole, type AuthenticatedUser } from '../data/auth';
 import { confirmPasswordReset, loginWithBackend, requestPasswordReset } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import { Icon } from './Icon';
@@ -15,9 +15,9 @@ type LoginEntryMode = 'study' | 'lz';
 export function LoginPage({ onAuthenticated }: LoginPageProps) {
   const { t } = useI18n();
   const [entryMode, setEntryMode] = useState<LoginEntryMode>('study');
-  const [username, setUsername] = useState('guan.wang@linzight.com');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [resetEmail, setResetEmail] = useState('guan.wang@linzight.com');
+  const [resetEmail, setResetEmail] = useState('');
   const [resetToken, setResetToken] = useState(() => (typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('reset_token') ?? ''));
   const [newPassword, setNewPassword] = useState('');
   const [resetMode, setResetMode] = useState(() => Boolean(resetToken));
@@ -25,13 +25,13 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingUser, setPendingUser] = useState<AuthenticatedUser | null>(null);
-  const [pendingStudyId, setPendingStudyId] = useState('LZXK-01');
+  const [pendingStudyId, setPendingStudyId] = useState('');
 
   const pendingStudyOptions = useMemo(
-    () => accessibleStudyIdsForUser(pendingUser).map((id) => studyOptions.find((study) => study.id === id) ?? { id, name: id }),
+    () => accessibleStudyIdsForUser(pendingUser).map((id) => ({ id, name: id })),
     [pendingUser]
   );
-  const pendingStudy = pendingStudyOptions.find((study) => study.id === pendingStudyId) ?? pendingStudyOptions[0] ?? studyOptions[0];
+  const pendingStudy = pendingStudyOptions.find((study) => study.id === pendingStudyId) ?? pendingStudyOptions[0] ?? { id: '', name: '' };
 
   useEffect(() => {
     setPendingUser(null);

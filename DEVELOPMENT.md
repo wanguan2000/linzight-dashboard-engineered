@@ -42,7 +42,7 @@ python bootstrap.py
 uvicorn main:app --reload --port 8000
 ```
 
-默认后端连接 macOS 本地 PostgreSQL 数据库 `linzight_dashboard_engineered`。正式运行数据库必须是 PostgreSQL；如果将 `DATABASE_URL` 或 `LINZIGHT_DATABASE_URL` 配置为 `sqlite:///...`，必须显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1`，且只能用于隔离 smoke、旧 SQLite 备份或迁移导出工具。`python bootstrap.py` 会初始化 schema，并在用户表为空时只创建首个 LZ 系统管理员，不会自动生成 Study、患者、样本或测试用户。需要测试 fixture 时，单独运行 `python seed.py`。
+默认后端连接 macOS Homebrew PostgreSQL 17.10 本地数据库 `linzight_dashboard_engineered`。Docker Compose 后端也默认连接宿主机 `host.docker.internal:5432` 的同一个库，不再默认使用 Compose 内置 PG16。正式运行数据库必须是 PostgreSQL；如果将 `DATABASE_URL` 或 `LINZIGHT_DATABASE_URL` 配置为 `sqlite:///...`，必须显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1`，且只能用于隔离 smoke、旧 SQLite 备份或迁移导出工具。`python bootstrap.py` 会初始化 schema，并在用户表为空时只创建首个 LZ 系统管理员，不会自动生成 Study、患者、样本或测试用户。需要测试 fixture 时，单独运行 `python seed.py`。
 
 ## 构建
 

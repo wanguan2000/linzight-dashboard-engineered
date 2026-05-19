@@ -19,8 +19,8 @@
 | 角色 | 账号 | UAT 链路 |
 | --- | --- | --- |
 | LZ Admin | configured initial admin | Study 创建/终止/删除、用户与 Study 授权范围、全局系统管理 |
-| Study System Admin | user-created `STUDY_CONFIG_ADMIN` | 本 Study 患者、知情同意、CRF、访视、随访、样本、检测、文件、Query、质控、导出、审批、审计、用户、成员和配置全权限 |
-| Study Data Manager | user-created `STUDY_DATA_MANAGER` | 本 Study 质控、Query、导出、Approval Center、Audit Diff |
+| Study System Admin | user-created `STUDY_CONFIG_ADMIN` | 本 Study 患者、知情同意、CRF、访视、随访、样本、检测、文件、Query、质控、导出、审批、用户、成员和配置全权限；后端记录 operation logs |
+| Study Data Manager | user-created `STUDY_DATA_MANAGER` | 本 Study 质控、Query、导出、Approval Center |
 
 ## UAT Checklist
 
@@ -30,11 +30,11 @@
 - Admin 全局患者列表每行显示 Study ID。
 - Study 角色跨 Study API 返回 403。
 - Data Analysis 运行质控后，可从访视窗口问题创建 Query。
-- Query 可回复、关闭、重开，并在 Audit Diff 里留痕。
+- Query 可回复、关闭、重开，并在 Query 状态中保留处理结果。
 - eConsent 撤回/重签先进入审批中，Approval complete 后才变为已撤回/已重签。
 - 文件上传记录 storage backend、bucket/key 或 local path、hash、size、MIME、scan status、Study ID、patient ID。
 - 导出任务记录 Study、操作者、生成时间和下载行为。
-- 390px 视口可跑患者、CRF、样本、Query、审批、审计主链路。
+- 390px 视口可跑患者、CRF、样本、Query、审批主链路；operation logs 由 API smoke 和数据库检查验证。
 - 中英文切换无明显硬编码阻断。
 - Release notes 明确：`v1.0.2` 是 GA 功能测试与测试数据填写版本，不可直接承载真实患者生产数据。
 

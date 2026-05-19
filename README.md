@@ -104,11 +104,11 @@ npm run dev
 ## Study 权限与隔离
 
 - RWD EDC 主链路统一使用 `study_id` 作为研究隔离字段，不使用 `project_id`。
-- Study Workspace 是唯一业务租户边界；患者、CRF、样本、随访、文件、Query、质控、导出、审批和审计等业务 list 接口使用 `/studies/{study_id}/...`，未带 Study 上下文的业务 list 请求会被后端拒绝。
+- Study Workspace 是唯一业务租户边界；患者、CRF、样本、随访、文件、Query、质控、导出和审批等业务 list 接口使用 `/studies/{study_id}/...`，未带 Study 上下文的业务 list 请求会被后端拒绝。
 - LZ 平台角色可在 LZ 系统管理态查看首页工作台、患者队列管理、样本及检测、临床数据采集、患者旅程、导出/报表和 Study 系统管理。跨 Study 读取由前端按授权 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总，不使用无 Study 上下文的业务 list 接口。
 - LZ 全局态的 `Study 系统管理` 管理 Study、用户、Study 绑定和平台角色；业务写入仍必须带明确 `study_id`，并由后端按 Study scope、角色权限和 Study 生命周期状态独立校验。
-- `LZ_ADMIN` 可通过 Study Registry 新建、终止和软删除 Study，并可管理平台级角色的授权 Study scope；`STUDY_CONFIG_ADMIN` 是本 Study 系统管理员，拥有本 Study 内患者、知情同意、CRF、访视、随访、样本、检测、文件、Query、质控、导出、审批、审计和 Study 配置的全部权限，同时可创建/修改本 Study 研究级用户、启停成员角色并分配本 Study 系统管理员。`terminated` 或 `deleted` Study 会拒绝患者、CRF、访视、随访、样本、组学、文件、质控和导出等业务写入。
-- 当前版本先使用后端应用层过滤；真实患者生产上线前应在 PostgreSQL 同一租户边界上补 Row Level Security（RLS）。
+- `LZ_ADMIN` 可通过 Study Registry 新建、终止和软删除 Study，并维护 Study ID、Study 名称、leading PI 信息、状态和系统管理员等主数据；`STUDY_CONFIG_ADMIN` 是本 Study 系统管理员，拥有本 Study 内患者、知情同意、CRF、访视、随访、样本、检测、文件、Query、质控、导出、审批和 Study 配置的全部权限，同时可创建/修改本 Study 研究级用户、启停成员角色并分配本 Study 系统管理员。账号与角色列表展示后端记录的 Last Login。`terminated` 或 `deleted` Study 会拒绝患者、CRF、访视、随访、样本、组学、文件、质控和导出等业务写入。
+- GA 版本先使用后端应用层 Study 过滤与权限校验；PostgreSQL Row Level Security（RLS）作为 GA 后生产强化项推进。
 - 显式测试 seed 包含 `LGL-1111`、`RWD-NMO-2026` 和 `LZXK-01` 三个 Study，并生成 Study 成员、平台授权范围和独立 CRF 版本。
 - 正式 UI 的平台角色使用 `LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER`。
 - 研究角色使用 `STUDY_PI`、`STUDY_CRC`、`STUDY_CONFIG_ADMIN`、`STUDY_DATA_MANAGER`。
@@ -215,11 +215,12 @@ Docker Compose 一键功能测试环境：
 docker compose up --build
 ```
 
-Compose 会构建 `Dockerfile.backend` 和 `Dockerfile.frontend`，启动 PostgreSQL、backend 和 frontend；backend 首次启动会在 PostgreSQL volume 中初始化 schema，并在用户表为空时只创建首个 LZ 系统管理员，不会自动创建 Study、患者、样本或测试用户。前端通过 `http://localhost:8000` 访问后端，避免和本机可能存在的 `127.0.0.1:8000` 开发服务冲突。浏览器打开 `http://127.0.0.1:5173/`。
+Compose 会构建 `Dockerfile.backend` 和 `Dockerfile.frontend`，backend 默认连接宿主机 Homebrew PostgreSQL 17.10：`postgresql+psycopg2://nacoo@host.docker.internal:5432/linzight_dashboard_engineered`。首次启动会在该 PostgreSQL 库中初始化 schema，并在用户表为空时只创建首个 LZ 系统管理员，不会自动创建 Study、患者、样本或测试用户。前端通过 `http://localhost:8000` 访问后端，浏览器打开 `http://127.0.0.1:5173/`。
 
-旧 SQLite 测试库 / 上传目录备份恢复：
+PostgreSQL 备份演练与旧 SQLite 测试库 / 上传目录备份恢复：
 
 ```bash
+npm run backup:postgres
 npm run backup:sqlite
 npm run restore:sqlite -- backups/linzight-<timestamp>
 npm run export:postgres-migration -- exports/postgres-migration
