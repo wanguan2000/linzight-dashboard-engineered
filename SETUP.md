@@ -26,7 +26,7 @@ cp .env.example .env.local
 cp backend/.env.example backend/.env
 ```
 
-如果只看前端外壳，可以不创建环境变量文件。正式功能测试应连接 PostgreSQL 后端；API 不可用时只能作为静态/开发预览。
+如果只看前端外壳，可以不创建环境变量文件。内部试点应连接 PostgreSQL 后端；API 不可用时只能作为静态/开发预览。
 
 ## 第一次启动步骤
 

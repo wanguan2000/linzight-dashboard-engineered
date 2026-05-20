@@ -4,7 +4,7 @@ import json
 import os
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import unquote
@@ -62,12 +62,18 @@ class PostgresCursor:
         if row is None:
             return None
         names = [column.name for column in self._cursor.description or []]
-        return PostgresRow(dict(zip(names, row)))
+        return PostgresRow(dict(zip(names, (normalize_db_value(value) for value in row))))
 
     def fetchall(self) -> list[PostgresRow]:
         rows = self._cursor.fetchall()
         names = [column.name for column in self._cursor.description or []]
-        return [PostgresRow(dict(zip(names, row))) for row in rows]
+        return [PostgresRow(dict(zip(names, (normalize_db_value(value) for value in row)))) for row in rows]
+
+
+def normalize_db_value(value: Any) -> Any:
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    return value
 
 
 class PostgresConnection:
@@ -198,7 +204,7 @@ def translate_insert_or_ignore(query: str) -> str:
     return f"{translated.rstrip().rstrip(';')} ON CONFLICT DO NOTHING"
 
 
-JSONB_ARRAY_COLUMNS = {"organs_json", "required_forms_json", "required_samples_json", "linked_omics_json"}
+JSONB_ARRAY_COLUMNS = {"organs_json", "required_forms_json", "required_samples_json", "linked_omics_json", "sample_ids_json", "values_json"}
 JSONB_NULLABLE_COLUMNS = {"clinical_data_jsonb", "payload_jsonb"}
 JSONB_COLUMNS = {
     *JSONB_ARRAY_COLUMNS,
@@ -209,6 +215,7 @@ JSONB_COLUMNS = {
     "follow_up_schema_json",
     "payload_json",
     "scope_json",
+    "sample_usage_json",
     "schema_json",
     "preview_json",
     "before_json",
@@ -410,6 +417,12 @@ def initialize_schema() -> None:
               FOREIGN KEY (active_crf_version_id) REFERENCES study_crf_versions(id) ON DELETE RESTRICT
             );
 
+            CREATE TABLE IF NOT EXISTS global_configurations (
+              key TEXT PRIMARY KEY,
+              values_json TEXT NOT NULL DEFAULT '[]',
+              updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS samples (
               id TEXT PRIMARY KEY,
               study_id TEXT NOT NULL DEFAULT 'LGL-1111',
@@ -420,6 +433,9 @@ def initialize_schema() -> None:
               visit TEXT NOT NULL,
               collected_at TEXT NOT NULL,
               storage TEXT NOT NULL,
+              initial_quantity TEXT NOT NULL DEFAULT '',
+              remaining_quantity TEXT NOT NULL DEFAULT '',
+              quantity_unit TEXT NOT NULL DEFAULT '',
               note TEXT NOT NULL DEFAULT '',
               status TEXT NOT NULL,
               linked_omics_json TEXT NOT NULL DEFAULT '[]',
@@ -435,8 +451,11 @@ def initialize_schema() -> None:
               patient_id TEXT NOT NULL,
               patient_name TEXT NOT NULL,
               sample_id TEXT NOT NULL,
+              sample_ids_json TEXT NOT NULL DEFAULT '[]',
+              sample_usage_json TEXT NOT NULL DEFAULT '{}',
               sample_type TEXT NOT NULL,
               assay TEXT NOT NULL,
+              vendor TEXT NOT NULL DEFAULT '',
               platform TEXT NOT NULL,
               run_id TEXT NOT NULL,
               status TEXT NOT NULL,
@@ -1005,7 +1024,12 @@ def sync_study_configurations(conn: sqlite3.Connection) -> None:
 
 
 def encode_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    def default(item: Any) -> str:
+        if isinstance(item, (date, datetime)):
+            return item.isoformat()
+        return str(item)
+
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=default)
 
 
 def sqlite_supports_jsonb(conn: sqlite3.Connection) -> bool:
@@ -1166,7 +1190,13 @@ def migrate_study_schema(conn: sqlite3.Connection) -> None:
     ensure_columns(
         conn,
         "samples",
-        [("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'"), ("note", "TEXT NOT NULL DEFAULT ''")],
+        [
+            ("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'"),
+            ("initial_quantity", "TEXT NOT NULL DEFAULT ''"),
+            ("remaining_quantity", "TEXT NOT NULL DEFAULT ''"),
+            ("quantity_unit", "TEXT NOT NULL DEFAULT ''"),
+            ("note", "TEXT NOT NULL DEFAULT ''"),
+        ],
     )
     ensure_columns(
         conn,
@@ -1174,6 +1204,9 @@ def migrate_study_schema(conn: sqlite3.Connection) -> None:
         [
             ("study_id", "TEXT NOT NULL DEFAULT 'LGL-1111'"),
             ("testing_project_id", "TEXT NOT NULL DEFAULT 'TP-SLE-OMICS'"),
+            ("sample_ids_json", "TEXT"),
+            ("sample_usage_json", "TEXT"),
+            ("vendor", "TEXT NOT NULL DEFAULT ''"),
             ("result_file_id", "TEXT"),
         ],
     )
@@ -1334,7 +1367,12 @@ def row_to_sample(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def row_to_omics(row: sqlite3.Row) -> dict[str, Any]:
-    return dict(row)
+    item = dict(row)
+    item["sample_ids"] = decode_json(item.pop("sample_ids_json", None), [])
+    item["sample_usage"] = decode_json(item.pop("sample_usage_json", None), {})
+    if not item["sample_ids"] and item.get("sample_id"):
+        item["sample_ids"] = [item["sample_id"]]
+    return item
 
 
 def row_to_visit(row: sqlite3.Row) -> dict[str, Any]:

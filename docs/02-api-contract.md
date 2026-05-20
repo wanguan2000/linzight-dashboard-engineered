@@ -35,6 +35,7 @@
 | Study | `DELETE` | `/studies/{study_id}` | `LZ_ADMIN` 将 Study 软删除为 `deleted`，保留历史关联 |
 | Study 配置 | `GET` | `/study-configurations` | 当前用户可访问 Study 的配置总表，返回 disease area、当前 CRF、访视计划、知情同意模板和检测 profile |
 | Study 配置 | `GET` | `/studies/{study_id}/configuration` | 查询单个 Study 配置总表行 |
+| Study 配置 | `PUT` | `/studies/{study_id}/configuration` | 更新单个 Study 配置总表行；当前系统管理 UI 用于保存本 Study 的知情同意模板 |
 | Study 成员 | `GET` | `/studies/{study_id}/members` | 查询 Study 成员 |
 | Study 成员 | `POST` | `/studies/{study_id}/members` | 分配或更新研究级角色，返回与列表一致的成员展示字段 |
 | Study 中心 | `GET` | `/studies/{study_id}/sites` | 查询 Study 下的 site/中心 |
@@ -74,6 +75,7 @@
 | 文件上传 | `GET` | `/files/{file_id}/download` | 校验 Study/角色权限、扫描状态和归档状态后下载文件 |
 | 文件上传 | `POST` | `/files/{file_id}/archive` | 将文件标记为长期归档，后续下载需先恢复 |
 | Patient Journey | `GET` | `/patients/{patient_id}/journey` | Journey 页面聚合接口 |
+| 数据分析 | `GET` | `/analytics/summary` | LZ 全局态按当前用户 Study scope 聚合患者、样本、组学、访视、CRF 和导出归档概览 |
 | 数据分析 | `GET` | `/studies/{study_id}/analytics/summary` | 单个 Study 队列统计、样本、组学和导出归档概览 |
 | 导出 | `POST` | `/exports` | 创建导出任务 |
 | 导出 | `GET` | `/studies/{study_id}/exports` | 查询单个 Study 导出任务 |
@@ -94,6 +96,17 @@
 审批状态机统一使用 `draft / submitted / approved / rejected / cancelled / completed`。每次提交、批准、拒绝、取消和完成都会写入 `approval_actions`；System Management 的 Approval Center 在 Study Workspace 内读取 `/studies/{study_id}/approvals` 并调用 approve/reject 操作。`econsent_withdrawal` 与 `econsent_resign` 复用同一审批中心，后端禁止提交人自批，请求创建后 consent 进入 `撤回审批中` 或 `重签审批中`，完成审批后再更新为 `已撤回` 或 `已重签`。
 Query 创建会校验 `study_id / patient_id / visit_id` 一致性，且 `field_name` 必须属于该 Study 当前 CRF 字段字典；例如 `LZXK-01` 肺癌 CRF 不允许创建 `SLEDAI评分` 字段 Query。
 Study 配置总表使用 `study_configurations` 作为发布收口源，绑定 `study_id -> disease_area -> active_crf_version_id -> visit_plan -> consent_template -> testing_profile -> follow_up_schema`。新建患者和自动 CRF 草稿必须使用当前 Study 的 published CRF；如果目标 Study 没有 published CRF，后端返回错误，不允许静默回退到 LGL。
+`PUT /studies/{study_id}/configuration` 只更新路径中的单个 Study 配置，并由后端按当前用户 Study scope 与 `studies:write` 权限校验；Study Workspace 内不能通过请求体切换到其他 Study。当前前端先开放 `consent_template` 写入，用于 Study 知情同意配置。
+`Study 系统管理` 的 `Global Configuration | 全局配置` 通过 `/global-configuration` 读取和保存疾病类型、样本类型、检测类型和单位类型字典，后端持久化到 `global_configurations` 表。患者、样本和检测 API 现在按字符串接收 `disease_type`、`sample_type`、`quantity_unit` 和 `omics_records.assay`，以便承载 LZ 全局字典扩展；正式落库仍由 `study_id`、角色权限和 Study 生命周期校验控制。
+
+## 全局配置
+
+- `GET /global-configuration`：读取全局疾病类型、样本类型、检测类型和单位类型。需要登录用户具备 `studies:read`。
+- `PUT /global-configuration`：写入全局疾病类型、样本类型、检测类型和单位类型。仅 `LZ_ADMIN` 可写。
+- 默认样本类型：`肿瘤FFPE`、`肿瘤组织`、`CSF`、`血液`、`胸水`。
+- 默认检测类型：`RNA-seq`、`WES`、`scRNA-seq`、`类器官构建`、`Olink`。
+- 默认单位类型：`mL`、`块`、`片`、`管`。
+
 正式 GA 核心数据模型：
 
 | 数据域 | PostgreSQL/API 字段 | 关系与说明 |
@@ -101,8 +114,8 @@ Study 配置总表使用 `study_configurations` 作为发布收口源，绑定 `
 | 患者基本信息 | `patients.patient_number`, `patient_name`, `study_id`, `hospital_no`, `sex`, `age`, `disease_type`, `note` | `patient_number` 是业务患者编号；`patient_name` 是患者姓名，默认显示拼音首字母；`id` 是系统主键；`name` 暂兼容既有页面展示，默认与 `patient_number` 同步。 |
 | 患者 CRF 信息 | `crf_entries.payload` + `study_crf_versions.schema_json` | 每个 Study 独立配置 CRF；默认包含病程记录、住院、治疗方案、检查等 section，payload 以 JSON 保存。 |
 | 患者随访 | `follow_up_records.payload` + `study_configurations.follow_up_schema` | 每个 Study 独立配置随访 JSON；默认覆盖访视、日期、类型、疗效评估、记录，同时保留日期、类型、疗效、记录等固定列用于筛选和列表。 |
-| 样本信息 | `samples.patient_id`, `id`, `sample_type`, `collected_at`, `storage`, `note` | 一个患者可有多个样本；`patient_id` 必须属于同一 `study_id`。 |
-| 多组学检测 | `omics_records.sample_id`, `testing_project_id`, `status`, `sent_at`, `completed_at`, `qc`, `result_file_id` | 一个样本可关联多种检测；`result_file_id` 指向 `uploaded_files.id` 的结果文件记录，前端展示文件名、扫描状态和归档状态必须来自 `uploaded_files`。 |
+| 样本信息 | `samples.patient_id`, `id`, `sample_type`, `collected_at`, `storage`, `initial_quantity`, `remaining_quantity`, `quantity_unit`, `note`, `linked_omics` | 一个患者可有多个样本；`storage` 保存存储位置；初始量、剩余量和单位按字符串保存，单位由全局单位类型单选；`remaining_quantity` 由人工维护，不由检测记录自动扣减；`linked_omics` 记录该样本已做或计划做的检测。 |
+| 多组学检测 | `omics_records.sample_id`, `sample_ids`, `sample_usage`, `testing_project_id`, `assay`, `vendor`, `platform`, `status`, `sent_at`, `completed_at`, `qc`, `result_file_id` | `sample_id` 是兼容旧逻辑的主样本；`sample_ids` 支持人工选择一个或多个样本；`sample_usage` 记录每个样本的人工填写使用量、单位和用途；`vendor` 保存检测供应商；`result_file_id` 指向 `uploaded_files.id` 的结果文件记录。 |
 
 Patient Journey 页面的多轨临床事件轴、事件明细流和关键指标趋势只能从当前患者的 `patients`、`crf_entries`、`visits`、`follow_up_records`、`samples`、`omics_records` 和 `uploaded_files` 聚合生成，不允许使用前端静态旅程数据或合成日期、合成诊断/住院/治疗事件冒充正式状态。关键指标没有真实访视或 CRF 值时必须为空或显示 0，不允许按序号生成趋势。
 `/studies/{study_id}/analytics/summary` 返回 `export_count` 和 `ready_export_count`，Dashboard 的“导出归档”必须使用 `export_jobs` 统计，不允许复用组学归档数。

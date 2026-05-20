@@ -60,6 +60,6 @@ Study CRC does not open System Management by design. Its customer-facing Query p
 
 ## Demo 口径
 
-- 这是 `v1.0.2` GA 功能测试版本，可用于填写测试数据；正式 Docker 启动为空库，仅保留首个 LZ 系统管理员。正式运行数据库固定为 PostgreSQL，SQLite 只允许隔离 smoke/旧迁移工具显式开启。真实患者生产上线前仍需完成生产身份源、对象存储、数据库安全策略、备份恢复和合规签字。
+- 这是 `v1.0.3` 内部试点版本，可用于客户在受控环境中按真实业务场景验证流程、角色、Study 配置和数据闭环；正式 Docker 启动为空库，仅保留首个 LZ 系统管理员。正式运行数据库固定为 PostgreSQL，SQLite 只允许隔离 smoke/旧迁移工具显式开启。真实患者生产上线前仍需完成生产身份源、对象存储、数据库安全策略、备份恢复和合规签字。
 - 演示重点是 Study 隔离、Study 绑定 CRF、患者中心数据链路、质量到 Query 和 eConsent 审批闭环。
 - 如被问到“正式上线还差什么”，使用上面的正式产品未完成清单，不要把 Demo 适配点说成已生产落地。

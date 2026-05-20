@@ -18,9 +18,9 @@ UserRole = Literal[
 ]
 StudyRole = Literal["STUDY_PI", "STUDY_CRC", "STUDY_CONFIG_ADMIN", "STUDY_DATA_MANAGER"]
 StudyScopeType = Literal["all_studies", "assigned_studies", "own_studies"]
-DiseaseType = Literal["NPSLE", "Non-NPSLE", "MS", "NMOSD", "HC", "NSCLC", "LUAD", "LUSC", "EGFR-TKI耐药", "ALK耐药"]
+DiseaseType = str
 Sex = Literal["男", "女"]
-SampleType = Literal["血液", "CSF", "肾", "尿液", "组织", "胸水"]
+SampleType = str
 SampleStatus = Literal["已采集", "已送检", "检测中", "结果回传", "待处理"]
 OmicsStatus = Literal["样本接收", "文库构建", "测序完成", "数据分析", "结果归档"]
 QcStatus = Literal["通过", "未通过", "待确认"]
@@ -97,6 +97,22 @@ class GlobalRoleStudyScopeUpdate(BaseModel):
     study_ids: list[str] = Field(default_factory=list)
 
 
+class GlobalConfigurationUpdate(BaseModel):
+    disease_types: list[str] = Field(default_factory=list)
+    sample_types: list[str] = Field(default_factory=list)
+    detection_types: list[str] = Field(default_factory=list)
+    quantity_units: list[str] = Field(default_factory=list)
+
+
+class StudyConfigurationUpdate(BaseModel):
+    disease_area: str | None = None
+    active_crf_version_id: str | None = None
+    visit_plan: dict[str, Any] | None = None
+    consent_template: str | None = None
+    testing_profile: dict[str, Any] | None = None
+    follow_up_schema: dict[str, Any] | None = None
+
+
 class PatientBase(BaseModel):
     study_id: str = "LGL-1111"
     patient_number: str | None = None
@@ -138,6 +154,9 @@ class SampleBase(BaseModel):
     visit: str
     collected_at: str
     storage: str
+    initial_quantity: str = ""
+    remaining_quantity: str = ""
+    quantity_unit: str = ""
     note: str = ""
     status: SampleStatus
     linked_omics: list[str] = Field(default_factory=list)
@@ -156,6 +175,9 @@ class SampleUpdate(BaseModel):
     visit: str | None = None
     collected_at: str | None = None
     storage: str | None = None
+    initial_quantity: str | None = None
+    remaining_quantity: str | None = None
+    quantity_unit: str | None = None
     note: str | None = None
     status: SampleStatus | None = None
     linked_omics: list[str] | None = None
@@ -167,8 +189,11 @@ class OmicsBase(BaseModel):
     patient_id: str
     patient_name: str
     sample_id: str
+    sample_ids: list[str] = Field(default_factory=list)
+    sample_usage: dict[str, dict[str, str]] = Field(default_factory=dict)
     sample_type: str
     assay: str
+    vendor: str = ""
     platform: str
     run_id: str
     status: OmicsStatus
@@ -188,8 +213,11 @@ class OmicsUpdate(BaseModel):
     patient_id: str | None = None
     patient_name: str | None = None
     sample_id: str | None = None
+    sample_ids: list[str] | None = None
+    sample_usage: dict[str, dict[str, str]] | None = None
     sample_type: str | None = None
     assay: str | None = None
+    vendor: str | None = None
     platform: str | None = None
     run_id: str | None = None
     status: OmicsStatus | None = None

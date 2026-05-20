@@ -86,21 +86,26 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
   }
 
   const patientCount = summary.patient_count;
+  const diseaseDistribution = summary.disease_distribution ?? {};
+  const sampleCount = summary.sample_count ?? 0;
+  const omicsCount = summary.omics_count ?? 0;
+  const completedOmicsCount = summary.completed_omics_count ?? 0;
   const visitCount = summary.visit_count ?? 0;
   const crfCount = summary.crf_count ?? 0;
   const consentSignedCount = summary.consent_signed_count ?? 0;
   const samplePatientCount = summary.sample_patient_count ?? 0;
-  const activePatientCount = summary.active_patient_count ?? patientCount - (summary.disease_distribution.HC ?? 0);
+  const activePatientCount = summary.active_patient_count ?? patientCount - (diseaseDistribution.HC ?? 0);
   const completedPatientCount = summary.completed_patient_count ?? 0;
-  const completeness = Math.round(summary.data_completeness_avg);
+  const dataCompletenessAvg = summary.data_completeness_avg ?? 0;
+  const completeness = Math.round(dataCompletenessAvg);
   const consentPercent = percent(consentSignedCount, patientCount);
   const samplePercent = percent(samplePatientCount, patientCount);
-  const completedOmicsPercent = percent(summary.completed_omics_count, summary.omics_count);
+  const completedOmicsPercent = percent(completedOmicsCount, omicsCount);
   const exportCount = summary.export_count ?? 0;
   const readyExportCount = summary.ready_export_count ?? 0;
   const exportPercent = percent(readyExportCount, exportCount);
   const overall = Math.round((100 + consentPercent + samplePercent + completedOmicsPercent + exportPercent) / 5);
-  const diseaseStats = Object.entries(summary.disease_distribution)
+  const diseaseStats = Object.entries(diseaseDistribution)
     .filter(([, value]) => value > 0)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 4)
@@ -109,10 +114,10 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
   return {
     metrics: [
       { label: '已入组患者', value: formatCount(patientCount), helper: '已连接 patients 表', icon: 'patients' },
-      { label: '样本统计', value: formatCount(summary.sample_count), helper: '已连接 samples 表', icon: 'samples' },
-      { label: '样本及检测', value: formatCount(summary.omics_count), helper: `${summary.completed_omics_count} 项已归档`, icon: 'lab' },
+      { label: '样本统计', value: formatCount(sampleCount), helper: '已连接 samples 表', icon: 'samples' },
+      { label: '样本及检测', value: formatCount(omicsCount), helper: `${completedOmicsCount} 项已归档`, icon: 'lab' },
       { label: '随访次数', value: formatCount(visitCount), helper: '已连接 visits 表', icon: 'calendarCheck' },
-      { label: '临床数据完整性', value: `${summary.data_completeness_avg}%`, helper: 'clinical_data 平均值', icon: 'check', progress: completeness }
+      { label: '临床数据完整性', value: `${dataCompletenessAvg}%`, helper: 'clinical_data 平均值', icon: 'check', progress: completeness }
     ],
     enrollmentValue: formatCount(patientCount),
     enrollmentDelta: '来自后端业务数据',
@@ -134,21 +139,21 @@ function buildDashboardData(summary?: ApiAnalysisSummary): {
     cohort: [
       { label: '患者总数', value: formatCount(patientCount), icon: 'patients', drillable: true },
       ...diseaseStats.map(({ label, value }) => ({ label, value: formatCount(value), icon: 'dna' as const, drillable: true })),
-      { label: '平均完整度', value: `${summary.data_completeness_avg}%`, icon: 'visits', drillable: true }
+      { label: '平均完整度', value: `${dataCompletenessAvg}%`, icon: 'visits', drillable: true }
     ],
     workflow: [
       { label: '患者筛选', icon: 'patients', count: `${formatCount(patientCount)} / ${formatCount(patientCount)}`, percent: 100, status: 'over' },
       { label: '知情同意', icon: 'studies', count: `${formatCount(consentSignedCount)} / ${formatCount(patientCount)}`, percent: consentPercent, status: consentPercent < 80 ? 'low' : 'normal' },
       { label: 'CRF 录入', icon: 'crf', count: `${formatCount(crfCount)} / ${formatCount(visitCount)}`, percent: percent(crfCount, visitCount), status: 'normal' },
       { label: '样本采集', icon: 'samples', count: `${formatCount(samplePatientCount)} / ${formatCount(patientCount)}`, percent: samplePercent, status: samplePercent < 80 ? 'low' : 'normal' },
-      { label: '组学归档', icon: 'activity', count: `${formatCount(summary.completed_omics_count)} / ${formatCount(summary.omics_count)}`, percent: completedOmicsPercent, status: completedOmicsPercent < 80 ? 'low' : 'normal' },
+      { label: '组学归档', icon: 'activity', count: `${formatCount(completedOmicsCount)} / ${formatCount(omicsCount)}`, percent: completedOmicsPercent, status: completedOmicsPercent < 80 ? 'low' : 'normal' },
       { label: '导出归档', icon: 'shield', count: `${formatCount(readyExportCount)} / ${formatCount(exportCount)}`, percent: exportPercent, status: exportCount === 0 ? 'empty' : exportPercent < 80 ? 'low' : 'normal' }
     ],
     workflowOverall: overall,
     omics: [
-      { label: '已处理样本', value: formatCount(summary.sample_count), delta: '后端' },
-      { label: '检测归档率', value: `${completedOmicsPercent}%`, delta: `${summary.completed_omics_count}/${summary.omics_count}` },
-      { label: '检测项目', value: formatCount(summary.omics_count) }
+      { label: '已处理样本', value: formatCount(sampleCount), delta: '后端' },
+      { label: '检测归档率', value: `${completedOmicsPercent}%`, delta: `${completedOmicsCount}/${omicsCount}` },
+      { label: '检测项目', value: formatCount(omicsCount) }
     ]
   };
 }
@@ -199,11 +204,12 @@ export function Dashboard({ currentUser, activeStudy, selectedModule, selectedPa
   const { t } = useI18n();
   const [summary, setSummary] = useState<ApiAnalysisSummary | null>(null);
   const dashboardUser = currentUser ?? getStoredDashboardUser();
+  const isGlobalPlatformView = Boolean(dashboardUser?.role?.startsWith('LZ_') && !activeStudy);
 
   useEffect(() => {
     let ignore = false;
 
-    void fetchAnalyticsSummary()
+    void fetchAnalyticsSummary(activeStudy?.id)
       .then((nextSummary) => {
         if (!ignore) setSummary(nextSummary);
       })
@@ -212,7 +218,7 @@ export function Dashboard({ currentUser, activeStudy, selectedModule, selectedPa
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [activeStudy?.id]);
 
   const dashboardData = useMemo(() => buildDashboardData(summary ?? undefined), [summary]);
   const disabledQuickActions = useMemo(() => getDisabledQuickActions(dashboardUser), [dashboardUser]);
@@ -229,6 +235,17 @@ export function Dashboard({ currentUser, activeStudy, selectedModule, selectedPa
           <div className="study-project-context__meta">
             <span>{t('Study ID')}</span>
             <strong>{activeStudy.id}</strong>
+          </div>
+        </section>
+      ) : isGlobalPlatformView ? (
+        <section className="study-project-context" aria-label={t('LZ 全局视角')}>
+          <div className="study-project-context__label">
+            <span>{t('LZ 全局视角')}</span>
+            <strong>{t('全部或授权 Study')}</strong>
+          </div>
+          <div className="study-project-context__meta">
+            <span>{t('统计范围')}</span>
+            <strong>{t('所有可访问 Study')}</strong>
           </div>
         </section>
       ) : null}

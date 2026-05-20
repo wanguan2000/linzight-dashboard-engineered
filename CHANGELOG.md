@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project uses Semantic Versioning.
 
+## [1.0.3] - 2026-05-21
+
+### Added
+
+- Internal-pilot release positioning for customer validation of real business workflows in a controlled PostgreSQL-backed environment.
+- LZ global configuration for disease, sample, testing, and unit dictionaries, with patient and sample/testing forms consuming the persisted `/global-configuration` values.
+- Patient-cohort workflow updates that embed sample ledger and multi-omics testing context, including patient-focused sample review.
+- Sample and omics workflow support for storage location, initial quantity, remaining quantity, configurable units, testing vendor, multi-sample selection, and per-sample usage capture.
+
+### Changed
+
+- Platform users now remain in the LZ global state by default and use backend `/analytics/summary` aggregation plus Study-scoped business reads instead of silently entering a single Study.
+- New patient creation now creates only the patient master record and pending consent; visits, CRF drafts, and Patient Journey events must come from explicit Study data.
+- Release notes, UAT package, and readiness documents now state the `v1.0.3` scope as internal pilot for real-world workflow validation, not unrestricted real-patient production use.
+
+### Fixed
+
+- Empty Study and newly created patient flows avoid static Journey/sample/testing fallback state during pilot validation.
+- Patient queue, sample ledger, and omics status copy now align with real sample/testing records and backend save outcomes.
+
 ## [1.0.2] - 2026-05-19
 
 ### Changed

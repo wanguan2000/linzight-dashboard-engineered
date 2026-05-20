@@ -22,7 +22,7 @@ const roleScenarios = [
     entry: 'admin',
     studyId: null,
     canOpenSystemManagement: true,
-    homeChecks: ['Study 系统管理', 'Study Registry'],
+    homeChecks: ['Study 系统管理'],
     patientChecks: ['Study ID', 'LGL-1111', 'LZXK-01'],
     lungChecks: false,
   },
@@ -192,7 +192,7 @@ async function verifySystemLoop(page, role) {
   await systemNav.click();
   await page.waitForLoadState('networkidle');
   if (role.entry === 'admin') {
-    await assertVisibleTextIncludes(page, ['Study Registry', 'User Accounts', 'Create Study'], 'global system management');
+    await assertVisibleTextIncludes(page, ['Study Registry', 'User Accounts', '填写 Study 信息'], 'global system management');
     return { restricted: false, global: true };
   }
   await assertVisibleTextIncludes(page, ['Query Management', 'Approval Center', 'CRF Migration Approval'], 'system management closed loop');

@@ -60,7 +60,7 @@ type StudyScope = {
 - GA 版本已移除 standalone audit log 模块；关键业务写入仍必须带 `study_id` 并由后端校验 Study scope。
 - CRF 数据绑定 `study_id`、`patient_id`、`crf_version_id`、`form_id`。
 - Study 配置总表 `study_configurations` 绑定病种语义、当前 published CRF、访视计划、知情同意模板和检测 profile；新建患者不得在缺少当前 Study published CRF 时回退默认 LGL。
-- 访视计划配置保存在 `study_visit_plans`，`visits.visit_plan_id` 关联配置；新建患者时按 Study active 访视计划自动生成患者访视与 CRF 草稿。
+- 访视计划配置保存在 `study_visit_plans`，`visits.visit_plan_id` 关联配置；新建患者不会自动生成患者访视或 CRF 草稿。
 - 随访事实记录保存在 `follow_up_records`，隶属于患者信息，绑定 `study_id + patient_id`，可选关联 `visit_id`；普通 CRC 可录入，PI/数据管理员可查看，配置管理员不默认编辑患者随访内容。
 
 ## 前端实现

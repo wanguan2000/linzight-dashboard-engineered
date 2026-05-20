@@ -6,7 +6,6 @@ import {
   ConsentManagementPage,
   PatientJourneyPage,
   ReportsPage,
-  SampleTestingPage,
   SystemManagementPage
 } from './components/ModulePages';
 import { PatientCohortPage } from './components/PatientCohortPage';
@@ -24,7 +23,7 @@ import {
 import { navItems } from './data/dashboard';
 import type { PatientRecord } from './data/patientCohort';
 import { useI18n } from './i18n/I18nProvider';
-import { authTokenStorageKey, fetchCurrentUser, fetchStudies, logoutFromBackend } from './services/api';
+import { authSessionInvalidatedEvent, authTokenStorageKey, fetchCurrentUser, fetchStudies, logoutFromBackend } from './services/api';
 
 declare global {
   interface Window {
@@ -83,8 +82,18 @@ function getInitialNavIndex() {
 
 function getInitialUser(): AuthenticatedUser | null {
   if (typeof window === 'undefined') return null;
+  if (!window.localStorage.getItem(authTokenStorageKey)) {
+    window.localStorage.removeItem(authStorageKey);
+    window.localStorage.removeItem(activeStudyStorageKey);
+    window.localStorage.removeItem('linzight-demo-token');
+    return null;
+  }
   const rawUser = window.localStorage.getItem(authStorageKey);
-  if (!rawUser) return null;
+  if (!rawUser) {
+    window.localStorage.removeItem(authTokenStorageKey);
+    window.localStorage.removeItem(activeStudyStorageKey);
+    return null;
+  }
 
   try {
     const user = normalizeAuthenticatedUser(JSON.parse(rawUser));
@@ -93,9 +102,13 @@ function getInitialUser(): AuthenticatedUser | null {
       return user;
     }
     window.localStorage.removeItem(authStorageKey);
+    window.localStorage.removeItem(authTokenStorageKey);
+    window.localStorage.removeItem(activeStudyStorageKey);
     return null;
   } catch {
     window.localStorage.removeItem(authStorageKey);
+    window.localStorage.removeItem(authTokenStorageKey);
+    window.localStorage.removeItem(activeStudyStorageKey);
     return null;
   }
 }
@@ -190,6 +203,18 @@ export default function App() {
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
   const [runtimeStudyOptions, setRuntimeStudyOptions] = useState<Array<{ id: string; name: string }>>([]);
   const hasVerifiedSession = useRef(false);
+
+  useEffect(() => {
+    const handleInvalidSession = () => {
+      hasVerifiedSession.current = false;
+      setSelectedPatient(null);
+      setActiveStudyId(undefined);
+      setCurrentUser(null);
+    };
+    window.addEventListener(authSessionInvalidatedEvent, handleInvalidSession);
+    return () => window.removeEventListener(authSessionInvalidatedEvent, handleInvalidSession);
+  }, []);
+
   const visibleNavItems = useMemo(() => {
     const items = navItems.filter((item) => canAccessModule(currentUser, item.label, activeStudyId));
     if (currentUser && isPlatformRole(currentUser) && !activeStudyId) {
@@ -203,16 +228,33 @@ export default function App() {
   const activeModule = navItems[activeNavIndex]?.label ?? '首页工作台';
   const visibleActiveIndex = Math.max(0, visibleNavItems.findIndex((item) => (item.routeLabel ?? item.label) === activeModule));
   const baseTopbarCopy = getTopbarCopy(activeModule);
+  const isLzGlobalMode = Boolean(currentUser && isPlatformRole(currentUser) && !activeStudyId);
   const topbarCopy =
-    currentUser && isPlatformRole(currentUser) && !activeStudyId && activeModule === '患者队列管理'
+    isLzGlobalMode && activeModule === '首页工作台'
       ? {
           ...baseTopbarCopy,
-          title: '患者队列管理',
-          subtitle: 'LZ 平台视角按 Study 汇总患者队列；业务读写仍逐个使用 Study Workspace API。',
+          title: 'LZ 全局首页工作台',
+          subtitle: '汇总所有授权 Study 的患者、样本、检测、访视、CRF 和导出统计。',
+          aiPlaceholder: '搜索全局运营指标、患者、样本或检测状态...',
+          showAiPrompts: false
+        }
+      : isLzGlobalMode && activeModule === '患者队列管理'
+      ? {
+          ...baseTopbarCopy,
+          title: '全局患者',
+          subtitle: '汇总所有授权 Study 的患者队列；业务读写仍逐个使用 Study Workspace API。',
           aiPlaceholder: '搜索患者、Study ID、疾病类型或状态...',
           showAiPrompts: false
         }
-      : currentUser && isPlatformRole(currentUser) && !activeStudyId && activeModule === '系统管理'
+      : isLzGlobalMode && activeModule === '样本及检测'
+        ? {
+            ...baseTopbarCopy,
+            title: '样本与检测',
+            subtitle: '汇总所有授权 Study 的样本、检测和组学记录。',
+            aiPlaceholder: '搜索全局样本编号、检测项目、Study 或状态...',
+            showAiPrompts: false
+          }
+      : isLzGlobalMode && activeModule === '系统管理'
         ? {
             ...baseTopbarCopy,
             title: 'Study 系统管理',
@@ -222,7 +264,7 @@ export default function App() {
           }
         : baseTopbarCopy;
   const topbarTitle =
-    activeModule === '首页工作台' && currentUser
+    activeModule === '首页工作台' && currentUser && !isLzGlobalMode
       ? `欢迎回来，${currentUser.name}`
       : topbarCopy.title;
   const topbarStudyOptions = useMemo(() => {
@@ -272,7 +314,15 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     if (!currentUser || hasVerifiedSession.current) return undefined;
-    if (!window.localStorage.getItem(authTokenStorageKey)) return undefined;
+    if (!window.localStorage.getItem(authTokenStorageKey)) {
+      window.localStorage.removeItem(authStorageKey);
+      window.localStorage.removeItem(activeStudyStorageKey);
+      window.localStorage.removeItem('linzight-demo-token');
+      setSelectedPatient(null);
+      setActiveStudyId(undefined);
+      setCurrentUser(null);
+      return undefined;
+    }
     hasVerifiedSession.current = true;
     fetchCurrentUser()
       .then((user) => {
@@ -376,7 +426,7 @@ export default function App() {
     } else {
       window.localStorage.removeItem(activeStudyStorageKey);
       setActiveStudyId(undefined);
-      setActiveModule('系统管理');
+      setActiveModule(lzPlatformBusinessRoles.has(user.role) ? '首页工作台' : '系统管理');
     }
     setCurrentUser(user);
   }
@@ -395,14 +445,16 @@ export default function App() {
   }
 
   function renderActiveModule() {
-    if (activeModule === '患者队列管理') {
-      return <PatientCohortPage currentUser={currentUser} onCreatePatient={createPatient} onEditPatient={openClinicalData} onPatientChange={setSelectedPatient} onViewPatient={openPatientJourney} />;
-    }
+    const renderPatientCohortWorkspace = () => (
+      <PatientCohortPage currentUser={currentUser} onCreatePatient={createPatient} onEditPatient={openClinicalData} onPatientChange={setSelectedPatient} onViewPatient={openPatientJourney} />
+    );
+
+    if (activeModule === '患者队列管理') return renderPatientCohortWorkspace();
     if (activeModule === '知情同意') return <ConsentManagementPage currentUser={currentUser} selectedPatient={selectedPatient} />;
     if (activeModule === '临床数据采集') {
       return <ClinicalDataCapturePage selectedPatient={selectedPatient} onOpenPatientJourney={openPatientJourney} onPatientChange={setSelectedPatient} />;
     }
-    if (activeModule === '样本及检测') return <SampleTestingPage />;
+    if (activeModule === '样本及检测') return renderPatientCohortWorkspace();
     if (activeModule === '患者旅程') return <PatientJourneyPage selectedPatient={selectedPatient} onPatientChange={setSelectedPatient} />;
     if (activeModule === '数据分析') return <ReportsPage currentUser={currentUser} />;
     if (activeModule === '系统管理') return <SystemManagementPage currentUser={currentUser} />;

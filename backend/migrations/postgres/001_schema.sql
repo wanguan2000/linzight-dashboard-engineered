@@ -72,6 +72,12 @@ CREATE TABLE IF NOT EXISTS study_configurations (
   updated_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS global_configurations (
+  key TEXT PRIMARY KEY,
+  values_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS study_visit_plans (
   id TEXT PRIMARY KEY,
   study_id TEXT NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
@@ -121,6 +127,9 @@ CREATE TABLE IF NOT EXISTS samples (
   visit TEXT NOT NULL,
   collected_at TIMESTAMPTZ NOT NULL,
   storage TEXT NOT NULL,
+  initial_quantity TEXT NOT NULL DEFAULT '',
+  remaining_quantity TEXT NOT NULL DEFAULT '',
+  quantity_unit TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
   linked_omics_json JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -135,8 +144,11 @@ CREATE TABLE IF NOT EXISTS omics_records (
   patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
   patient_name TEXT NOT NULL,
   sample_id TEXT NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
+  sample_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  sample_usage_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   sample_type TEXT NOT NULL,
   assay TEXT NOT NULL,
+  vendor TEXT NOT NULL DEFAULT '',
   platform TEXT NOT NULL,
   run_id TEXT NOT NULL,
   status TEXT NOT NULL,

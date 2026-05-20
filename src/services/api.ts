@@ -1,6 +1,7 @@
 import type { ConsentRecord, FollowUpRecord, OmicsRecord, SampleRecord, StudyVisitPlanRecord, VisitRecord } from '../data/operations';
 import { activeStudyStorageKey, authStorageKey, normalizeAuthenticatedUser, roleLabels, userCanAccessStudy, type AuthenticatedUser } from '../data/auth';
-import type { OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
+import { saveGlobalDetectionTypes, saveGlobalDiseaseTypes, saveGlobalQuantityUnits, saveGlobalSampleTypes } from '../data/globalConfig';
+import type { DiseaseType, OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
 import type {
   ApiAnalysisSummary,
   ApiApprovalRequest,
@@ -11,6 +12,7 @@ import type {
   ApiExportJob,
   ApiFileMetadata,
   ApiFollowUpRecord,
+  ApiGlobalConfiguration,
   ApiLoginResponse,
   ApiOmics,
   ApiOperationLog,
@@ -24,6 +26,7 @@ import type {
   ApiCrfMigrationPreview,
   ApiSiteUser,
   ApiStudyConfiguration,
+  ApiStudyConfigurationUpdate,
   ApiStudyCrfField,
   ApiStudyCrfVersion,
   ApiStudy,
@@ -63,6 +66,13 @@ export type StudyCrfFieldRecord = {
   conditionalLogic: string;
 };
 
+export type GlobalConfigurationRecord = {
+  diseaseTypes: string[];
+  sampleTypes: string[];
+  detectionTypes: string[];
+  quantityUnits: string[];
+};
+
 export type StudyCrfVersionRecord = {
   id: string;
   studyId: string;
@@ -97,9 +107,26 @@ function fallbackStudyScope() {
   return { scopeType: 'own_studies' as const, studyIds: [] };
 }
 
+function toGlobalConfiguration(response: ApiGlobalConfiguration): GlobalConfigurationRecord {
+  return {
+    diseaseTypes: response.disease_types,
+    sampleTypes: response.sample_types,
+    detectionTypes: response.detection_types,
+    quantityUnits: response.quantity_units ?? []
+  };
+}
+
+function persistGlobalConfiguration(config: GlobalConfigurationRecord) {
+  saveGlobalDiseaseTypes(config.diseaseTypes);
+  saveGlobalSampleTypes(config.sampleTypes);
+  saveGlobalDetectionTypes(config.detectionTypes);
+  saveGlobalQuantityUnits(config.quantityUnits);
+}
+
 const configuredBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
 const apiBases = Array.from(new Set([configuredBase, 'http://127.0.0.1:8000', 'http://127.0.0.1:8001'].filter(Boolean))) as string[];
 export const authTokenStorageKey = 'linzight-auth-token';
+export const authSessionInvalidatedEvent = 'linzight-auth-session-invalidated';
 type FetchInit = Parameters<typeof window.fetch>[1];
 
 export class ApiRequestError extends Error {
@@ -114,6 +141,15 @@ export class ApiRequestError extends Error {
 
 export function isPermissionError(error: unknown) {
   return error instanceof ApiRequestError && (error.status === 401 || error.status === 403);
+}
+
+function invalidateStoredSession() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(authStorageKey);
+  window.localStorage.removeItem(authTokenStorageKey);
+  window.localStorage.removeItem(activeStudyStorageKey);
+  window.localStorage.removeItem('linzight-demo-token');
+  window.dispatchEvent(new window.CustomEvent(authSessionInvalidatedEvent));
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -153,9 +189,11 @@ async function requestJson<T>(path: string, init?: FetchInit, timeoutMs = 900): 
       if (!response.ok) {
         const detail = await response.text().catch(() => '');
         const error = new ApiRequestError(response.status, `${response.status} ${response.statusText}${detail ? ` ${detail}` : ''}`);
+        if (response.status === 401) invalidateStoredSession();
         if (response.status === 401 || response.status === 403) throw error;
         throw error;
       }
+      if (response.status === 204) return undefined as T;
       return (await response.json()) as T;
     } catch (error) {
       if (isPermissionError(error)) throw error;
@@ -272,6 +310,49 @@ export async function uploadFileToBackend(
 
 export async function fetchFileMetadata(): Promise<ApiFileMetadata[]> {
   return fetchStudyBusinessRows<ApiFileMetadata>('files');
+}
+
+export async function openFileFromBackend(file: Pick<ApiFileMetadata, 'id' | 'original_filename'>): Promise<void> {
+  const token = window.localStorage.getItem(authTokenStorageKey);
+  const response = await window.fetch(`${apiBases[0]}/files/${encodeURIComponent(file.id)}/download`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined
+  });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+
+  const contentType = response.headers.get('Content-Type') ?? '';
+  const blob = await response.blob();
+  const lowerName = file.original_filename.toLowerCase();
+  const isTextLike =
+    contentType.startsWith('text/') ||
+    /\.(txt|csv|tsv|json|md|log|xml|yml|yaml)$/i.test(lowerName);
+  const previewBlob = isTextLike
+    ? new window.Blob(
+        [
+          `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(file.original_filename)}</title><style>body{margin:0;background:#111;color:#f5f7fb;font:14px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;margin:0;padding:18px}</style></head><body><pre>${escapeHtml(await blob.text())}</pre></body></html>`
+        ],
+        { type: 'text/html;charset=utf-8' }
+      )
+    : blob;
+  const url = window.URL.createObjectURL(previewBlob);
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    const anchor = window.document.createElement('a');
+    anchor.href = url;
+    anchor.download = file.original_filename;
+    window.document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 export async function createExportJob(exportType = 'cohort_csv', studyId = getCurrentScopedStudyId()): Promise<ApiExportJob> {
@@ -425,8 +506,38 @@ export async function fetchStudyConfiguration(studyId = getCurrentScopedStudyId(
   return getJson<ApiStudyConfiguration>(`/studies/${encodeURIComponent(studyId)}/configuration`);
 }
 
+export async function updateStudyConfiguration(studyId: string, payload: ApiStudyConfigurationUpdate): Promise<ApiStudyConfiguration> {
+  studyId = requireStudyId(studyId, 'study configuration');
+  return requestJson<ApiStudyConfiguration>(`/studies/${encodeURIComponent(studyId)}/configuration`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function fetchStudies(): Promise<ApiStudy[]> {
   return getJson<ApiStudy[]>('/studies');
+}
+
+export async function fetchGlobalConfiguration(): Promise<GlobalConfigurationRecord> {
+  const config = toGlobalConfiguration(await getJson<ApiGlobalConfiguration>('/global-configuration'));
+  persistGlobalConfiguration(config);
+  return config;
+}
+
+export async function updateGlobalConfiguration(config: GlobalConfigurationRecord): Promise<GlobalConfigurationRecord> {
+  const saved = toGlobalConfiguration(await requestJson<ApiGlobalConfiguration>('/global-configuration', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      disease_types: config.diseaseTypes,
+      sample_types: config.sampleTypes,
+      detection_types: config.detectionTypes,
+      quantity_units: config.quantityUnits
+    })
+  }));
+  persistGlobalConfiguration(saved);
+  return saved;
 }
 
 export async function createStudy(payload: ApiStudyCreate): Promise<ApiStudy> {
@@ -750,8 +861,59 @@ export async function runQualityChecks(studyId = getCurrentScopedStudyId()): Pro
   return postJson<{ status: string; created: number }>(studyBusinessPath(studyId, 'quality/run'), {}, token ? { Authorization: `Bearer ${token}` } : undefined);
 }
 
-export async function fetchAnalyticsSummary(): Promise<ApiAnalysisSummary> {
-  return getJson<ApiAnalysisSummary>(currentStudyBusinessPath('analytics/summary'));
+export async function fetchAnalyticsSummary(studyId = getCurrentScopedStudyId()): Promise<ApiAnalysisSummary> {
+  if (studyId) return getJson<ApiAnalysisSummary>(studyBusinessPath(studyId, 'analytics/summary'));
+  try {
+    return await getJson<ApiAnalysisSummary>('/analytics/summary');
+  } catch (error) {
+    if (isPermissionError(error)) throw error;
+    return summarizeWorkspaceDataset(await fetchWorkspaceDataset());
+  }
+}
+
+function summarizeWorkspaceDataset(dataset: WorkspaceDataset): ApiAnalysisSummary {
+  const patientIds = new Set(dataset.patients.map((patient) => patient.id).filter(Boolean));
+  const scopedSamples = dataset.samples.filter((sample) => !sample.patientId || patientIds.has(sample.patientId));
+  const scopedOmics = dataset.omics.filter((record) => !record.patientId || patientIds.has(record.patientId));
+  const scopedVisits = dataset.visits.filter((record) => !record.patientId || patientIds.has(record.patientId));
+  const scopedFollowUps = dataset.followUps.filter((record) => !record.patientId || patientIds.has(record.patientId));
+  const diseaseDistribution = dataset.patients.reduce<Record<DiseaseType, number>>((acc, patient) => {
+    acc[patient.diseaseType] = (acc[patient.diseaseType] ?? 0) + 1;
+    return acc;
+  }, {} as Record<DiseaseType, number>);
+  const completenessValues = dataset.patients.map((patient) => getCompletenessFromClinicalData(patient.clinicalData));
+  const dataCompletenessAvg = completenessValues.length
+    ? Math.round(completenessValues.reduce((sum, value) => sum + value, 0) / completenessValues.length)
+    : 0;
+
+  return {
+    patient_count: dataset.patients.length,
+    disease_distribution: diseaseDistribution,
+    sample_count: scopedSamples.length,
+    omics_count: scopedOmics.length,
+    completed_omics_count: scopedOmics.filter((record) => record.status === '结果归档').length,
+    data_completeness_avg: dataCompletenessAvg,
+    visit_count: scopedVisits.length + scopedFollowUps.length,
+    crf_count: dataset.patients.filter((patient) => Object.keys(patient.clinicalData).length > 0).length,
+    consent_signed_count: 0,
+    sample_patient_count: new Set(scopedSamples.map((sample) => sample.patientId).filter(Boolean)).size,
+    active_patient_count: dataset.patients.filter((patient) => patient.diseaseType !== 'HC').length,
+    completed_patient_count: dataset.patients.filter((patient) =>
+      scopedOmics.some((record) => record.patientId === patient.id && record.status === '结果归档')
+    ).length,
+    export_count: 0,
+    ready_export_count: 0
+  };
+}
+
+function getCompletenessFromClinicalData(clinicalData: PatientRecord['clinicalData']) {
+  const value = clinicalData.数据完整度;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace('%', '').trim());
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
 function toConsentRecord(record: ApiConsent): ConsentRecord {
@@ -832,6 +994,10 @@ export async function updatePatientRecord(patient: PatientRecord): Promise<Patie
   return toPatientRecord(response, [], []);
 }
 
+export async function deletePatientRecord(patientId: string): Promise<void> {
+  await requestJson<void>(`/patients/${encodeURIComponent(patientId)}`, { method: 'DELETE' });
+}
+
 export async function fetchCrfEntries(patientId: string): Promise<ApiCrfEntry[]> {
   return getJson<ApiCrfEntry[]>(`${currentStudyBusinessPath('crf')}?patient_id=${encodeURIComponent(patientId)}`);
 }
@@ -867,6 +1033,9 @@ export async function createSampleRecord(record: SampleRecord): Promise<SampleRe
     visit: record.visit,
     collected_at: record.collectedAt,
     storage: record.storage,
+    initial_quantity: record.initialQuantity ?? '',
+    remaining_quantity: record.remainingQuantity ?? '',
+    quantity_unit: record.quantityUnit ?? '',
     note: record.note ?? '',
     status: record.status,
     linked_omics: record.linkedOmics
@@ -883,6 +1052,9 @@ export async function updateSampleRecord(record: SampleRecord): Promise<SampleRe
     visit: record.visit,
     collected_at: record.collectedAt,
     storage: record.storage,
+    initial_quantity: record.initialQuantity ?? '',
+    remaining_quantity: record.remainingQuantity ?? '',
+    quantity_unit: record.quantityUnit ?? '',
     note: record.note ?? '',
     status: record.status,
     linked_omics: record.linkedOmics
@@ -898,8 +1070,11 @@ export async function createOmicsRecord(record: OmicsRecord): Promise<OmicsRecor
     patient_id: record.patientId,
     patient_name: record.patientName,
     sample_id: record.sampleId,
+    sample_ids: record.sampleIds?.length ? record.sampleIds : [record.sampleId],
+    sample_usage: record.sampleUsage ?? {},
     sample_type: record.sampleType,
     assay: record.assay,
+    vendor: record.vendor,
     platform: record.platform,
     run_id: record.runId,
     status: record.status,
@@ -917,8 +1092,11 @@ export async function updateOmicsRecord(record: OmicsRecord): Promise<OmicsRecor
     patient_id: record.patientId,
     patient_name: record.patientName,
     sample_id: record.sampleId,
+    sample_ids: record.sampleIds?.length ? record.sampleIds : [record.sampleId],
+    sample_usage: record.sampleUsage ?? {},
     sample_type: record.sampleType,
     assay: record.assay,
+    vendor: record.vendor,
     platform: record.platform,
     run_id: record.runId,
     status: record.status,
@@ -931,20 +1109,32 @@ export async function updateOmicsRecord(record: OmicsRecord): Promise<OmicsRecor
 }
 
 function toSamplesByType(records: ApiSample[]): SampleCollection[] {
+  const normalizeSampleType = (type: string) => {
+    if (['肿瘤组织', '组织', '肺癌组织'].includes(type)) return '肿瘤组织';
+    if (['肿瘤FFPE', 'FFPE', 'FFPE组织', '肿瘤FFPE组织'].includes(type)) return '肿瘤FFPE';
+    if (['CSF', '脑脊液'].includes(type)) return 'CSF';
+    return type;
+  };
   const counts = records.reduce<Record<string, number>>((acc, sample) => {
-    acc[sample.sample_type] = (acc[sample.sample_type] ?? 0) + 1;
+    const type = normalizeSampleType(sample.sample_type);
+    acc[type] = (acc[type] ?? 0) + 1;
     return acc;
   }, {});
 
   return Object.entries(counts)
-    .filter(([type]) => ['血液', 'CSF', '肾', '组织', '胸水'].includes(type))
+    .filter(([type]) => ['肿瘤FFPE', '肿瘤组织', 'CSF', '血液', '胸水'].includes(type))
     .map(([type, count]) => ({ type: type as SampleCollection['type'], count }));
 }
 
 function toPatientOmicsStatus(patientSamples: ApiSample[], patientOmics: ApiOmics[]): OmicsStatus {
-  if (!patientSamples.length) return '样本采集';
+  if (!patientSamples.length) return '未采集';
   if (!patientOmics.length) return '样本采集';
   return patientOmics.every((record) => record.status === '结果归档') ? '完成' : '进行中';
+}
+
+function toDateOnly(value?: string | null) {
+  if (!value || value === '-') return value ?? '';
+  return value.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? value;
 }
 
 function toPatientRecord(patient: ApiPatient, allSamples: ApiSample[], allOmics: ApiOmics[]): PatientRecord {
@@ -981,8 +1171,11 @@ function toSampleRecord(sample: ApiSample): SampleRecord {
     hospitalNo: sample.hospital_no,
     sampleType: sample.sample_type,
     visit: sample.visit,
-    collectedAt: sample.collected_at,
+    collectedAt: toDateOnly(sample.collected_at),
     storage: sample.storage,
+    initialQuantity: sample.initial_quantity ?? '',
+    remainingQuantity: sample.remaining_quantity ?? '',
+    quantityUnit: sample.quantity_unit ?? '',
     note: sample.note ?? '',
     status: sample.status,
     linkedOmics: sample.linked_omics
@@ -997,15 +1190,18 @@ function toOmicsRecord(record: ApiOmics): OmicsRecord {
     patientId: record.patient_id,
     patientName: record.patient_name,
     sampleId: record.sample_id,
+    sampleIds: record.sample_ids ?? [record.sample_id],
+    sampleUsage: record.sample_usage ?? {},
     sampleType: record.sample_type,
     assay: record.assay,
+    vendor: record.vendor ?? '',
     platform: record.platform,
     runId: record.run_id,
     status: record.status,
     qc: record.qc,
     resultFileId: record.result_file_id ?? undefined,
-    sentAt: record.sent_at,
-    completedAt: record.completed_at
+    sentAt: toDateOnly(record.sent_at),
+    completedAt: toDateOnly(record.completed_at)
   };
 }
 
@@ -1196,13 +1392,20 @@ async function fetchStudyBusinessRows<T>(resource: string): Promise<T[]> {
 
 export async function fetchWorkspaceDataset(): Promise<WorkspaceDataset> {
   try {
-    const [apiPatients, apiSamples, apiOmics, apiVisits, apiFollowUps, apiCrfEntries] = await Promise.all([
-      fetchStudyBusinessRows<ApiPatient>('patients'),
-      fetchStudyBusinessRows<ApiSample>('samples'),
-      fetchStudyBusinessRows<ApiOmics>('omics'),
-      fetchStudyBusinessRows<ApiVisit>('visits'),
-      fetchStudyBusinessRows<ApiFollowUpRecord>('follow-up-records'),
-      fetchStudyBusinessRows<ApiCrfEntry>('crf')
+    const apiPatients = await fetchStudyBusinessRows<ApiPatient>('patients');
+    const safeFetchRows = async <T,>(resource: string) => {
+      try {
+        return await fetchStudyBusinessRows<T>(resource);
+      } catch {
+        return [] as T[];
+      }
+    };
+    const [apiSamples, apiOmics, apiVisits, apiFollowUps, apiCrfEntries] = await Promise.all([
+      safeFetchRows<ApiSample>('samples'),
+      safeFetchRows<ApiOmics>('omics'),
+      safeFetchRows<ApiVisit>('visits'),
+      safeFetchRows<ApiFollowUpRecord>('follow-up-records'),
+      safeFetchRows<ApiCrfEntry>('crf')
     ]);
     const crfPayloadByPatient = apiCrfEntries.reduce<Record<string, PatientRecord['clinicalData']>>((payloads, entry) => {
       const normalizedPayload = Object.fromEntries(
@@ -1233,7 +1436,8 @@ export async function fetchWorkspaceDataset(): Promise<WorkspaceDataset> {
       visits: apiVisits.map(toVisitRecord),
       followUps: apiFollowUps.map(toFollowUpRecord)
     });
-  } catch {
+  } catch (error) {
+    if (isPermissionError(error)) throw error;
     return fallbackWorkspaceDataset();
   }
 }

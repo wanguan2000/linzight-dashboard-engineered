@@ -2,33 +2,34 @@
 
 ## 当前版本
 
-`v1.0.2`
+`v1.0.3`
 
 ## 当前状态
 
-项目处于 `v1.0.2` GA 功能测试发布阶段。前端为 Vite + React + TypeScript dashboard，后端为 FastAPI API，正式运行数据库固定为 PostgreSQL；本地 GA 运行目标切到 Homebrew PostgreSQL 17.10 的 `linzight_dashboard_engineered`，Docker Compose 后端默认连接宿主机 `host.docker.internal:5432` 的同一库。临时 smoke、旧 SQLite 备份恢复和迁移导出脚本必须显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 才可使用 SQLite URL。正式启动只创建首个 LZ 系统管理员，不再自动 seed Study、患者或检测数据；`npm run export:html` 可生成八个可直接打开的交互式 HTML 页面。本版本可用于 GA 功能测试和用户自行填写测试数据；PostgreSQL RLS 已按当前 GA 范围移入 GA 后强化项，真实患者生产上线仍需集中身份源、生产对象存储、备份恢复演练和合规签字。
+项目处于 `v1.0.3` 内部试点发布阶段。前端为 Vite + React + TypeScript dashboard，后端为 FastAPI API，正式运行数据库固定为 PostgreSQL；本地试点运行目标切到 Homebrew PostgreSQL 17.10 的 `linzight_dashboard_engineered`，Docker Compose 后端默认连接宿主机 `host.docker.internal:5432` 的同一库。临时 smoke、旧 SQLite 备份恢复和迁移导出脚本必须显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 才可使用 SQLite URL。正式启动只创建首个 LZ 系统管理员，不再自动 seed Study、患者或检测数据；`npm run export:html` 可生成八个可直接打开的交互式 HTML 页面。本版本用于客户在受控内部试点环境中验证真实业务场景、真实角色分工和真实 Study 配置；PostgreSQL RLS 已按当前试点范围移入后续生产强化项，未经合规审批、备份恢复演练和安全签字前，不应直接承载真实患者生产数据。
 
 ## 已实现功能
 
 - 登录页使用后端账号认证，不再展示 Demo 账号认证回退；登录页支持 `Study 研究入口` 和 `LZ 系统管理`。Study 入口先认证账号，账号只授权一个 Study 时直接进入该 Study Workspace，授权多个 Study 时再选择工作区；LZ 平台角色可在 LZ 系统管理态跨授权 Study 管理业务数据，但读写仍使用 `/studies/{study_id}/...`。
 - 首页工作台、患者队列管理、知情同意、临床数据采集、样本及检测、患者旅程、数据分析、系统管理。
 - 患者队列搜索、筛选、列表和进入患者旅程/临床数据采集的联动。
-- 临床数据采集 CRF、随访、样本联动和样本库编码展示。
+- 临床数据采集 CRF 和随访录入；样本采集台账已移动到患者队列管理页面下方。
 - 知情同意列表、状态管理、版本信息和同意书预览。
-- 样本台账、多组学检测记录、QC 状态和结果文件状态展示。
+- 样本台账、多组学检测记录、QC 状态和结果文件状态展示；样本记录支持存储位置、初始量、剩余量和混合单位，检测记录支持人工选择一个或多个样本并记录每个样本的使用量。
 - 患者旅程单患者全景视图。
 - 中英双语切换，偏好保存在浏览器 localStorage。
 - SLE CRF V0.1：由 `resource/SLE临床数据记录表.csv` 派生，当前 schema 文件为 `resource/sle-crf-v0.1.schema.json`，共 10 个分组、89 个字段。
 - 测试 seed：`backend/seed.py` 读取 CRF V0.1 schema，可显式生成 70 名测试患者、210 条访视、140 条随访记录、210 条 CRF 记录及关联样本/组学/知情同意数据；该 seed 不在正式 Docker 首次启动时自动执行。
 - 多 Study 权限测试 fixture：后端 seed 包含 `LGL-1111`、`RWD-NMO-2026` 与 `LZXK-01`，所有 RWD EDC 核心表通过 `study_id` 隔离，样本检测项目使用 `testing_project_id`。
-- 跨 Study 管理视角：`LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER` 可在 LZ 系统管理态进入首页工作台、患者队列管理、样本及检测、临床数据采集、患者旅程、导出/报表和 Study 系统管理。跨 Study 读取由前端按授权 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总；患者、CRF、样本/检测、访视、随访、导出、Query、质控和审批等业务 list 仍不能使用无 Study 上下文的旧路径。
+- 跨 Study 管理视角：`LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER` 登录后默认进入 LZ 全局态，可进入首页工作台、患者队列管理、样本及检测、临床数据采集、患者旅程、导出/报表和 Study 系统管理。全局首页工作台读取后端 `/analytics/summary`，由后端按平台角色 Study scope 聚合；跨 Study 业务列表读取由前端按授权 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总；患者、CRF、样本/检测、访视、随访、导出、Query、质控和审批等业务 list 仍不能使用无 Study 上下文的旧路径。
 - LZ 系统管理 first pass：`LZ_ADMIN` 已可通过 `POST /studies`、`PATCH /studies/{study_id}` 和 `DELETE /studies/{study_id}` 新建、终止和软删除 Study；Study 主数据已包含 `leading_pi_info` 和 `system_admin`。`terminated` / `deleted` Study 会在后端拒绝患者、CRF、访视、随访、样本、组学、文件、质控和导出写入。`GET/PATCH /users`、`PATCH /users/{user_id}/study-scope` 和 `/studies/{study_id}/members` 已支持用户资料修改、平台级 Study scope 管理、Study 系统管理员分配和本 Study 成员启停；`users.last_login_at` 由登录接口写入并显示在账号列表。
+- Study 系统管理全局配置已加入疾病类型、样本类型和检测类型字典维护；患者队列新建/编辑患者使用疾病类型下拉框，样本及检测新增样本/检测使用样本类型和检测类型下拉框。新建平台账户支持 `LZ_ADMIN`、`LZ_CRC` 和 `LZ_DATA_MANAGER`，非 Admin 平台角色创建后会同步平台 Study scope。
 - `LZXK-01`：真实世界肺癌耐药研究，默认 20 名患者、60 条访视、40 条随访记录、60 条 CRF、44 个样本、84 条组学记录；CRF 为独立 15 字段肺癌耐药 schema，不再继承或追加 SLE 字段。账号 `lung-pi@demo.linzight`、`lung-crc@demo.linzight`、`lung-config@demo.linzight`、`lung-dm@demo.linzight` 分别覆盖 Study PI/CRC/配置管理员/数据管理员。
 - 平台级/研究级角色：正式 UI 以 `LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER` 与 `STUDY_PI`、`STUDY_CRC`、`STUDY_CONFIG_ADMIN`、`STUDY_DATA_MANAGER` 为主；后端仍保留旧 smoke fixture 兼容角色。
 - Study CRF 版本：正式运行直接以 `study_crf_versions.schema_json` 保存每个 Study 的 CRF schema，`crf_entries.crf_version_id` 保留历史版本引用；旧版 `crf_templates` 表已从 GA runtime schema 移除。
 - Study 配置总表：`study_configurations` 绑定 `study_id -> disease_area -> active_crf_version_id -> visit_plan -> consent_template -> testing_profile`；`LZXK-01` 绑定肺癌 CRF、肺癌知情同意模板和 `TP-LUNG-RESIST-OMICS` 检测 profile。
-- GA 核心数据库字段已显式化：`patients.patient_number`、`patients.patient_name`、`samples.note`、`omics_records.result_file_id`、`follow_up_records.record_note` 和 `follow_up_records.payload`。患者姓名默认显示拼音首字母，完整姓名只默认授权给 `LZ_ADMIN`、`STUDY_CONFIG_ADMIN`、`STUDY_CRC` 和 `LZ_CRC`。患者 CRF 由每个 Study 的 `study_crf_versions.schema_json` 与 `crf_entries.payload` 承载；患者随访由 `study_configurations.follow_up_schema` 与 `follow_up_records.payload` 承载；患者旅程必须从患者、CRF、访视、随访、样本、检测和文件记录聚合。
-- Study 访视计划：`study_visit_plans` 独立于 CRF 结构，按 Study 定义 V1/V2/V3、时间窗、必填表单和样本要求；`visits.visit_plan_id` 关联计划，新建患者会自动生成计划访视和 CRF 草稿。
+- GA 核心数据库字段已显式化：`patients.patient_number`、`patients.patient_name`、`samples.note`、`omics_records.vendor`、`omics_records.result_file_id`、`follow_up_records.record_note` 和 `follow_up_records.payload`。患者姓名默认显示拼音首字母，完整姓名只默认授权给 `LZ_ADMIN`、`STUDY_CONFIG_ADMIN`、`STUDY_CRC` 和 `LZ_CRC`。患者 CRF 由每个 Study 的 `study_crf_versions.schema_json` 与 `crf_entries.payload` 承载；患者随访由 `study_configurations.follow_up_schema` 与 `follow_up_records.payload` 承载；患者旅程必须从患者、CRF、访视、随访、样本、检测和文件记录聚合。
+- Study 访视计划：`study_visit_plans` 独立于 CRF 结构，按 Study 定义访视编码、时间窗、必填表单和样本要求；`visits.visit_plan_id` 关联计划。新建患者只创建患者主档和待签署知情同意，不自动生成计划访视、CRF 草稿或 Patient Journey 事件。
 - 随访记录：`follow_up_records` 独立于 CRF 版本配置，隶属于患者信息，绑定 `study_id + patient_id`，可选关联 `visit_id`，Patient Journey 已接入展示。
 - FastAPI 后端：患者、样本、组学、知情同意、CRF、文件、质量、导出、审批和患者全景接口。
 - 静态 HTML 导出：八个业务模块各一个入口页面。
@@ -40,7 +41,7 @@
 
 ## 尚未实现功能
 
-- 完整生产级认证、集中身份源、权限审批流和企业级用户管理；当前已有 GA 功能测试级用户资料修改、Study 成员管理、Study 系统管理员分配和平台角色 Study scope 管理。
+- 完整生产级认证、集中身份源、权限审批流和企业级用户管理；当前已有内部试点级用户资料修改、Study 成员管理、Study 系统管理员分配和平台角色 Study scope 管理。
 - 真实 EDC/EMR/LIS/组学平台 API 接入。
 - 前端组件/真实浏览器自动化测试需要继续扩展；当前已提供并纳入 CI/release gate 的检查包括 `npm run smoke:api`、`npm run smoke:crf-semantics`、`npm run export:openapi`、`npm run smoke:ui`、`npm run smoke:static-runtime`、`npm run browser:matrix`、`npm run demo:e2e`、`npm run smoke:performance`、`npm run release:check` 和 `npm test` 综合 smoke，后续仍需扩展到更多浏览器和截图基线。
 - 静态导出 runtime smoke 已加入 `npm run smoke:static-runtime`：启动 `exports/html` 静态服务器，登录 `LZXK-01` 肺癌 CRC，验证 390px 临床数据采集页可见内容包含肺癌字段且不漏 SLE/免疫病字段。

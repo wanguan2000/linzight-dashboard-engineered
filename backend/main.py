@@ -56,7 +56,7 @@ try:
     from .permissions import can_access_study, first_accessible_study_id, get_user_study_scope, permission_matrix, role_can, user_role
     from .provisioning import ensure_initial_admin
     from .security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, LoginResponse, OmicsCreate, OmicsUpdate, PasswordResetConfirm, PasswordResetRequest, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserPublic, UserStatusUpdate, UserUpdate, VisitUpdate
+    from .schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalConfigurationUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, LoginResponse, OmicsCreate, OmicsUpdate, PasswordResetConfirm, PasswordResetRequest, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyConfigurationUpdate, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserPublic, UserStatusUpdate, UserUpdate, VisitUpdate
     from .seed import seed_database
 except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from database import (
@@ -98,10 +98,10 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from permissions import can_access_study, first_accessible_study_id, get_user_study_scope, permission_matrix, role_can, user_role
     from provisioning import ensure_initial_admin
     from security import DEFAULT_DEMO_PASSWORD, PASSWORD_POLICY_MESSAGE, create_access_token, hash_password, legacy_sha256_hash, parse_access_token, password_meets_policy, verify_password
-    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, LoginResponse, OmicsCreate, OmicsUpdate, PasswordResetConfirm, PasswordResetRequest, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserPublic, UserStatusUpdate, UserUpdate, VisitUpdate
+    from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalConfigurationUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, LoginResponse, OmicsCreate, OmicsUpdate, PasswordResetConfirm, PasswordResetRequest, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyConfigurationUpdate, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserPublic, UserStatusUpdate, UserUpdate, VisitUpdate
     from seed import seed_database
 
-app = FastAPI(title="LinZight RWS EDC API", version="1.0.2")
+app = FastAPI(title="LinZight RWS EDC API", version="1.0.3")
 PASSWORD_RESET_TTL_SECONDS = int(os.getenv("LINZIGHT_PASSWORD_RESET_TTL_SECONDS", str(30 * 60)))
 
 LEGACY_ROLE_BY_ROLE_CODE = {
@@ -127,6 +127,13 @@ BUSINESS_WRITE_RESOURCES = {
     "files",
     "quality",
     "exports",
+}
+
+GLOBAL_CONFIGURATION_DEFAULTS = {
+    "disease_types": ["NPSLE", "Non-NPSLE", "MS", "NMOSD", "HC", "NSCLC", "LUAD", "LUSC", "EGFR-TKI耐药", "ALK耐药"],
+    "sample_types": ["肿瘤FFPE", "肿瘤组织", "CSF", "血液", "胸水"],
+    "detection_types": ["RNA-seq", "WES", "scRNA-seq", "类器官构建", "Olink"],
+    "quantity_units": ["mL", "块", "片", "管"],
 }
 
 app.add_middleware(
@@ -320,6 +327,51 @@ def append_study_filter(conn: Any, user: dict[str, Any], where: list[str], param
     placeholders = ", ".join("?" for _ in study_ids)
     where.append(f"{column} IN ({placeholders})")
     params.extend(study_ids)
+
+
+def normalize_config_values(values: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = str(value).strip()
+        if normalized and normalized not in seen:
+            output.append(normalized)
+            seen.add(normalized)
+    return output
+
+
+def read_global_configuration(conn: Any) -> dict[str, list[str]]:
+    rows = conn.execute("SELECT key, values_json FROM global_configurations").fetchall()
+    config = {key: list(values) for key, values in GLOBAL_CONFIGURATION_DEFAULTS.items()}
+    for row in rows:
+        key = row["key"]
+        if key not in config:
+            continue
+        values = decode_json(row["values_json"], config[key])
+        if isinstance(values, list):
+            normalized = normalize_config_values([str(value) for value in values])
+            if key == "detection_types" and normalized == ["RNA-seq", "WES", "scRNA-seq", "Olink", "IHC"]:
+                normalized = list(GLOBAL_CONFIGURATION_DEFAULTS[key])
+            if normalized:
+                config[key] = normalized
+    return config
+
+
+def write_global_configuration(conn: Any, config: dict[str, list[str]]) -> dict[str, list[str]]:
+    now = utc_now()
+    for key, fallback in GLOBAL_CONFIGURATION_DEFAULTS.items():
+        values = normalize_config_values(config.get(key) or fallback)
+        if not values:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{key} must not be empty")
+        conn.execute(
+            """
+            INSERT INTO global_configurations (key, values_json, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT (key) DO UPDATE SET values_json = excluded.values_json, updated_at = excluded.updated_at
+            """,
+            (key, encode_json(values), now),
+        )
+    return read_global_configuration(conn)
 
 
 def require_study_context(study_id: str | None, resource: str) -> str:
@@ -608,6 +660,25 @@ def patient_study_id(conn: Any, patient_id: str) -> str:
     return row["study_id"]
 
 
+def normalize_omics_sample_ids(conn: Any, patient_id: str, primary_sample_id: str | None, sample_ids: list[str] | None) -> list[str]:
+    ids: list[str] = []
+    for sample_id in [primary_sample_id, *(sample_ids or [])]:
+        if sample_id and sample_id not in ids:
+            ids.append(sample_id)
+    if not ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="at least one sample is required")
+    placeholders = ",".join("?" for _ in ids)
+    rows = conn.execute(f"SELECT id, patient_id FROM samples WHERE id IN ({placeholders})", tuple(ids)).fetchall()
+    found = {row["id"]: row["patient_id"] for row in rows}
+    missing = [sample_id for sample_id in ids if sample_id not in found]
+    if missing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"sample not found: {', '.join(missing)}")
+    wrong_patient = [sample_id for sample_id, row_patient_id in found.items() if row_patient_id != patient_id]
+    if wrong_patient:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="all selected samples must belong to the detection patient")
+    return ids
+
+
 def visit_patient_scope(conn: Any, visit_id: str) -> dict[str, Any]:
     row = fetch_one(conn, "SELECT study_id, patient_id FROM visits WHERE id = ?", (visit_id,))
     return {"study_id": row["study_id"], "patient_id": row["patient_id"]}
@@ -734,8 +805,8 @@ def study_crf_field_names(conn: Any, study_id: str) -> set[str]:
 QUERY_NON_CRF_FIELDS: dict[str, set[str]] = {
     "visits": {"visit_date", "visit_type", "sle_dai", "medication", "sample_collection", "completeness", "status"},
     "consents": {"status", "signed_at", "version", "method"},
-    "samples": {"sample_count", "sample_type", "collected_at", "storage", "note", "status"},
-    "omics_records": {"assay", "platform", "run_id", "status", "qc", "result_file_id", "sent_at", "completed_at"},
+    "samples": {"sample_count", "sample_type", "collected_at", "storage", "initial_quantity", "remaining_quantity", "quantity_unit", "note", "status"},
+    "omics_records": {"assay", "vendor", "platform", "run_id", "status", "qc", "result_file_id", "sent_at", "completed_at", "sample_ids", "sample_usage"},
     "follow_up_records": {
         "follow_up_date",
         "follow_up_method",
@@ -1435,6 +1506,27 @@ def list_studies(authorization: str | None = Header(default=None)) -> list[dict[
         return [row_to_study(row) for row in conn.execute(sql, params).fetchall()]
 
 
+@app.get("/global-configuration")
+def get_global_configuration(authorization: str | None = Header(default=None)) -> dict[str, list[str]]:
+    with connect() as conn:
+        authorize(authorization, "studies", "read", conn=conn)
+        return read_global_configuration(conn)
+
+
+@app.put("/global-configuration")
+def update_global_configuration(payload: GlobalConfigurationUpdate, authorization: str | None = Header(default=None)) -> dict[str, list[str]]:
+    with connect() as conn:
+        actor = authorize(authorization, "studies", "write", conn=conn)
+        if user_role(actor) != "LZ_ADMIN":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can update global configuration")
+        return write_global_configuration(conn, {
+            "disease_types": payload.disease_types,
+            "sample_types": payload.sample_types,
+            "detection_types": payload.detection_types,
+            "quantity_units": payload.quantity_units,
+        })
+
+
 @app.patch("/studies/{study_id}")
 def update_study(study_id: str, payload: StudyUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     data = dump_model(payload)
@@ -1496,6 +1588,50 @@ def get_study_configuration(study_id: str, authorization: str | None = Header(de
     with connect() as conn:
         authorize(authorization, "studies", "read", study_id=study_id, conn=conn)
         return row_to_study_configuration(fetch_one(conn, "SELECT * FROM study_configurations WHERE study_id = ?", (study_id,)))
+
+
+@app.put("/studies/{study_id}/configuration")
+def update_study_configuration(
+    study_id: str,
+    payload: StudyConfigurationUpdate,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    data = dump_model(payload, exclude_unset=True)
+    with connect() as conn:
+        actor = authorize(authorization, "studies", "write", study_id=study_id, conn=conn)
+        study = fetch_one(conn, "SELECT status FROM studies WHERE id = ?", (study_id,))
+        if study["status"] in {"terminated", "deleted"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study is terminated or deleted; configuration writes are disabled")
+        before = row_to_study_configuration(fetch_one(conn, "SELECT * FROM study_configurations WHERE study_id = ?", (study_id,)))
+        columns: list[str] = []
+        values: list[Any] = []
+        scalar_columns = {
+            "disease_area": "disease_area",
+            "active_crf_version_id": "active_crf_version_id",
+            "consent_template": "consent_template",
+        }
+        json_columns = {
+            "visit_plan": "visit_plan_json",
+            "testing_profile": "testing_profile_json",
+            "follow_up_schema": "follow_up_schema_json",
+        }
+        for payload_key, column_name in scalar_columns.items():
+            if payload_key in data and data[payload_key] is not None:
+                columns.append(f"{column_name} = ?")
+                values.append(data[payload_key])
+        for payload_key, column_name in json_columns.items():
+            if payload_key in data and data[payload_key] is not None:
+                columns.append(f"{column_name} = ?")
+                values.append(encode_json(data[payload_key]))
+        if not columns:
+            return before
+        columns.append("updated_at = ?")
+        values.append(utc_now())
+        values.append(study_id)
+        conn.execute(f"UPDATE study_configurations SET {', '.join(columns)} WHERE study_id = ?", values)
+        after = row_to_study_configuration(fetch_one(conn, "SELECT * FROM study_configurations WHERE study_id = ?", (study_id,)))
+        log_operation(conn, actor, "UPDATE", "study_configurations", study_id, study_id=study_id, before=before, after=after)
+        return after
 
 
 @app.get("/studies/{study_id}/members")
@@ -2190,7 +2326,6 @@ def create_patient(payload: PatientCreate, path_study_id: str | None = None, aut
                 ),
             )
             row = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
-            created_plan_items = create_planned_visits_for_patient(conn, user, row, data["clinical_data"])
             consent_id = f"CONS-{patient_id}"
             conn.execute(
                 """
@@ -2200,8 +2335,6 @@ def create_patient(payload: PatientCreate, path_study_id: str | None = None, aut
                 """,
                 (consent_id, data["study_id"], patient_id),
             )
-            row["generated_visit_count"] = created_plan_items["visits"]
-            row["generated_crf_count"] = created_plan_items["crf_entries"]
             row["generated_consent_count"] = 1
             log_operation(conn, user, "CREATE", "patients", patient_id, study_id=data["study_id"], after=row)
             log_operation(conn, user, "CREATE", "consents", consent_id, study_id=data["study_id"], after={"id": consent_id, "patient_id": patient_id, "status": "待签署"})
@@ -2311,8 +2444,8 @@ def create_sample(payload: SampleCreate, path_study_id: str | None = None, autho
             conn.execute(
                 """
                 INSERT INTO samples
-                  (id, study_id, patient_id, patient_name, hospital_no, sample_type, visit, collected_at, storage, note, status, linked_omics_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  (id, study_id, patient_id, patient_name, hospital_no, sample_type, visit, collected_at, storage, initial_quantity, remaining_quantity, quantity_unit, note, status, linked_omics_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     sample_id,
@@ -2324,6 +2457,9 @@ def create_sample(payload: SampleCreate, path_study_id: str | None = None, autho
                     data["visit"],
                     data["collected_at"],
                     data["storage"],
+                    data["initial_quantity"],
+                    data["remaining_quantity"],
+                    data["quantity_unit"],
                     data["note"],
                     data["status"],
                     encode_json(data["linked_omics"]),
@@ -2724,12 +2860,14 @@ def create_omics(payload: OmicsCreate, path_study_id: str | None = None, authori
         if path_study_id and path_study_id != study_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match patient")
         user = authorize(authorization, "omics", "write", study_id=study_id, conn=conn)
+        sample_ids = normalize_omics_sample_ids(conn, data["patient_id"], data["sample_id"], data.get("sample_ids"))
+        data["sample_id"] = sample_ids[0]
         try:
             conn.execute(
                 """
                 INSERT INTO omics_records
-                  (id, study_id, testing_project_id, patient_id, patient_name, sample_id, sample_type, assay, platform, run_id, status, qc, result_file_id, sent_at, completed_at, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  (id, study_id, testing_project_id, patient_id, patient_name, sample_id, sample_ids_json, sample_usage_json, sample_type, assay, vendor, platform, run_id, status, qc, result_file_id, sent_at, completed_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record_id,
@@ -2738,8 +2876,11 @@ def create_omics(payload: OmicsCreate, path_study_id: str | None = None, authori
                     data["patient_id"],
                     data["patient_name"],
                     data["sample_id"],
+                    encode_json(sample_ids),
+                    encode_json(data["sample_usage"]),
                     data["sample_type"],
                     data["assay"],
+                    data["vendor"],
                     data["platform"],
                     data["run_id"],
                     data["status"],
@@ -2784,8 +2925,25 @@ def update_omics(record_id: str, payload: OmicsUpdate, authorization: str | None
             data["study_id"] = new_study_id
         elif "study_id" in data:
             data.pop("study_id")
-        columns = [f"{key} = ?" for key in data]
-        values = list(data.values())
+        effective_patient_id = data.get("patient_id") or before["patient_id"]
+        if "sample_id" in data or "sample_ids" in data:
+            requested_sample_ids = data.get("sample_ids")
+            primary_sample_id = data.get("sample_id") or (requested_sample_ids[0] if requested_sample_ids else before["sample_id"])
+            sample_ids = normalize_omics_sample_ids(conn, effective_patient_id, primary_sample_id, requested_sample_ids or before.get("sample_ids"))
+            data["sample_id"] = sample_ids[0]
+            data["sample_ids"] = sample_ids
+        columns: list[str] = []
+        values: list[Any] = []
+        for key, value in data.items():
+            if key == "sample_ids":
+                columns.append("sample_ids_json = ?")
+                values.append(encode_json(value))
+            elif key == "sample_usage":
+                columns.append("sample_usage_json = ?")
+                values.append(encode_json(value))
+            else:
+                columns.append(f"{key} = ?")
+                values.append(value)
         columns.append("updated_at = ?")
         values.extend([utc_now(), record_id])
         result = conn.execute(f"UPDATE omics_records SET {', '.join(columns)} WHERE id = ?", values)
@@ -3341,7 +3499,9 @@ def update_data_query(query_id: str, payload: DataQueryUpdate, authorization: st
 @app.get("/studies/{path_study_id}/analytics/summary")
 @app.get("/analytics/summary")
 def analytics_summary(path_study_id: str | None = None, study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    requested_study_id = scoped_study_id(path_study_id, study_id, "analytics")
+    if path_study_id and study_id and path_study_id != study_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match query study_id")
+    requested_study_id = path_study_id or study_id
     with connect() as conn:
         user = authorize(authorization, "patients", "read", study_id=requested_study_id, conn=conn)
         where: list[str] = []

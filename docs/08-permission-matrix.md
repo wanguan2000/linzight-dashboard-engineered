@@ -21,6 +21,7 @@
 | 模块 | 操作 | API endpoint | 允许角色 |
 | --- | --- | --- | --- |
 | Study Configuration | 读取 Study 配置 | `GET /studies`, `GET /study-configurations`, `GET /studies/{study_id}/configuration` | 全部角色按 Study scope 读取 |
+| Study Configuration | 更新当前 Study 配置 | `PUT /studies/{study_id}/configuration` | `LZ_ADMIN` 与本 Study `STUDY_CONFIG_ADMIN` 可写，仍按 Study scope 校验 |
 | LZ System Management | 新建/终止/删除 Study | `POST /studies`, `PATCH /studies/{study_id}`, `DELETE /studies/{study_id}` | `LZ_ADMIN` |
 | Account and Study Members | 创建/更新账号、平台授权范围与 Study 成员 | `GET/PATCH/POST /users`, `PATCH /users/{user_id}/study-scope`, `GET/POST /studies/{study_id}/members` | `LZ_ADMIN`, `STUDY_CONFIG_ADMIN`；平台授权范围仅 `LZ_ADMIN` |
 | Patient Cohort | 读取患者 | `GET /studies/{study_id}/patients`, `GET /patients/{patient_id}`, `GET /patients/{patient_id}/panorama` | 全部角色按 Study scope 读取 |

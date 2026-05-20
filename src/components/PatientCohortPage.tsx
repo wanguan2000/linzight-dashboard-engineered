@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   calculateClinicalCompleteness,
   type DiseaseType,
   type OmicsStatus,
   type PatientRecord
 } from '../data/patientCohort';
+import type { OmicsRecord, SampleRecord } from '../data/operations';
+import { getGlobalDetectionTypes, getGlobalDiseaseTypes, getGlobalSampleTypes, globalConfigChangedEvent } from '../data/globalConfig';
 import { Icon } from './Icon';
-import { KpiProgress } from './MetricGrid';
-import type { AuthenticatedUser } from '../data/auth';
-import { createPatientRecord, fetchWorkspaceDataset, getCurrentScopedStudyId, isPermissionError, updatePatientRecord } from '../services/api';
+import { studyOptions as defaultStudyOptions, type AuthenticatedUser } from '../data/auth';
+import { createPatientRecord, deletePatientRecord, fetchGlobalConfiguration, fetchStudies, fetchWorkspaceDataset, getCurrentScopedStudyId, isPermissionError, updatePatientRecord } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import type { IconName } from '../types';
+import { SampleTestingPage } from './ModulePages';
 
 const patientPageSize = 5;
 const diseasePalette: Record<DiseaseType, string> = {
@@ -26,15 +28,6 @@ const diseasePalette: Record<DiseaseType, string> = {
   ALK耐药: '#dd6b20'
 };
 
-type CohortKpiMetric = {
-  label: string;
-  value: string;
-  helper: string;
-  delta?: string;
-  icon: IconName;
-  progress?: number;
-};
-
 type DiseaseDistributionItem = {
   label: DiseaseType;
   value: number;
@@ -45,17 +38,27 @@ type DiseaseDistributionItem = {
 type SampleSummaryItem = {
   label: string;
   value: string;
-  helper: string;
-};
-
-type CompletenessTrend = {
-  areaPath: string;
-  linePath: string;
-  label: string;
-  axis: [string, string, string];
 };
 
 type PatientEditorMode = 'create' | 'edit';
+type StudyNameLookup = Record<string, string>;
+
+const sampleSummaryFallbackTypes = ['肿瘤FFPE', '肿瘤组织', 'CSF', '血液', '胸水'];
+const detectionSummaryFallbackTypes = ['RNA-seq', 'WES', 'scRNA-seq', '类器官构建', 'Olink'];
+const sampleSummaryAliases: Record<string, string[]> = {
+  肿瘤FFPE: ['肿瘤FFPE', 'FFPE', 'FFPE组织', '肿瘤FFPE组织'],
+  肿瘤组织: ['肿瘤组织', '组织', '肺癌组织'],
+  CSF: ['CSF', '脑脊液'],
+  血液: ['血液'],
+  胸水: ['胸水']
+};
+const detectionSummaryAliases: Record<string, string[]> = {
+  'RNA-seq': ['RNA-seq', 'RNAseq'],
+  WES: ['WES', '全外显子测序'],
+  'scRNA-seq': ['scRNA-seq', 'scRNAseq', '单细胞RNA-seq'],
+  类器官构建: ['类器官构建', '类器官', 'Organoid', 'Organoid culture'],
+  Olink: ['Olink', 'Olink/Simoa', 'Simoa']
+};
 
 const patientWriteRoles = new Set(['LZ_ADMIN', 'LZ_CRC', 'STUDY_CRC', 'STUDY_CONFIG_ADMIN']);
 
@@ -64,8 +67,9 @@ function canWritePatients(user?: AuthenticatedUser | null) {
 }
 
 function currentStudyDefaultDisease(studyId?: string): DiseaseType {
-  if (studyId === 'LZXK-01') return 'NSCLC';
-  return 'NPSLE';
+  const configuredDiseases = getGlobalDiseaseTypes();
+  if (studyId === 'LZXK-01' && configuredDiseases.includes('NSCLC')) return 'NSCLC';
+  return configuredDiseases[0] ?? 'NPSLE';
 }
 
 function makeDraftPatient(studyId?: string): PatientRecord {
@@ -81,22 +85,32 @@ function makeDraftPatient(studyId?: string): PatientRecord {
     diseaseType: currentStudyDefaultDisease(studyId),
     organs: [],
     samples: [],
-    omicsStatus: '样本采集',
+    omicsStatus: '未采集',
     note: '',
     clinicalData: {}
   };
 }
 
 function sampleText(patient: PatientRecord) {
+  if (!patient.samples.length) return '未采集';
   return patient.samples.map((sample) => `${sample.type}${sample.count > 1 ? ` x${sample.count}` : ''}`).join(' / ');
 }
 
-function sampleSummaryIcon(label: string) {
+function sampleSummaryIcon(label: string): IconName {
   if (label === '血液') return 'blood';
   if (label === 'CSF') return 'csf';
   if (label === '肾') return 'kidney';
-  if (label === '组织') return 'sampleTube';
-  if (label === '胸水') return 'sampleBank';
+  if (label === '肿瘤FFPE') return 'ffpeBlock';
+  if (label === '组织' || label === '肿瘤组织') return 'tissueSlice';
+  if (label === '胸水') return 'pleuralFluid';
+  if (label === 'RNA-seq') return 'dna';
+  if (label === 'WES') return 'wesPanel';
+  if (label === 'scRNA-seq') return 'singleCell';
+  if (label === '类器官构建') return 'organoid';
+  if (label === 'Olink') return 'proteomics';
+  if (label === '总检测数') return 'testSummary';
+  if (label === '做过检测样本') return 'check';
+  if (label === '剩余样本数') return 'check';
   return 'sampleBank';
 }
 
@@ -104,13 +118,21 @@ function sampleSummaryClass(label: string) {
   if (label === '血液') return 'sample-summary__item--blood';
   if (label === 'CSF') return 'sample-summary__item--csf';
   if (label === '肾') return 'sample-summary__item--kidney';
-  if (label === '组织' || label === '胸水') return 'sample-summary__item--sample';
+  if (label === '肿瘤FFPE') return 'sample-summary__item--ffpe';
+  if (label === '组织' || label === '肿瘤组织') return 'sample-summary__item--tissue';
+  if (label === '胸水') return 'sample-summary__item--pleural';
+  if (label === 'RNA-seq') return 'sample-summary__item--rna';
+  if (label === 'WES') return 'sample-summary__item--wes';
+  if (label === 'scRNA-seq') return 'sample-summary__item--single-cell';
+  if (label === '类器官构建') return 'sample-summary__item--organoid';
+  if (label === 'Olink') return 'sample-summary__item--protein';
   return 'sample-summary__item--total';
 }
 
 function statusClass(status: OmicsStatus) {
   if (status === '完成') return 'is-complete';
   if (status === '进行中') return 'is-running';
+  if (status === '未采集') return 'is-low';
   return 'is-collecting';
 }
 
@@ -135,18 +157,28 @@ function studyOptionsForUser(user?: AuthenticatedUser | null, records: PatientRe
   return Array.from(new Set([...scopedStudies, ...uniqueStudyIds(records)])).sort();
 }
 
+function defaultStudyNameLookup(): StudyNameLookup {
+  return Object.fromEntries(defaultStudyOptions.map((study) => [study.id, study.name]));
+}
+
+function studyNameForPatient(patient: PatientRecord, studyNameById: StudyNameLookup) {
+  return patient.studyName || studyNameById[patient.studyId] || patient.studyId || '-';
+}
+
 function formatPercent(value: number, total: number) {
   if (!total) return '0%';
   return `${((value / total) * 100).toFixed(1)}%`;
 }
 
-function average(values: number[]) {
-  if (!values.length) return 0;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
+function preferredConfiguredTypes(configuredTypes: string[], fallbackTypes: string[]) {
+  const configuredMatches = configuredTypes.filter((item) => fallbackTypes.includes(item));
+  const hasCurrentSummarySet = fallbackTypes.every((item) => configuredMatches.includes(item));
+  return hasCurrentSummarySet ? configuredMatches.slice(0, 5) : fallbackTypes;
 }
 
-function getCompletenessValues(patients: PatientRecord[]) {
-  return patients.map((patient) => calculateClinicalCompleteness(patient.clinicalData));
+function countMatchingLabels<T>(records: T[], label: string, aliases: Record<string, string[]>, getValue: (record: T) => string) {
+  const acceptedValues = new Set([label, ...(aliases[label] ?? [])]);
+  return records.filter((record) => acceptedValues.has(getValue(record))).length;
 }
 
 function buildDiseaseDistribution(patients: PatientRecord[]): DiseaseDistributionItem[] {
@@ -165,6 +197,9 @@ function buildDiseaseDistribution(patients: PatientRecord[]): DiseaseDistributio
 }
 
 function buildDonutGradient(distribution: DiseaseDistributionItem[]) {
+  if (!distribution.length) {
+    return 'radial-gradient(circle, rgba(255, 255, 255, 0.96) 0 48%, transparent 49%), conic-gradient(rgba(226, 234, 242, 0.9) 0 100%)';
+  }
   let cursor = 0;
   const segments = distribution.map((item) => {
     const start = cursor;
@@ -175,99 +210,61 @@ function buildDonutGradient(distribution: DiseaseDistributionItem[]) {
   return `radial-gradient(circle, rgba(255, 255, 255, 0.96) 0 48%, transparent 49%), conic-gradient(${segments.join(', ')})`;
 }
 
-function buildSampleSummary(patients: PatientRecord[]): SampleSummaryItem[] {
-  const counts = patients.reduce<Record<string, number>>((acc, patient) => {
-    patient.samples.forEach((sample) => {
-      acc[sample.type] = (acc[sample.type] ?? 0) + sample.count;
-    });
-    return acc;
-  }, {});
-  const totalSamples = Object.values(counts).reduce((sum, value) => sum + value, 0);
-  const patientCount = patients.length;
+function buildSampleSummary(samples: SampleRecord[], configuredTypes: string[]): SampleSummaryItem[] {
+  const totalSamples = samples.length;
+  const labels = preferredConfiguredTypes(configuredTypes, sampleSummaryFallbackTypes);
 
   return [
-    ...['血液', 'CSF', '肾', '组织', '胸水']
-      .filter((label) => counts[label])
-      .map((label) => ({ label, value: formatCount(counts[label] ?? 0), helper: formatPercent(counts[label] ?? 0, patientCount) })),
-    { label: '总样本数', value: formatCount(totalSamples), helper: '数据库实时' }
+    ...labels.map((label) => {
+      const value = countMatchingLabels(samples, label, sampleSummaryAliases, (sample) => sample.sampleType);
+      return { label, value: formatCount(value) };
+    }),
+    { label: '总样本数', value: formatCount(totalSamples) }
   ];
 }
 
-function buildKpiMetrics(patients: PatientRecord[]): CohortKpiMetric[] {
-  const patientCount = patients.length;
-  const countByDisease = patients.reduce<Record<string, number>>((acc, patient) => {
-    acc[patient.diseaseType] = (acc[patient.diseaseType] ?? 0) + 1;
-    return acc;
-  }, {});
-  const completeness = Number(average(getCompletenessValues(patients)).toFixed(1));
-  const topDiseases = Object.entries(countByDisease)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 3);
+function buildDetectionSummary(omicsRows: OmicsRecord[], configuredTypes: string[]): SampleSummaryItem[] {
+  const total = omicsRows.length;
+  const labels = preferredConfiguredTypes(configuredTypes, detectionSummaryFallbackTypes);
 
   return [
-    { label: '总患者数', value: formatCount(patientCount), helper: '数据库实时', icon: 'patients' },
-    ...topDiseases.map(([label, value]) => ({ label, value: formatCount(value), delta: formatPercent(value, patientCount), helper: '占总数', icon: 'dna' as IconName })),
-    { label: '数据完整性', value: `${completeness}%`, delta: `${patientCount}例`, helper: '平均完整度', icon: 'check', progress: completeness }
+    ...labels.map((label) => {
+      const value = countMatchingLabels(omicsRows, label, detectionSummaryAliases, (record) => record.assay);
+      return { label, value: formatCount(value) };
+    }),
+    { label: '总检测数', value: formatCount(total) }
   ];
 }
 
-function buildCompletenessTrend(patients: PatientRecord[]): CompletenessTrend {
-  const values = getCompletenessValues(patients);
-  const bucketSize = Math.max(1, Math.ceil(values.length / 3));
-  const buckets = [0, 1, 2].map((bucket) => {
-    const slice = values.slice(bucket * bucketSize, bucket * bucketSize + bucketSize);
-    return slice.length ? average(slice) : average(values);
-  });
-  const points = buckets.map((value, index) => {
-    const x = index * 110;
-    const y = 108 - Math.max(0, Math.min(100, value));
-    return { x, y };
-  });
-  const fallback = points[0] ?? { x: 0, y: 108 };
-  const [first = fallback, middle = fallback, last = fallback] = points;
-  const linePath = `M ${first.x} ${first.y} C 44 ${first.y} 66 ${middle.y} ${middle.x} ${middle.y} C 154 ${middle.y} 176 ${last.y} ${last.x} ${last.y}`;
-  const areaPath = `${linePath} L 220 118 L 0 118 Z`;
-  const current = Number(average(values).toFixed(1));
-
-  return {
-    areaPath,
-    linePath,
-    label: `${current}%`,
-    axis: ['前段', '中段', '当前']
-  };
+function hasRemainingQuantity(sample: SampleRecord) {
+  const value = Number.parseFloat(sample.remainingQuantity ?? '');
+  return Number.isFinite(value) && value > 0;
 }
 
-function PatientKpiGrid({ patients }: { patients: PatientRecord[] }) {
-  const { t } = useI18n();
-  const metrics = buildKpiMetrics(patients);
-
-  return (
-    <section className="patient-kpis" aria-label="患者队列关键指标">
-      {metrics.map((metric) => (
-        <article className="kpi-card patient-kpi" key={metric.label}>
-          <div>
-            <p className="kpi-card__label">{t(metric.label)}</p>
-            <strong className="kpi-card__value">{metric.value}</strong>
-            <p className={`kpi-card__delta${metric.delta ? ' is-up' : ''}`}>
-              {metric.delta ? <span className="delta-arrow">↑</span> : null}
-              {metric.delta ? <span>{metric.delta}</span> : null}
-              <span>{t(metric.helper)}</span>
-            </p>
-          </div>
-          {typeof metric.progress === 'number' ? (
-            <KpiProgress progress={metric.progress} />
-          ) : (
-            <Icon className="kpi-card__icon" name={metric.icon} size={44} />
-          )}
-        </article>
-      ))}
-    </section>
+function buildRemainingSampleSummary(samples: SampleRecord[], omicsRows: OmicsRecord[], configuredTypes: string[]): SampleSummaryItem[] {
+  const detectedSampleIds = new Set<string>();
+  omicsRows.forEach((record) => (record.sampleIds?.length ? record.sampleIds : [record.sampleId]).forEach((sampleId) => detectedSampleIds.add(sampleId)));
+  const remainingDetectedSamples = samples.filter((sample) =>
+    hasRemainingQuantity(sample) && (detectedSampleIds.has(sample.id) || sample.linkedOmics.some((item) => item && item !== '待选择' && item !== '待指定'))
   );
+  const totalRemainingDetectedSamples = remainingDetectedSamples.length;
+  const labels = preferredConfiguredTypes(configuredTypes, sampleSummaryFallbackTypes);
+
+  return [
+    ...labels.map((label) => {
+      const value = countMatchingLabels(remainingDetectedSamples, label, sampleSummaryAliases, (sample) => sample.sampleType);
+      return { label, value: formatCount(value) };
+    }),
+    { label: '剩余样本数', value: formatCount(totalRemainingDetectedSamples) }
+  ];
 }
 
-function CohortOverviewPanel({ patients }: { patients: PatientRecord[] }) {
+function CohortOverviewPanel({ patients, samples, omicsRows }: { patients: PatientRecord[]; samples: SampleRecord[]; omicsRows: OmicsRecord[] }) {
   const { t } = useI18n();
   const distribution = buildDiseaseDistribution(patients);
+  const studyCount = new Set(patients.map((patient) => patient.studyId).filter(Boolean)).size;
+  const sampledPatientCount = new Set(samples.map((sample) => sample.patientId || sample.patientName).filter(Boolean)).size;
+  const completedOmicsCount = omicsRows.filter((record) => ['测序完成', '结果归档', '检测完成', '已归档'].includes(String(record.status))).length;
 
   return (
     <section className="cohort-side-card" aria-label="队列概览">
@@ -279,61 +276,87 @@ function CohortOverviewPanel({ patients }: { patients: PatientRecord[] }) {
           <strong>{formatCount(patients.length)}</strong>
           <span>{t('总计')}</span>
         </div>
-        <div className="cohort-legend">
-          {distribution.map((item) => (
-            <div className="cohort-legend__row" key={item.label}>
-              <span className={`cohort-legend__dot cohort-legend__dot--${item.label.toLowerCase().replace('/', '-')}`} />
-              <span>{t(item.label)}</span>
-              <strong>{item.value} ({item.percent})</strong>
-            </div>
-          ))}
+        <div className="cohort-overview__content">
+          <div className="cohort-overview__stats">
+            <span><strong>{formatCount(studyCount)}</strong>{t('Study')}</span>
+            <span><strong>{formatCount(distribution.length)}</strong>{t('疾病类型')}</span>
+            <span><strong>{formatCount(sampledPatientCount)}</strong>{t('已采样')}</span>
+            <span><strong>{formatCount(completedOmicsCount)}</strong>{t('检测完成')}</span>
+          </div>
+          <div className="cohort-legend">
+            {distribution.map((item) => (
+              <div className="cohort-legend__row" key={item.label}>
+                <span className={`cohort-legend__dot cohort-legend__dot--${item.label.toLowerCase().replace('/', '-')}`} />
+                <span>{t(item.label)}</span>
+                <strong>{formatCount(item.value)}</strong>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>
   );
 }
 
-function CompletenessTrendPanel({ patients }: { patients: PatientRecord[] }) {
+function SampleSummaryPanel({ samples, configuredTypes }: { samples: SampleRecord[]; configuredTypes: string[] }) {
   const { t } = useI18n();
-  const trend = buildCompletenessTrend(patients);
-
-  return (
-    <section className="cohort-side-card" aria-label="数据完整性趋势">
-      <header className="cohort-side-card__header">
-        <h2>数据完整性趋势</h2>
-        <span>{t('当前')}</span>
-      </header>
-      <div className="cohort-mini-chart">
-        <svg viewBox="0 0 220 118" preserveAspectRatio="none" aria-hidden="true">
-          <line x1="0" y1="20" x2="220" y2="20" className="chart-grid" />
-          <line x1="0" y1="52" x2="220" y2="52" className="chart-grid" />
-          <line x1="0" y1="84" x2="220" y2="84" className="chart-grid" />
-          <path d={trend.areaPath} fill="rgba(45,191,184,.18)" />
-          <path d={trend.linePath} fill="none" stroke="#48b99b" strokeWidth="3" strokeLinecap="round" />
-          <text x="178" y="23" className="chart-label">{trend.label}</text>
-        </svg>
-        <div className="cohort-chart-axis">{trend.axis.map((label) => <span key={label}>{t(label)}</span>)}</div>
-      </div>
-    </section>
-  );
-}
-
-function SampleSummaryPanel({ patients }: { patients: PatientRecord[] }) {
-  const { t } = useI18n();
-  const summary = buildSampleSummary(patients);
+  const summary = buildSampleSummary(samples, configuredTypes);
 
   return (
     <section className="cohort-side-card" aria-label="样本采集汇总">
       <header className="cohort-side-card__header">
         <h2>样本采集汇总</h2>
       </header>
-      <div className="sample-summary">
+      <div className="sample-summary sample-summary--six">
         {summary.map((item) => (
           <div className={`sample-summary__item ${sampleSummaryClass(item.label)}`} key={item.label}>
             <Icon name={sampleSummaryIcon(item.label)} />
             <strong>{item.value}</strong>
             <span>{t(item.label)}</span>
-            <small>{t(item.helper)}</small>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DetectionSummaryPanel({ omicsRows, configuredTypes }: { omicsRows: OmicsRecord[]; configuredTypes: string[] }) {
+  const { t } = useI18n();
+  const summary = buildDetectionSummary(omicsRows, configuredTypes);
+
+  return (
+    <section className="cohort-side-card" aria-label="检测项目汇总">
+      <header className="cohort-side-card__header">
+        <h2>检测项目汇总</h2>
+      </header>
+      <div className="sample-summary sample-summary--six">
+        {summary.map((item) => (
+          <div className={`sample-summary__item ${sampleSummaryClass(item.label)}`} key={item.label}>
+            <Icon name={sampleSummaryIcon(item.label)} />
+            <strong>{item.value}</strong>
+            <span>{t(item.label)}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RemainingSampleSummaryPanel({ samples, omicsRows, configuredTypes }: { samples: SampleRecord[]; omicsRows: OmicsRecord[]; configuredTypes: string[] }) {
+  const { t } = useI18n();
+  const summary = buildRemainingSampleSummary(samples, omicsRows, configuredTypes);
+
+  return (
+    <section className="cohort-side-card" aria-label="剩余样本统计">
+      <header className="cohort-side-card__header">
+        <h2>剩余样本统计</h2>
+      </header>
+      <div className="sample-summary sample-summary--six">
+        {summary.map((item) => (
+          <div className={`sample-summary__item ${sampleSummaryClass(item.label)}`} key={item.label}>
+            <Icon name={sampleSummaryIcon(item.label)} />
+            <strong>{item.value}</strong>
+            <span>{t(item.label)}</span>
           </div>
         ))}
       </div>
@@ -345,12 +368,31 @@ interface PatientTableProps {
   patients: PatientRecord[];
   onEditPatient: (patient: PatientRecord) => void;
   onViewPatient: (patient: PatientRecord) => void;
+  onViewSamples?: (patient: PatientRecord) => void;
+  onAddSample?: (patient: PatientRecord) => void;
+  onAddOmics?: (patient: PatientRecord) => void;
+  onDeletePatient?: (patient: PatientRecord) => void;
   activePatientName?: string;
   canEdit?: boolean;
+  emptyMessage?: string;
   showStudyId?: boolean;
+  studyNameById?: StudyNameLookup;
 }
 
-function PatientTable({ patients, onEditPatient, onViewPatient, activePatientName, canEdit = true, showStudyId = false }: PatientTableProps) {
+function PatientTable({
+  patients,
+  onEditPatient,
+  onViewPatient,
+  onViewSamples = () => undefined,
+  onAddSample = () => undefined,
+  onAddOmics = () => undefined,
+  onDeletePatient = () => undefined,
+  activePatientName,
+  canEdit = true,
+  emptyMessage = '暂无匹配患者',
+  showStudyId = false,
+  studyNameById = defaultStudyNameLookup()
+}: PatientTableProps) {
   const { t } = useI18n();
   const [revealedPatientIds, setRevealedPatientIds] = useState<Set<string>>(new Set());
 
@@ -362,14 +404,14 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
             <th>{t('患者编号')}</th>
             <th>{t('患者姓名')}</th>
             {showStudyId ? <th>{t('Study ID')}</th> : null}
+            {showStudyId ? <th>{t('Study 名称')}</th> : null}
             <th>{t('住院号')}</th>
             <th>{t('性别')}</th>
             <th>{t('年龄')}</th>
             <th>{t('疾病类型')}</th>
-            <th>{t('受累脏器')}</th>
             <th>{t('样本采集')}</th>
             <th>{t('多组学检测')}</th>
-            <th>{t('完整性')}</th>
+            <th>{t('CRF完整性')}</th>
             <th>{t('注释')}</th>
             <th>{t('操作')}</th>
           </tr>
@@ -378,9 +420,11 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
           {patients.map((patient) => {
             const completeness = calculateClinicalCompleteness(patient.clinicalData);
             const revealKey = patient.id ?? `${patient.studyId}-${patient.name}`;
-            const patientNameInitials = patient.patientNameInitials || patient.patientName || '-';
-            const canRevealPatientName = Boolean(patient.patientName && patient.patientName !== patientNameInitials);
+            const hasPatientName = Boolean(patient.patientName?.trim());
+            const patientNameInitials = patient.patientNameInitials || patient.patientName || t('未录入姓名');
+            const canRevealPatientName = hasPatientName && patient.patientName !== patientNameInitials;
             const showFullPatientName = revealedPatientIds.has(revealKey) && canRevealPatientName;
+            const studyName = studyNameForPatient(patient, studyNameById);
               return (
               <tr className={patient.name === activePatientName ? 'is-active' : undefined} key={`${patient.studyId}-${patient.name}`}>
                 <td data-label={t('患者编号')}>{patient.name}</td>
@@ -399,22 +443,43 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
                       >
                         {t(showFullPatientName ? '隐藏姓名' : '授权查看')}
                       </button>
+                    ) : !hasPatientName ? (
+                      <button type="button" disabled title={t('未录入患者姓名，无法授权查看')}>
+                        {t('未录入姓名')}
+                      </button>
                     ) : null}
                   </div>
                 </td>
                 {showStudyId ? <td data-label={t('Study ID')}><span className="status-pill status-pill--info">{patient.studyId}</span></td> : null}
+                {showStudyId ? <td data-label={t('Study 名称')}>{t(studyName)}</td> : null}
                 <td data-label={t('住院号')}>{patient.hospitalNo}</td>
                 <td data-label={t('性别')}>{t(patient.sex)}</td>
                 <td data-label={t('年龄')}>{patient.age}</td>
                 <td data-label={t('疾病类型')}><span className={`disease-pill disease-pill--${patient.diseaseType.toLowerCase().replace('-', '')}`}>{t(patient.diseaseType)}</span></td>
-                <td data-label={t('受累脏器')}>{t(patient.organs.join(' / '))}</td>
                 <td data-label={t('样本采集')}>{t(sampleText(patient))}</td>
                 <td data-label={t('多组学检测')}><span className={`omics-pill ${statusClass(patient.omicsStatus)}`}>{t(patient.omicsStatus)}</span></td>
-                <td data-label={t('完整性')}><span className={`complete-pill ${completenessClass(completeness)}`}>{completeness}%</span></td>
+                <td data-label={t('CRF完整性')}><span className={`complete-pill ${completenessClass(completeness)}`}>{completeness}%</span></td>
                 <td data-label={t('注释')} className="patient-note">{t(patient.note)}</td>
                 <td data-label={t('操作')}>
 	                  <div className="patient-actions">
-	                    <button type="button" onClick={() => onViewPatient(patient)}>{t('查看')}</button>
+	                    <button type="button" onClick={() => onViewPatient(patient)}>{t('病程查看')}</button>
+	                    <button type="button" onClick={() => onViewSamples(patient)}>{t('样本查看')}</button>
+	                    <button
+	                      type="button"
+	                      disabled={!canEdit || !patient.id}
+	                      title={canEdit ? undefined : t('当前角色没有样本写入权限')}
+	                      onClick={() => onAddSample(patient)}
+	                    >
+	                      {t('新增样本')}
+	                    </button>
+	                    <button
+	                      type="button"
+	                      disabled={!canEdit || !patient.id}
+	                      title={canEdit ? undefined : t('当前角色没有检测写入权限')}
+	                      onClick={() => onAddOmics(patient)}
+	                    >
+	                      {t('新增检测')}
+	                    </button>
 	                    <button
 	                      type="button"
 	                      disabled={!canEdit}
@@ -423,6 +488,14 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
 	                    >
 	                      {t('编辑')}
 	                    </button>
+	                    <button
+	                      type="button"
+	                      disabled={!canEdit || !patient.id}
+	                      title={canEdit ? undefined : t('当前角色没有患者写入权限')}
+	                      onClick={() => onDeletePatient(patient)}
+	                    >
+	                      {t('删除')}
+	                    </button>
 	                  </div>
                 </td>
               </tr>
@@ -430,7 +503,7 @@ function PatientTable({ patients, onEditPatient, onViewPatient, activePatientNam
           })}
           {!patients.length && (
             <tr>
-	              <td colSpan={showStudyId ? 13 : 12}>{t('暂无匹配患者')}</td>
+	              <td colSpan={showStudyId ? 13 : 11}>{t(emptyMessage)}</td>
             </tr>
           )}
         </tbody>
@@ -466,6 +539,10 @@ export function PatientListModule({
   const [currentPage, setCurrentPage] = useState(1);
   const studyOptions = useMemo(() => uniqueStudyIds(patients), [patients]);
   const showStudyId = studyOptions.length > 1;
+  const studyNameById = useMemo(() => ({
+    ...defaultStudyNameLookup(),
+    ...Object.fromEntries(patients.filter((patient) => patient.studyName).map((patient) => [patient.studyId, patient.studyName as string]))
+  }), [patients]);
   const diseaseOptions = useMemo<Array<'全部' | DiseaseType>>(
     () => ['全部', ...Array.from(new Set(patients.filter((patient) => studyFilter === '全部 Study' || patient.studyId === studyFilter).map((patient) => patient.diseaseType)))],
     [patients, studyFilter]
@@ -481,9 +558,9 @@ export function PatientListModule({
 	          patient.name,
 	          patient.patientName ?? '',
 	          patient.patientNameInitials ?? '',
+          studyNameForPatient(patient, studyNameById),
 	          patient.hospitalNo,
           patient.diseaseType,
-          patient.organs.join(' '),
           sampleText(patient),
           patient.note
         ].some((value) => value.toLowerCase().includes(query));
@@ -501,7 +578,7 @@ export function PatientListModule({
         if (sort === '年龄升序') return a.age - b.age;
         return a.name.localeCompare(b.name);
       });
-  }, [ageRange, disease, patients, search, sex, sort, studyFilter]);
+  }, [ageRange, disease, patients, search, sex, sort, studyFilter, studyNameById]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPatients.length / patientPageSize));
   const visiblePage = Math.min(currentPage, totalPages);
@@ -584,7 +661,7 @@ export function PatientListModule({
           <span>{t('排序')}</span>
           <select value={sort} onChange={(event) => setSort(event.target.value)}>
             <option value="最近更新">{t('最近更新')}</option>
-            <option value="完整性优先">{t('完整性优先')}</option>
+            <option value="完整性优先">{t('CRF完整性优先')}</option>
             <option value="年龄升序">{t('年龄升序')}</option>
           </select>
         </label>
@@ -595,6 +672,7 @@ export function PatientListModule({
         activePatientName={activePatientName}
         onEditPatient={onEditPatient}
         onViewPatient={onViewPatient}
+        studyNameById={studyNameById}
         showStudyId={showStudyId}
       />
 
@@ -641,6 +719,7 @@ interface PatientCohortPageProps {
   onEditPatient?: (patient: PatientRecord) => void;
   onPatientChange?: (patient: PatientRecord) => void;
   onViewPatient?: (patient: PatientRecord) => void;
+  onViewSamples?: (patient: PatientRecord) => void;
 }
 
 export function PatientCohortPage({
@@ -650,6 +729,8 @@ export function PatientCohortPage({
 }: PatientCohortPageProps) {
   const { t } = useI18n();
   const [patients, setPatients] = useState<PatientRecord[]>([]);
+  const [sampleRows, setSampleRows] = useState<SampleRecord[]>([]);
+  const [omicsRows, setOmicsRows] = useState<OmicsRecord[]>([]);
   const [search, setSearch] = useState('');
   const [sex, setSex] = useState('全部');
   const [ageRange, setAgeRange] = useState('全部');
@@ -660,41 +741,132 @@ export function PatientCohortPage({
   const [editorMode, setEditorMode] = useState<PatientEditorMode | null>(null);
   const [draftPatient, setDraftPatient] = useState<PatientRecord | null>(null);
   const [saveStatus, setSaveStatus] = useState('等待患者操作');
+  const [patientLoadStatus, setPatientLoadStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [sampleCollectedOnly, setSampleCollectedOnly] = useState(false);
+  const [configuredDiseaseTypes, setConfiguredDiseaseTypes] = useState(getGlobalDiseaseTypes);
+  const [configuredSampleTypes, setConfiguredSampleTypes] = useState(getGlobalSampleTypes);
+  const [configuredDetectionTypes, setConfiguredDetectionTypes] = useState(getGlobalDetectionTypes);
+  const [runtimeStudyOptions, setRuntimeStudyOptions] = useState<string[]>([]);
+  const [runtimeStudyNames, setRuntimeStudyNames] = useState<StudyNameLookup>(defaultStudyNameLookup);
+  const [sampleFocusPatient, setSampleFocusPatient] = useState<PatientRecord | null>(null);
+  const [sampleCreateRequest, setSampleCreateRequest] = useState(0);
+  const [omicsCreateRequest, setOmicsCreateRequest] = useState(0);
+  const sampleSectionRef = useRef<HTMLDivElement>(null);
   const currentStudyId = getCurrentScopedStudyId();
   const availableStudyOptions = useMemo(
-    () => currentStudyId ? [currentStudyId] : studyOptionsForUser(currentUser, patients),
-    [currentStudyId, currentUser, patients]
+    () => currentStudyId
+      ? [currentStudyId]
+      : Array.from(new Set([
+          ...runtimeStudyOptions,
+          ...studyOptionsForUser(currentUser, patients)
+        ])).sort(),
+    [currentStudyId, currentUser, patients, runtimeStudyOptions]
   );
   const selectedPatientWriteStudyId = currentStudyId ?? (studyFilter !== '全部 Study' ? studyFilter : availableStudyOptions[0]);
   const canEditPatientRecords = canWritePatients(currentUser) && Boolean(selectedPatientWriteStudyId);
   const showStudyId = true;
+  const studyNameById = useMemo(() => ({
+    ...defaultStudyNameLookup(),
+    ...runtimeStudyNames,
+    ...Object.fromEntries(patients.filter((patient) => patient.studyName).map((patient) => [patient.studyId, patient.studyName as string]))
+  }), [patients, runtimeStudyNames]);
   const studyScopedPatients = useMemo(
     () => patients.filter((patient) => studyFilter === '全部 Study' || patient.studyId === studyFilter),
     [patients, studyFilter]
   );
+  const studyScopedSamples = useMemo(
+    () => sampleRows.filter((sample) => studyFilter === '全部 Study' || sample.studyId === studyFilter),
+    [sampleRows, studyFilter]
+  );
+  const studyScopedOmics = useMemo(
+    () => omicsRows.filter((record) => studyFilter === '全部 Study' || record.studyId === studyFilter),
+    [omicsRows, studyFilter]
+  );
   const diseaseOptions = useMemo<Array<'全部' | DiseaseType>>(
-    () => ['全部', ...Array.from(new Set(studyScopedPatients.map((patient) => patient.diseaseType)))],
-    [studyScopedPatients]
+    () => ['全部', ...Array.from(new Set([...configuredDiseaseTypes, ...studyScopedPatients.map((patient) => patient.diseaseType)]))],
+    [configuredDiseaseTypes, studyScopedPatients]
   );
   const editorDiseaseOptions = useMemo<DiseaseType[]>(() => {
     const options = Array.from(new Set([
+      ...configuredDiseaseTypes,
       ...studyScopedPatients.map((patient) => patient.diseaseType),
       currentStudyDefaultDisease(currentStudyId)
     ]));
     return options.length ? options : [currentStudyDefaultDisease(currentStudyId)];
-  }, [currentStudyId, studyScopedPatients]);
+  }, [configuredDiseaseTypes, currentStudyId, studyScopedPatients]);
+
+  useEffect(() => {
+    const refresh = () => {
+      setConfiguredDiseaseTypes(getGlobalDiseaseTypes());
+      setConfiguredSampleTypes(getGlobalSampleTypes());
+      setConfiguredDetectionTypes(getGlobalDetectionTypes());
+    };
+    window.addEventListener(globalConfigChangedEvent, refresh);
+    return () => window.removeEventListener(globalConfigChangedEvent, refresh);
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    void fetchGlobalConfiguration()
+      .then((config) => {
+        if (ignore) return;
+        setConfiguredDiseaseTypes(config.diseaseTypes);
+        setConfiguredSampleTypes(config.sampleTypes);
+        setConfiguredDetectionTypes(config.detectionTypes);
+      })
+      .catch(() => undefined);
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setRuntimeStudyOptions([]);
+      return undefined;
+    }
+    let ignore = false;
+    void fetchStudies()
+      .then((studies) => {
+        if (ignore) return;
+        const activeStudies = studies.filter((study) => study.status !== 'deleted');
+        setRuntimeStudyOptions(activeStudies.map((study) => study.id));
+        setRuntimeStudyNames({
+          ...defaultStudyNameLookup(),
+          ...Object.fromEntries(activeStudies.map((study) => [study.id, study.name]))
+        });
+      })
+      .catch(() => {
+        if (!ignore) setRuntimeStudyOptions([]);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [currentUser]);
 
   useEffect(() => {
     let ignore = false;
 
+    setPatientLoadStatus('loading');
     void fetchWorkspaceDataset()
       .then((dataset) => {
         if (!ignore) {
           setPatients(dataset.patients);
+          setSampleRows(dataset.samples);
+          setOmicsRows(dataset.omics);
+          setPatientLoadStatus('ready');
+          setSaveStatus(dataset.patients.length ? `已读取 ${dataset.patients.length} 名患者` : '当前授权范围暂无患者');
         }
       })
-      .catch(() => undefined);
+      .catch((error) => {
+        if (!ignore) {
+          setPatients([]);
+          setSampleRows([]);
+          setOmicsRows([]);
+          setPatientLoadStatus('error');
+          setSaveStatus(isPermissionError(error) ? '后端登录已失效，请重新登录后查看患者' : '患者数据读取失败：请检查后端 API');
+        }
+      });
 
     return () => {
       ignore = true;
@@ -710,9 +882,9 @@ export function PatientCohortPage({
 	          patient.name,
 	          patient.patientName ?? '',
 	          patient.patientNameInitials ?? '',
+          studyNameForPatient(patient, studyNameById),
 	          patient.hospitalNo,
           patient.diseaseType,
-          patient.organs.join(' '),
           sampleText(patient),
           patient.note
         ].some((value) => value.toLowerCase().includes(query));
@@ -731,13 +903,21 @@ export function PatientCohortPage({
 	        if (sort === '年龄升序') return a.age - b.age;
 	        return a.name.localeCompare(b.name);
 	      });
-	  }, [ageRange, disease, sampleCollectedOnly, search, sex, sort, studyScopedPatients]);
+	  }, [ageRange, disease, sampleCollectedOnly, search, sex, sort, studyNameById, studyScopedPatients]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPatients.length / patientPageSize));
   const pageStart = (currentPage - 1) * patientPageSize;
   const paginatedPatients = filteredPatients.slice(pageStart, pageStart + patientPageSize);
   const displayStart = filteredPatients.length ? pageStart + 1 : 0;
   const displayEnd = Math.min(pageStart + patientPageSize, filteredPatients.length);
+  const emptyPatientMessage =
+    patientLoadStatus === 'loading'
+      ? '正在读取患者数据...'
+      : patientLoadStatus === 'error'
+        ? '患者数据读取失败，请重新登录或检查后端 API'
+        : patients.length
+          ? '暂无匹配患者'
+          : '当前授权范围暂无患者';
 
   useEffect(() => {
     setCurrentPage(1);
@@ -802,8 +982,8 @@ export function PatientCohortPage({
       setSaveStatus('请先选择一个 Study，再保存患者');
       return;
     }
-	    if (!draftPatient.name.trim() || !draftPatient.hospitalNo.trim()) {
-	      setSaveStatus('患者编号和住院号为必填项');
+	    if (!draftPatient.name.trim() || !draftPatient.patientName?.trim() || !draftPatient.hospitalNo.trim()) {
+	      setSaveStatus('患者编号、患者姓名和住院号为必填项');
       return;
     }
 
@@ -825,7 +1005,8 @@ export function PatientCohortPage({
         if (exists) return rows.map((patient) => (patient.id === saved.id || patient.name === saved.name ? { ...patient, ...saved } : patient));
         return [saved, ...rows];
       });
-      setSearch(saved.name);
+      setSearch('');
+      setRuntimeStudyOptions((options) => saved.studyId && !options.includes(saved.studyId) ? [...options, saved.studyId].sort() : options);
       onPatientChange(saved);
       setEditorMode(null);
       setDraftPatient(null);
@@ -833,6 +1014,47 @@ export function PatientCohortPage({
     } catch (error) {
       setSaveStatus(isPermissionError(error) ? '保存失败：当前角色没有患者写入权限' : '保存失败：后端未接受患者变更');
     }
+  }
+
+  async function removePatient(patient: PatientRecord) {
+    if (!patient.id) {
+      setSaveStatus('删除失败：缺少患者后端 ID');
+      return;
+    }
+    setSaveStatus(`患者 ${patient.name} 正在从后端删除...`);
+    try {
+      await deletePatientRecord(patient.id);
+      setPatients((rows) => rows.filter((row) => row.id !== patient.id));
+      setSaveStatus(`患者已删除：${patient.name}`);
+    } catch (error) {
+      setSaveStatus(isPermissionError(error) ? '删除失败：当前角色没有患者写入权限' : '删除失败：后端未接受删除请求');
+    }
+  }
+
+  function viewPatientSamples(patient: PatientRecord) {
+    setSampleFocusPatient(patient);
+    onPatientChange(patient);
+    window.requestAnimationFrame(() => {
+      sampleSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  function addPatientSample(patient: PatientRecord) {
+    setSampleFocusPatient(patient);
+    setSampleCreateRequest(Date.now());
+    onPatientChange(patient);
+    window.requestAnimationFrame(() => {
+      sampleSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  function addPatientOmics(patient: PatientRecord) {
+    setSampleFocusPatient(patient);
+    setOmicsCreateRequest(Date.now());
+    onPatientChange(patient);
+    window.requestAnimationFrame(() => {
+      sampleSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   return (
@@ -859,11 +1081,16 @@ export function PatientCohortPage({
         </button>
         <button className="chip patient-chip" type="button" onClick={() => setSort('完整性优先')}>
           <Icon name="check" />
-          <span>{t('完整性')} &gt;80%</span>
+          <span>{t('CRF完整性')} &gt;80%</span>
         </button>
       </section>
 
-      <PatientKpiGrid patients={studyScopedPatients} />
+      <section className="patient-overview-grid" aria-label="患者队列运营概览">
+        <CohortOverviewPanel patients={studyScopedPatients} samples={studyScopedSamples} omicsRows={studyScopedOmics} />
+        <SampleSummaryPanel samples={studyScopedSamples} configuredTypes={configuredSampleTypes} />
+        <DetectionSummaryPanel omicsRows={studyScopedOmics} configuredTypes={configuredDetectionTypes} />
+        <RemainingSampleSummaryPanel samples={studyScopedSamples} omicsRows={studyScopedOmics} configuredTypes={configuredSampleTypes} />
+      </section>
 
       <div className="patient-main-grid">
         <section className="patient-list-card">
@@ -937,7 +1164,7 @@ export function PatientCohortPage({
               <span>{t('排序')}</span>
               <select value={sort} onChange={(event) => setSort(event.target.value)}>
                 <option value="最近更新">{t('最近更新')}</option>
-                <option value="完整性优先">{t('完整性优先')}</option>
+                <option value="完整性优先">{t('CRF完整性优先')}</option>
                 <option value="年龄升序">{t('年龄升序')}</option>
               </select>
             </label>
@@ -963,7 +1190,8 @@ export function PatientCohortPage({
                       value={draftPatient.studyId || selectedPatientWriteStudyId || ''}
                       onChange={(event) => patchDraftPatient({
                         studyId: event.target.value,
-                        diseaseType: currentStudyDefaultDisease(event.target.value)
+                        diseaseType: currentStudyDefaultDisease(event.target.value),
+                        organs: []
                       })}
                     >
                       {availableStudyOptions.map((option) => <option value={option} key={option}>{option}</option>)}
@@ -1001,10 +1229,6 @@ export function PatientCohortPage({
                     {editorDiseaseOptions.map((option) => <option value={option} key={option}>{t(option)}</option>)}
                   </select>
                 </label>
-                <label>
-                  <span>{t('受累脏器')}</span>
-                  <input value={draftPatient.organs.join(' / ')} onChange={(event) => patchDraftPatient({ organs: event.target.value.split(/[、/]/).map((item) => item.trim()).filter(Boolean) })} />
-                </label>
                 <label className="patient-editor-note">
                   <span>{t('注释')}</span>
                   <input value={draftPatient.note} onChange={(event) => patchDraftPatient({ note: event.target.value })} />
@@ -1021,8 +1245,14 @@ export function PatientCohortPage({
           <PatientTable
             patients={paginatedPatients}
             canEdit={canEditPatientRecords}
+            emptyMessage={emptyPatientMessage}
             onEditPatient={openEditPatientEditor}
             onViewPatient={onViewPatient}
+            onViewSamples={viewPatientSamples}
+            onAddSample={addPatientSample}
+            onAddOmics={addPatientOmics}
+            onDeletePatient={(patient) => void removePatient(patient)}
+            studyNameById={studyNameById}
             showStudyId={showStudyId}
           />
 
@@ -1061,12 +1291,15 @@ export function PatientCohortPage({
           </footer>
         </section>
 
-        <aside className="patient-side-stack">
-          <CohortOverviewPanel patients={studyScopedPatients} />
-          <CompletenessTrendPanel patients={studyScopedPatients} />
-          <SampleSummaryPanel patients={studyScopedPatients} />
-          <p className="patient-update-time">{t('数据源：数据库实时同步')}</p>
-        </aside>
+      </div>
+
+      <div className="patient-sample-section" ref={sampleSectionRef}>
+        <SampleTestingPage
+          selectedPatient={sampleFocusPatient}
+          embedded
+          createSampleRequest={sampleCreateRequest}
+          createOmicsRequest={omicsCreateRequest}
+        />
       </div>
     </div>
   );

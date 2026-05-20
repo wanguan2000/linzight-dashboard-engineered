@@ -98,6 +98,11 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
       return;
     }
 
+    if (['LZ_ADMIN', 'LZ_CRC', 'LZ_DATA_MANAGER'].includes(user.role)) {
+      onAuthenticated(user);
+      return;
+    }
+
     const studyIds = accessibleStudyIdsForUser(user);
     if (!studyIds.length) {
       setError(t('当前账号没有可进入的 Study。'));

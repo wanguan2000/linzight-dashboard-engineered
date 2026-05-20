@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "LinZight RWS EDC API",
-    "version": "1.0.2"
+    "version": "1.0.3"
   },
   "paths": {
     "/health": {
@@ -870,6 +870,120 @@
         }
       }
     },
+    "/global-configuration": {
+      "get": {
+        "summary": "Get Global Configuration",
+        "operationId": "get_global_configuration_global_configuration_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "title": "Response Get Global Configuration Global Configuration Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update Global Configuration",
+        "operationId": "update_global_configuration_global_configuration_put",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlobalConfigurationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "title": "Response Update Global Configuration Global Configuration Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/studies/{study_id}": {
       "patch": {
         "summary": "Update Study",
@@ -1099,6 +1213,71 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Study Configuration Studies  Study Id  Configuration Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update Study Configuration",
+        "operationId": "update_study_configuration_studies__study_id__configuration_put",
+        "parameters": [
+          {
+            "name": "study_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Study Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyConfigurationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Study Configuration Studies  Study Id  Configuration Put"
                 }
               }
             }
@@ -9594,6 +9773,40 @@
         "type": "object",
         "title": "FollowUpRecordUpdate"
       },
+      "GlobalConfigurationUpdate": {
+        "properties": {
+          "disease_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Disease Types"
+          },
+          "sample_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sample Types"
+          },
+          "detection_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Detection Types"
+          },
+          "quantity_units": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Quantity Units"
+          }
+        },
+        "type": "object",
+        "title": "GlobalConfigurationUpdate"
+      },
       "GlobalRoleStudyScopeUpdate": {
         "properties": {
           "study_ids": {
@@ -9690,6 +9903,23 @@
             "type": "string",
             "title": "Sample Id"
           },
+          "sample_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sample Ids"
+          },
+          "sample_usage": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Sample Usage"
+          },
           "sample_type": {
             "type": "string",
             "title": "Sample Type"
@@ -9697,6 +9927,11 @@
           "assay": {
             "type": "string",
             "title": "Assay"
+          },
+          "vendor": {
+            "type": "string",
+            "title": "Vendor",
+            "default": ""
           },
           "platform": {
             "type": "string",
@@ -9830,6 +10065,37 @@
             ],
             "title": "Sample Id"
           },
+          "sample_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Ids"
+          },
+          "sample_usage": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Usage"
+          },
           "sample_type": {
             "anyOf": [
               {
@@ -9851,6 +10117,17 @@
               }
             ],
             "title": "Assay"
+          },
+          "vendor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor"
           },
           "platform": {
             "anyOf": [
@@ -10025,18 +10302,6 @@
           },
           "disease_type": {
             "type": "string",
-            "enum": [
-              "NPSLE",
-              "Non-NPSLE",
-              "MS",
-              "NMOSD",
-              "HC",
-              "NSCLC",
-              "LUAD",
-              "LUSC",
-              "EGFR-TKI耐药",
-              "ALK耐药"
-            ],
             "title": "Disease Type"
           },
           "organs": {
@@ -10166,19 +10431,7 @@
           "disease_type": {
             "anyOf": [
               {
-                "type": "string",
-                "enum": [
-                  "NPSLE",
-                  "Non-NPSLE",
-                  "MS",
-                  "NMOSD",
-                  "HC",
-                  "NSCLC",
-                  "LUAD",
-                  "LUSC",
-                  "EGFR-TKI耐药",
-                  "ALK耐药"
-                ]
+                "type": "string"
               },
               {
                 "type": "null"
@@ -10254,14 +10507,6 @@
           },
           "sample_type": {
             "type": "string",
-            "enum": [
-              "血液",
-              "CSF",
-              "肾",
-              "尿液",
-              "组织",
-              "胸水"
-            ],
             "title": "Sample Type"
           },
           "visit": {
@@ -10275,6 +10520,21 @@
           "storage": {
             "type": "string",
             "title": "Storage"
+          },
+          "initial_quantity": {
+            "type": "string",
+            "title": "Initial Quantity",
+            "default": ""
+          },
+          "remaining_quantity": {
+            "type": "string",
+            "title": "Remaining Quantity",
+            "default": ""
+          },
+          "quantity_unit": {
+            "type": "string",
+            "title": "Quantity Unit",
+            "default": ""
           },
           "note": {
             "type": "string",
@@ -10373,15 +10633,7 @@
           "sample_type": {
             "anyOf": [
               {
-                "type": "string",
-                "enum": [
-                  "血液",
-                  "CSF",
-                  "肾",
-                  "尿液",
-                  "组织",
-                  "胸水"
-                ]
+                "type": "string"
               },
               {
                 "type": "null"
@@ -10421,6 +10673,39 @@
               }
             ],
             "title": "Storage"
+          },
+          "initial_quantity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Quantity"
+          },
+          "remaining_quantity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Quantity"
+          },
+          "quantity_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity Unit"
           },
           "note": {
             "anyOf": [
@@ -10533,6 +10818,81 @@
           "role"
         ],
         "title": "SiteUserAssign"
+      },
+      "StudyConfigurationUpdate": {
+        "properties": {
+          "disease_area": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disease Area"
+          },
+          "active_crf_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Crf Version Id"
+          },
+          "visit_plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit Plan"
+          },
+          "consent_template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consent Template"
+          },
+          "testing_profile": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Testing Profile"
+          },
+          "follow_up_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Follow Up Schema"
+          }
+        },
+        "type": "object",
+        "title": "StudyConfigurationUpdate"
       },
       "StudyCreate": {
         "properties": {

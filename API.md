@@ -37,8 +37,11 @@
 ### Studies 和权限
 
 - `GET /studies`
+- `GET /global-configuration`
+- `PUT /global-configuration`
 - `GET /study-configurations`
 - `GET /studies/{study_id}/configuration`
+- `PUT /studies/{study_id}/configuration`
 - `GET /studies/{study_id}/members`
 - `POST /studies/{study_id}/members`
 - `GET /studies/{study_id}/visit-plans`
@@ -58,7 +61,8 @@
 
 RWD EDC 主链路统一使用 `study_id`，不使用 `project_id`。样本检测项目编号使用 `testing_project_id`。
 当前 seed 包含 `LGL-1111`、`RWD-NMO-2026` 和 `LZXK-01`；`LZXK-01` 是真实世界肺癌耐药研究，默认 20 名患者，并有独立 Study 角色和 CRF V1.0。
-`study_configurations` 是发布收口的 Study 配置总表，接口返回 `study_id`、`disease_area`、`active_crf_version_id`、`visit_plan`、`consent_template` 和 `testing_profile`。新建患者会绑定当前 Study 的 published CRF；没有 published CRF 时后端拒绝创建，不回退默认 LGL。
+`/global-configuration` 保存 `Study 系统管理` 的疾病类型、样本类型、检测类型和单位类型全局字典，持久化在 `global_configurations`。读取需要登录，写入仅限 `LZ_ADMIN`；患者队列汇总和样本/检测表单共享该配置。
+`study_configurations` 是发布收口的 Study 配置总表，接口返回 `study_id`、`disease_area`、`active_crf_version_id`、`visit_plan`、`consent_template` 和 `testing_profile`。`PUT /studies/{study_id}/configuration` 用于按当前路径 Study 更新配置；系统管理页当前开放 `consent_template` 写入，后端按当前用户 Study scope 和 `studies:write` 校验，不允许 Study Workspace 配置其他 Study。新建患者会绑定当前 Study 的 published CRF；没有 published CRF 时后端拒绝创建，不回退默认 LGL。
 `POST /studies/{study_id}/members` 与成员列表返回同一展示结构，包含 `username` 和 `display_name`，用于系统管理页 upsert 后直接刷新成员行。
 `/studies/{study_id}/crf-fields` 从当前 Study CRF version 的 `schema_json.sections[].fields[]` 读取和写入字段配置，新增或更新字段会写入 `audit_logs`。字段配置支持 `options`、`required`、`validation_rule` 和 `conditional_logic`，供系统管理页维护下拉选项、必填状态、基础校验规则和条件逻辑。
 `PUT /studies/{study_id}/crf-versions/{version_id}` 支持草稿发布；发布时后端会写入 `published_at`，并将同 Study 的旧 published 版本置为 `retired`。
@@ -83,6 +87,8 @@ RWD EDC 主链路统一使用 `study_id`，不使用 `project_id`。样本检测
 - `PUT /samples/{sample_id}`
 - `DELETE /samples/{sample_id}`
 
+样本 payload 包含 `storage`、`initial_quantity`、`remaining_quantity`、`quantity_unit` 和 `linked_omics`。样本量字段按字符串保存，单位从全局单位类型字典单选；剩余量由人工维护。
+
 ### Visits
 
 - `GET /visits`
@@ -106,6 +112,8 @@ RWD EDC 主链路统一使用 `study_id`，不使用 `project_id`。样本检测
 - `GET /omics/{record_id}`
 - `PUT /omics/{record_id}`
 - `DELETE /omics/{record_id}`
+
+检测 payload 保留 `sample_id` 作为主样本，同时支持 `sample_ids` 多样本选择和 `sample_usage` 每样本使用量/单位/用途记录。
 
 ### Consents
 

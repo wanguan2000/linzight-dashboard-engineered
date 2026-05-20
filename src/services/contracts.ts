@@ -117,6 +117,9 @@ export type ApiSample = {
   visit: string;
   collected_at: string;
   storage: string;
+  initial_quantity?: string | null;
+  remaining_quantity?: string | null;
+  quantity_unit?: string | null;
   note: string;
   status: SampleRecord['status'];
   linked_omics: string[];
@@ -129,8 +132,11 @@ export type ApiOmics = {
   patient_id: string;
   patient_name: string;
   sample_id: string;
+  sample_ids?: string[] | null;
+  sample_usage?: OmicsRecord['sampleUsage'] | null;
   sample_type: string;
   assay: OmicsRecord['assay'];
+  vendor: string;
   platform: string;
   run_id: string;
   status: OmicsRecord['status'];
@@ -205,6 +211,22 @@ export type ApiStudyConfiguration = {
   };
   created_at: string;
   updated_at: string;
+};
+
+export type ApiStudyConfigurationUpdate = Partial<{
+  disease_area: string;
+  active_crf_version_id: string;
+  visit_plan: ApiStudyConfiguration['visit_plan'];
+  consent_template: string;
+  testing_profile: ApiStudyConfiguration['testing_profile'];
+  follow_up_schema: ApiStudyConfiguration['follow_up_schema'];
+}>;
+
+export type ApiGlobalConfiguration = {
+  disease_types: string[];
+  sample_types: string[];
+  detection_types: string[];
+  quantity_units: string[];
 };
 
 export type ApiStudyMember = {

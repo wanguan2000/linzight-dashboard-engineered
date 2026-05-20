@@ -61,6 +61,8 @@ SELECT lz_convert_jsonb_column('study_configurations', 'testing_profile_json', '
 SELECT lz_convert_jsonb_column('study_configurations', 'follow_up_schema_json', '{}'::jsonb, true);
 
 SELECT lz_convert_jsonb_column('samples', 'linked_omics_json', '[]'::jsonb, true);
+SELECT lz_convert_jsonb_column('omics_records', 'sample_ids_json', '[]'::jsonb, true);
+SELECT lz_convert_jsonb_column('omics_records', 'sample_usage_json', '{}'::jsonb, true);
 
 SELECT lz_convert_jsonb_column('follow_up_records', 'payload_json', '{}'::jsonb, true);
 SELECT lz_convert_jsonb_column('follow_up_records', 'payload_jsonb', NULL, false);

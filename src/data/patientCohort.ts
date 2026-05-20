@@ -1,8 +1,9 @@
 import { clinicalFields, crfFieldDefaults, crfTemplateVersion } from './crfTemplate';
+import { defaultDiseaseTypes } from './globalConfig';
 
-export type DiseaseType = 'NPSLE' | 'Non-NPSLE' | 'MS' | 'NMOSD' | 'HC' | 'NSCLC' | 'LUAD' | 'LUSC' | 'EGFR-TKI耐药' | 'ALK耐药';
-export type SampleType = '血液' | 'CSF' | '肾' | '组织' | '胸水';
-export type OmicsStatus = '样本采集' | '进行中' | '完成';
+export type DiseaseType = string;
+export type SampleType = string;
+export type OmicsStatus = '未采集' | '样本采集' | '进行中' | '完成';
 
 export interface SampleCollection {
   type: SampleType;
@@ -34,13 +35,13 @@ export interface PatientRecord {
 
 export { clinicalFields } from './crfTemplate';
 
-export const diseases: DiseaseType[] = ['NPSLE', 'Non-NPSLE', 'MS', 'NMOSD', 'HC'];
-export const lungResistanceDiseases: DiseaseType[] = ['NSCLC', 'LUAD', 'LUSC', 'EGFR-TKI耐药', 'ALK耐药'];
+export const diseases: DiseaseType[] = defaultDiseaseTypes.slice(0, 5);
+export const lungResistanceDiseases: DiseaseType[] = defaultDiseaseTypes.slice(5);
 export const lzxkStudyId = 'LZXK-01';
 
 const patientPrefixes = ['LQH', 'WYM', 'ZXR', 'CJY', 'LYT', 'HQN', 'QML', 'SYF', 'ZYW', 'GCH'];
 
-const medicationByDisease: Record<DiseaseType, string[]> = {
+const medicationByDisease: Record<string, string[]> = {
   NPSLE: ['CD20', 'MMF', 'IVIG'],
   'Non-NPSLE': ['HCQ', 'MMF', ''],
   MS: ['激素冲击', 'DMT', ''],
@@ -136,9 +137,9 @@ function lungResistanceClinicalData(index: number, disease: DiseaseType): Record
     TNM分期: ['T2N2M0', 'T3N2M1a', 'T4N3M1b'][index % 3],
     ECOG评分: index % 3,
     治疗线数: 1 + (index % 4),
-    当前治疗方案: treatment[disease],
-    驱动基因突变: driverGene[disease],
-    耐药机制: resistance[disease],
+    当前治疗方案: treatment[disease] ?? '待录入',
+    驱动基因突变: driverGene[disease] ?? '待录入',
+    耐药机制: resistance[disease] ?? '待复核',
     RECIST评估: ['SD', 'PR', 'PD', 'NE'][index % 4],
     'PFS（月）': Number((6.5 + (index % 9) * 1.4).toFixed(1)),
     ctDNA突变丰度: `${Number((0.8 + (index % 7) * 1.3).toFixed(1))}%`,
@@ -158,7 +159,7 @@ function generatedClinicalValue(
   organs: string[]
 ): string | number {
   const activity = diseaseActivityFor(disease);
-  const [primaryMedication, secondaryMedication, otherMedication] = medicationByDisease[disease];
+  const [primaryMedication, secondaryMedication, otherMedication] = medicationByDisease[disease] ?? ['待录入', '', ''];
 
   switch (field) {
     case '姓名':

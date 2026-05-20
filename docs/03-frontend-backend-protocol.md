@@ -15,27 +15,27 @@ CRF 字段字典按 Study 绑定。`LGL-1111` 与 `RWD-NMO-2026` 使用 `resourc
 
 所有 RWD EDC 主链路数据使用 `study_id` 做隔离。前端会在登录后保存 `study_scope` 与当前 `activeStudyId`；API 请求自动携带 HMAC 签名 Bearer token，并在进入业务模块时走 `/studies/{study_id}/...` 路径。登录态启动时会调用 `/auth/me` 校验，token 缺失、过期或无效时回到登录页。
 
-Study Workspace 是唯一业务租户边界。Study 入口先认证账号，账号只授权一个 Study 时直接进入该 Study Workspace，授权多个 Study 时认证后再选择工作区。LZ 平台角色（`LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER`）可在 LZ 系统管理态进入首页工作台、患者队列管理、样本及检测、临床数据采集、患者旅程、导出/报表和 Study 系统管理，并查看或管理授权范围内所有 Study 的患者、样本、检测、CRF、访视、随访和导出信息。跨 Study 读取必须按 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总，不能调用无 Study 上下文的业务 list 接口；业务写入仍必须带明确 `study_id`。GA 版本先使用应用层过滤，PostgreSQL RLS 作为 GA 后强化项推进。
+Study Workspace 是唯一业务租户边界。Study 入口先认证账号，账号只授权一个 Study 时直接进入该 Study Workspace，授权多个 Study 时认证后再选择工作区。`LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER` 登录后默认进入 LZ 全局态，不自动切换到单个 Study。LZ 平台角色可在 LZ 全局态进入首页工作台、患者队列管理、样本及检测、临床数据采集、患者旅程、导出/报表和 Study 系统管理，并查看或管理授权范围内所有 Study 的患者、样本、检测、CRF、访视、随访和导出信息。全局首页工作台调用 `/analytics/summary`，后端按当前用户 Study scope 聚合；跨 Study 业务列表读取必须按 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总，不能调用无 Study 上下文的业务 list 接口；业务写入仍必须带明确 `study_id`。GA 版本先使用应用层过滤，PostgreSQL RLS 作为 GA 后强化项推进。
 
-Study 配置总表由 `/study-configurations` 和 `/studies/{study_id}/configuration` 读取，字段为 `study_id`、`disease_area`、`active_crf_version_id`、`visit_plan`、`consent_template`、`testing_profile` 和 `follow_up_schema`。后端 seed 会把 `LZXK-01` 绑定到肺癌 CRF、肺癌知情同意模板和 `TP-LUNG-RESIST-OMICS`；免疫病 Study 绑定免疫病 CRF、免疫病知情同意模板和 `TP-SLE-OMICS`。新建患者时如当前 Study 没有 published CRF，API 直接失败，前端应提示配置未发布。
+Study 配置总表由 `/study-configurations` 和 `/studies/{study_id}/configuration` 读取，字段为 `study_id`、`disease_area`、`active_crf_version_id`、`visit_plan`、`consent_template`、`testing_profile` 和 `follow_up_schema`。`PUT /studies/{study_id}/configuration` 按路径中的单个 Study 更新配置；系统管理页当前只发送 `consent_template`，后端按 Study scope 和 `studies:write` 校验，Study Workspace 内不能配置其他 Study 的知情同意。后端 seed 会把 `LZXK-01` 绑定到肺癌 CRF、肺癌知情同意模板和 `TP-LUNG-RESIST-OMICS`；免疫病 Study 绑定免疫病 CRF、免疫病知情同意模板和 `TP-SLE-OMICS`。新建患者时如当前 Study 没有 published CRF，API 直接失败，前端应提示配置未发布。
 
 字段级权限由后端 `field_permissions` 统一执行。前端不自行判断姓名、住院号、身份证号、手机号、地址等直接标识符是否需要脱敏，而是展示 API 返回值；导出文件也由后端按同一规则生成。当前默认规则让 `LZ_DATA_MANAGER`、`STUDY_DATA_MANAGER` 和 `LZ_AUDITOR` 在页面看到脱敏值，在 CSV 导出中移除直接标识符。
 
 文件上传由 `/files` 写入存储适配层，响应包含 `storage_backend`、`storage_path`、`scan_status`、`scan_message`、`archive_status`、`archived_at` 和 `retention_until`。本地开发默认 `local`；生产式 smoke 可用 `LINZIGHT_STORAGE_BACKEND=object` 返回 `object://bucket/prefix/...` URI。文件下载统一走 `/files/{file_id}/download`，后端会校验 Study 权限、角色权限、病毒扫描状态和归档状态。
 
-访视计划由 `study_visit_plans` 配置，不写入 CRF 字段表。`visits` 是患者实际访视记录，通过 `visit_plan_id` 关联配置；新建患者时后端按当前 Study active 访视计划自动生成访视和初始 CRF 草稿。
+访视计划由 `study_visit_plans` 配置，不写入 CRF 字段表。`visits` 是患者实际访视记录，通过 `visit_plan_id` 关联配置；新建患者时后端只创建患者主档和待签署知情同意，不自动生成访视、初始 CRF 草稿或 Patient Journey 事件。
 
 随访记录由 `follow_up_records` 保存，不写入 CRF 版本配置表。它隶属于患者信息，绑定 `study_id + patient_id`，并可选通过 `visit_id` 关联某次随访访视，用于记录随访方式、随访人、生存/疾病状态、疗效、转移、不良事件、生活质量和失访原因。
 
-正式 GA 数据字段以 PostgreSQL 为准：患者基本信息使用 `patient_number / patient_name / study_id / hospital_no / sex / age / disease_type / note`；患者 CRF 使用每个 Study 的 `study_crf_versions.schema_json` 与 `crf_entries.payload`，默认 section 覆盖病程记录、住院、治疗方案、检查，JSON 格式按 Study CRF 方案配置；患者随访使用 `study_configurations.follow_up_schema` 与 `follow_up_records.payload`，默认覆盖访视、日期、类型、疗效评估和记录，JSON 格式按 Study 随访方案配置；样本信息使用 `patient_id / id / sample_type / collected_at / storage / note`；多组学检测使用 `sample_id / testing_project_id / status / sent_at / completed_at / qc / result_file_id`。一个患者可有多个样本，一个样本可有多条检测。
+正式 GA 数据字段以 PostgreSQL 为准：患者基本信息使用 `patient_number / patient_name / study_id / hospital_no / sex / age / disease_type / note`；患者 CRF 使用每个 Study 的 `study_crf_versions.schema_json` 与 `crf_entries.payload`，默认 section 覆盖病程记录、住院、治疗方案、检查，JSON 格式按 Study CRF 方案配置；患者随访使用 `study_configurations.follow_up_schema` 与 `follow_up_records.payload`，默认覆盖访视、日期、类型、疗效评估和记录，JSON 格式按 Study 随访方案配置；样本信息使用 `patient_id / id / sample_type / collected_at / storage / initial_quantity / remaining_quantity / quantity_unit / note / linked_omics`；多组学检测使用 `sample_id / sample_ids / sample_usage / testing_project_id / assay / vendor / platform / status / sent_at / completed_at / qc / result_file_id`。疾病类型、样本类型、检测类型和单位类型下拉框由 LZ 全局配置维护，前端通过 `/global-configuration` 从 `global_configurations` 表读取；API 按字符串接收这些字段；一个患者可有多个样本，一个检测可人工选择一个或多个样本。
 
 患者姓名隐私展示由后端字段权限控制。API 返回 `patient_name_initials` 供默认显示；完整 `patient_name` 只对 `LZ_ADMIN`、`STUDY_CONFIG_ADMIN`、`STUDY_CRC` 和 `LZ_CRC` 返回。前端“授权查看”只能切换后端已授权返回的完整姓名，不能在前端拼接、还原或绕过后端权限。
 
 临床数据采集页的“多次随访”表格读取计划/实际 `visits`，同时将 `follow_up_records` 映射为可回显的随访行。新增或编辑随访行时，前端通过 `saveVisitFollowUpRecord()` 写入 `/studies/{study_id}/follow-up-records`；计划访视配置仍由 `study_visit_plans` 管理。
 
-患者队列新建或编辑患者成功后，前端必须把保存后的患者设置为当前患者上下文，并同步给知情同意、临床数据采集和患者旅程等页面。后端 `POST /studies/{study_id}/patients` 在创建患者主档、计划访视和 CRF 草稿的同时，会创建一条 `status=待签署` 的 consent 记录；知情同意页面优先选择当前患者对应的 consent，不允许默认回退到列表第一名患者。
+患者队列新建或编辑患者成功后，前端必须把保存后的患者设置为当前患者上下文，并同步给知情同意、临床数据采集和患者旅程等页面。后端 `POST /studies/{study_id}/patients` 创建患者主档，并创建一条 `status=待签署` 的 consent 记录；知情同意页面优先选择当前患者对应的 consent，不允许默认回退到列表第一名患者。新患者没有真实 CRF、访视、随访、样本或检测记录前，Patient Journey 必须显示空事件状态。
 
-系统管理页的账号创建通过 `POST /users` 执行。前端传入 `username`、`display_name`、`role`、`password`、`study_id` 和 `member_status`；后端创建用户前会执行基础密码策略，密码使用 PBKDF2-HMAC-SHA256 加盐哈希保存。如果是研究级角色，会同步创建当前 Study 的 `study_members` 记录并返回 `study_memberships`。Create Account 按钮必须使用该接口，不应只在前端插入本地账号。
+系统管理页的账号创建通过 `POST /users` 执行。前端传入 `username`、`display_name`、`role`、`password`、`study_id` 和 `member_status`；后端创建用户前会执行基础密码策略，密码使用 PBKDF2-HMAC-SHA256 加盐哈希保存。如果是研究级角色，会同步创建当前 Study 的 `study_members` 记录并返回 `study_memberships`。LZ 全局态由 `LZ_ADMIN` 创建 `LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER` 平台账户时，非 Admin 平台角色随后调用 `PATCH /users/{user_id}/study-scope` 写入授权 Study 范围。Create Account 按钮必须使用这些接口，不应只在前端插入本地账号。
 
 系统管理页的 Study 成员列表通过 `/studies/{study_id}/members` 读取，已有成员启用/停用研究级角色通过同一路径 `POST` upsert。平台级 `LZ_ADMIN` 启用/禁用账号时调用 `PATCH /users/{user_id}/status`，该接口会影响登录生命周期。该响应必须包含 `username`、`display_name` 和 `last_login_at`，与列表接口一致，前端才能在保存后直接更新账号行。
 
@@ -93,11 +93,17 @@ GA 版本已移除 standalone audit log 模块；前端不再调用 `/audit-logs
 | `sample_type` | `sampleType` | 样本类型 |
 | `collected_at` | `collectedAt` | 样本采集日期 |
 | `storage` | `storage` | 样本保存地址 |
+| `initial_quantity` | `initialQuantity` | 样本初始量，字符串保存以支持混合单位 |
+| `remaining_quantity` | `remainingQuantity` | 样本剩余量，由人工编辑维护，不随检测自动扣减 |
+| `quantity_unit` | `quantityUnit` | 样本数量单位；由 `Study 系统管理` 的全局单位类型字典单选，可为空 |
 | `note` | `note` | 患者或样本注释，按数据域区分 |
 | `linked_omics` | `linkedOmics` | 样本关联检测项目 |
 | `testing_project_id` | `testingProjectId` | 样本检测项目编号，不等同于 RWD EDC Study |
 | `sample_id` | `sampleId` | 组学检测关联样本 |
+| `sample_ids` | `sampleIds` | 组学检测人工选择的一个或多个样本；`sample_id` 保留为主样本 |
+| `sample_usage` | `sampleUsage` | 每个样本在检测中的使用量、单位和用途 |
 | `run_id` | `runId` | 检测批次号 |
+| `vendor` | `vendor` | 多组学检测供应商 |
 | `qc` | `qc` | 检测 QC 状态 |
 | `result_file_id` | `resultFileId` | 组学结果文件，对应 `uploaded_files.id` |
 | `sent_at` | `sentAt` | 送检日期 |
@@ -123,7 +129,7 @@ CRF 录入响应还包含 `crf_version_id` 和 `form_id`。已录入数据必须
 2. `http://127.0.0.1:8000`
 3. `http://127.0.0.1:8001`
 
-正式功能测试以 PostgreSQL 后端返回为准；后端为空时页面应展示空状态。API 不可用时，页面只能作为静态/开发预览，不应作为正式数据状态判断。接口返回结构必须与 `src/services/contracts.ts` 一致。
+内部试点以 PostgreSQL 后端返回为准；后端为空时页面应展示空状态。API 不可用时，页面只能作为静态/开发预览，不应作为正式数据状态判断。接口返回结构必须与 `src/services/contracts.ts` 一致。
 
 测试 fixture 中的 `LZXK-01` 数据包含 20 名真实世界肺癌耐药研究患者、独立肺癌 CRF 字段、血液/组织/胸水样本，以及 `NGS panel`、`ctDNA`、`病理复核` 检测项目；正式空库不会自动加载这些数据。
 
@@ -150,7 +156,7 @@ Patient Journey 页面以患者为中心汇总；正式连接态必须从当前 
 ```
 
 现有 `/patients/{patient_id}/panorama` 已返回 `patient`、`samples`、`omics_records`、`consents`、`visits`、`follow_up_records`。`/patients/{patient_id}/journey` 与 `panorama` 保持兼容。
-Dashboard 的 `/studies/{study_id}/analytics/summary` 以 `patients`、`visits`、`crf_entries`、`consents`、`samples`、`omics_records`、`export_jobs` 聚合。前端“导出归档”读取 `export_count` / `ready_export_count`，不再复用组学归档数量。
+Dashboard 的 `/analytics/summary` 和 `/studies/{study_id}/analytics/summary` 以 `patients`、`visits`、`crf_entries`、`consents`、`samples`、`omics_records`、`export_jobs` 聚合。前端“导出归档”读取 `export_count` / `ready_export_count`，不再复用组学归档数量。
 样本及检测页面读取 `/studies/{study_id}/files` 后用 `omics_records.result_file_id -> uploaded_files.id` 关联展示结果文件。生产 UI 不得把 `result_file_id` 当作文件名；结果文件列至少显示 `original_filename`、`scan_status` 和 `archive_status`。上传组学结果时必须关联当前选中的检测记录 `omics_id`，不能默认挂到列表第一条样本或检测。
 
 ## 错误格式

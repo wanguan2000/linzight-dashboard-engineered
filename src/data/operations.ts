@@ -41,10 +41,15 @@ export interface SampleRecord {
   visit: string;
   collectedAt: string;
   storage: string;
+  initialQuantity?: string;
+  remainingQuantity?: string;
+  quantityUnit?: string;
   note?: string;
   status: SampleStatus;
   linkedOmics: string[];
 }
+
+export type OmicsSampleUsage = Record<string, { usedQuantity?: string; unit?: string; role?: string }>;
 
 export interface OmicsRecord {
   id: string;
@@ -53,8 +58,11 @@ export interface OmicsRecord {
   patientId?: string;
   patientName: string;
   sampleId: string;
+  sampleIds?: string[];
+  sampleUsage?: OmicsSampleUsage;
   sampleType: string;
-  assay: 'WGS' | 'TCR/BCR' | 'Olink/Simoa' | '蛋白组' | '代谢组' | 'NGS panel' | 'ctDNA' | '病理复核';
+  assay: string;
+  vendor: string;
   platform: string;
   runId: string;
   status: '样本接收' | '文库构建' | '测序完成' | '数据分析' | '结果归档';
@@ -190,6 +198,17 @@ const assayPlatforms: Record<OmicsRecord['assay'], string> = {
   病理复核: 'Pathology Archive'
 };
 
+const assayVendors: Record<string, string> = {
+  WGS: '华大智造',
+  'TCR/BCR': 'MiSeq Core Lab',
+  'Olink/Simoa': 'Olink Service',
+  蛋白组: 'Thermo Proteomics Lab',
+  代谢组: 'Metabolomics Core',
+  'NGS panel': '燃石医学',
+  ctDNA: '臻和科技',
+  病理复核: '中心病理实验室'
+};
+
 function isoDateFromSeed(index: number, dayOffset = 0) {
   const date = new Date(Date.UTC(2024, 4, 1 + index * 3 + dayOffset));
   return date.toISOString().slice(0, 10);
@@ -229,6 +248,9 @@ export const samples: SampleRecord[] = patientRecords.flatMap((patient, patientI
               : sampleType === '胸水'
                 ? '液氮罐-LUNG-P1'
                 : '-80℃冰箱A1',
+      initialQuantity: sampleType === '组织' ? '2' : sampleType === '胸水' ? '8' : '5',
+      remainingQuantity: sampleType === '组织' ? '2' : sampleType === '胸水' ? '8' : '5',
+      quantityUnit: sampleType === '组织' ? '块' : 'mL',
       status: patientIndex % 4 === 0 ? '检测中' : '结果回传',
       linkedOmics
     };
@@ -245,8 +267,13 @@ export const omicsRecords: OmicsRecord[] = samples.flatMap((sample, sampleIndex)
       patientId: sample.patientId,
       patientName: sample.patientName,
       sampleId: sample.id,
+      sampleIds: [sample.id],
+      sampleUsage: {
+        [sample.id]: { usedQuantity: sample.sampleType === '组织' ? '1' : '1.5', unit: sample.quantityUnit ?? 'mL', role: '主样本' }
+      },
       sampleType: sample.sampleType,
       assay: assay as OmicsRecord['assay'],
+      vendor: assayVendors[assay] ?? '待定供应商',
       platform: assayPlatforms[assay as OmicsRecord['assay']],
       runId: `${assay.replace('/', '')}-${260400 + sampleIndex}-${assayIndex + 1}`,
       status,

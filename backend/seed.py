@@ -641,6 +641,9 @@ def build_seed_rows() -> dict[str, list[tuple]]:
                     "V1 基线访视",
                     str(collected_at),
                     storage_for_sample(sample_type),
+                    "2" if sample_type == "组织" else "8" if sample_type == "胸水" else "5",
+                    "2" if sample_type == "组织" else "8" if sample_type == "胸水" else "5",
+                    "块" if sample_type == "组织" else "mL",
                     "结果回传" if index % 4 else "检测中",
                     encode_json(linked_omics),
                 )
@@ -655,6 +658,8 @@ def build_seed_rows() -> dict[str, list[tuple]]:
                         patient_id,
                         name,
                         sample_id,
+                        encode_json([sample_id]),
+                        encode_json({sample_id: {"usedQuantity": "1" if sample_type == "组织" else "1.5", "unit": "块" if sample_type == "组织" else "mL", "role": "主样本"}}),
                         sample_type,
                         assay,
                         PLATFORMS[assay],
@@ -920,16 +925,16 @@ def seed_database() -> None:
         conn.executemany(
             """
             INSERT INTO samples
-              (id, study_id, patient_id, patient_name, hospital_no, sample_type, visit, collected_at, storage, status, linked_omics_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (id, study_id, patient_id, patient_name, hospital_no, sample_type, visit, collected_at, storage, initial_quantity, remaining_quantity, quantity_unit, status, linked_omics_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [(*sample, now, now) for sample in rows["samples"]],
         )
         conn.executemany(
             """
             INSERT INTO omics_records
-              (id, study_id, testing_project_id, patient_id, patient_name, sample_id, sample_type, assay, platform, run_id, status, qc, sent_at, completed_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (id, study_id, testing_project_id, patient_id, patient_name, sample_id, sample_ids_json, sample_usage_json, sample_type, assay, platform, run_id, status, qc, sent_at, completed_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [(*record, now, now) for record in rows["omics"]],
         )

@@ -17,7 +17,7 @@
 | `study_members` | Study 成员与研究级角色 | 研究内权限 |
 | `global_role_study_scope` | 平台级角色授权 Study 范围 | 跨研究权限 |
 | `patients` | 70 个模拟患者主档 | 患者列表、患者详情 |
-| `study_visit_plans` | 每个 Study 的访视计划配置 | 研究配置、自动生成访视 |
+| `study_visit_plans` | 每个 Study 的访视计划配置 | 研究配置、访视窗口校验 |
 | `study_configurations` | Study 配置总表 | 病种语义、当前 CRF、访视计划、知情同意模板、检测 profile |
 | `consents` | 知情同意状态 | 患者详情、Journey |
 | `visits` | 基线与随访访视 | Patient Journey、CRF |
@@ -58,11 +58,12 @@
 - `patients` 是患者中心主表，`samples`、`omics_records`、`consents`、`visits`、`follow_up_records`、`crf_entries`、`uploaded_files`、`data_quality_issues` 均可按 `patient_id` 汇总成 Patient Journey。
 - `study_visit_plans.study_id` 关联 `studies.id`，保存该 Study 的访视编码、名称、访视类型、相对基线天数、访视窗口、必填 CRF 表单和样本要求。
 - `study_configurations.study_id` 是 Study 配置总表主键；`active_crf_version_id` 指向当前 published CRF，`visit_plan_json` 保存 active plan profile/codes，`consent_template` 绑定 Study 知情同意模板，`testing_profile_json` 保存样本/检测 profile。
-- `visits.visit_plan_id` 关联 `study_visit_plans.id`。`visits` 是患者实际访视记录；`study_visit_plans` 是配置模板。新建患者时后端按当前 Study 的 active 访视计划生成初始访视和 CRF 草稿。
+- `visits.visit_plan_id` 关联 `study_visit_plans.id`。`visits` 是患者实际访视记录；`study_visit_plans` 是配置模板。新建患者不会自动生成访视或 CRF 草稿，Patient Journey 只展示真实写入的 CRF、访视、随访、样本、检测和文件记录。
 - 访视计划不放在 CRF 字段表内。CRF 版本定义表单结构，访视计划定义时间点和该时间点需要录入哪些表单。
 - `follow_up_records.patient_id` 关联 `patients.id`，可选 `visit_id` 关联 `visits.id`。它记录随访时间、方式、随访人、生存状态、疾病状态、疗效评估、转移、不良事件、生活质量和失访原因，不属于 CRF 版本配置表。
 - `omics_records.testing_project_id` 是样本检测项目编号，不作为 RWD EDC 数据隔离字段。
-- `omics_records.sample_id` 关联 `samples.id`，用于样本送检到组学结果的链路追踪。
+- `samples.storage` 保存存储位置；`samples.initial_quantity`、`remaining_quantity` 和 `quantity_unit` 以字符串保存，支持人工维护的混合单位样本量。
+- `omics_records.sample_id` 关联主样本并兼容旧逻辑；`omics_records.sample_ids_json` 支持一次检测人工选择多个样本；`omics_records.sample_usage_json` 保存每个样本的人工填写使用量、单位和用途；`omics_records.vendor` 保存检测供应商。
 - `uploaded_files` 可关联患者、样本、组学记录或知情同意记录，文件实体统一落本地 `uploads` 目录。
 - `export_jobs.file_id` 指向导出文件元数据，便于数据分析页展示导出状态。
 - `operation_logs` 记录后端所有核心写操作，包括 `CREATE / UPDATE / DELETE / UPSERT / STATUS_CHANGE / LOGIN / UPLOAD / ARCHIVE / EXPORT / APPROVAL` 等动作。日志保存 `study_id`、操作者、实体类型、实体 ID、before/after/diff JSONB 和时间戳；GA 不恢复前端 Audit Diff 模块，日志作为后台审计底座保留。

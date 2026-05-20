@@ -1,8 +1,8 @@
 # linzight-dashboard-engineered
 
-当前版本：`v1.0.2`
+当前版本：`v1.0.3`
 
-`linzight-dashboard-engineered` 是 LinZight 真实世界研究数据采集与管理系统的 GA 功能测试版。项目以患者为中心，覆盖研究工作台、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析和系统管理，并提供 FastAPI 后端。正式运行数据库固定为 PostgreSQL；SQLite 仅允许在显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 的隔离 smoke、旧数据备份或迁移导出工具中使用。登录和写入动作依赖后端认证与 API；正式 Docker 首次启动为空库，仅创建首个 LZ 系统管理员，Study、患者和检测数据由用户自行创建或导入。
+`linzight-dashboard-engineered` 是 LinZight 真实世界研究数据采集与管理系统的内部试点版，用于让客户在受控环境中按真实业务场景验证 Study 配置、角色权限、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析和系统管理闭环。正式运行数据库固定为 PostgreSQL；SQLite 仅允许在显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 的隔离 smoke、旧数据备份或迁移导出工具中使用。登录和写入动作依赖后端认证与 API；正式 Docker 首次启动为空库，仅创建首个 LZ 系统管理员，Study、患者和检测数据由用户自行创建或导入。未经合规审批、备份恢复演练和安全签字前，不应直接承载真实患者生产数据。
 
 未来 AI 接手本项目时，请先阅读：
 
@@ -93,20 +93,21 @@ npm run dev
 - `resource/sle-crf-v0.1.schema.json` 是由该 CSV 生成的 CRF V0.1 schema，包含 10 个分组、89 个字段。
 - `src/data/crfTemplate.ts` 将 CRF V0.1 schema 接入前端临床数据采集和系统管理字段配置。
 - `backend/seed.py` 读取同一份 schema，可显式生成 70 名测试患者、210 条访视、140 条随访记录、210 条 CRF 记录及关联样本/组学/知情同意数据；正式 Docker 首次启动不会自动执行该测试 seed。
-- `study_visit_plans` 为每个 Study 独立配置 V1/V2/V3 访视计划、时间窗、必填 CRF 表单和样本要求；`visits.visit_plan_id` 关联配置，新建患者时后端自动生成计划访视和 CRF 草稿。
+- `study_visit_plans` 为每个 Study 独立配置访视计划、时间窗、必填 CRF 表单和样本要求；`visits.visit_plan_id` 关联配置。新建患者只创建患者主档和待签署知情同意，不自动生成访视、CRF 草稿或 Journey 事件。
 - `study_configurations` 是 Study 配置总表，绑定 `study_id -> disease_area -> active_crf_version_id -> visit_plan -> consent_template -> testing_profile`。新建患者必须使用当前 Study 的 published CRF；如果该 Study 没有 published CRF，后端拒绝创建，不再回退到默认 LGL。
 - `follow_up_records` 隶属于患者信息，绑定 `study_id + patient_id`，可选关联 `visit_id`，记录随访方式、随访人、生存/疾病状态、疗效、转移、不良事件、生活质量和失访原因。
 - `LZXK-01` 发布独立 Study CRF V1.0，使用 15 个肺癌耐药字段，不继承 SLE CRF 字段；已录入数据保留各自 `crf_version_id`。
 - PostgreSQL runtime 默认通过 `DATABASE_URL`、`LINZIGHT_DATABASE_URL` 或 `LINZIGHT_POSTGRES_URL` 配置；如果配置成 `sqlite:///...` 且未显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1`，后端会拒绝启动。
-- SQLite 仅用于隔离 smoke、旧测试库备份和迁移导出；正式功能测试和后续 GA 部署均以 PostgreSQL 为数据库。
+- SQLite 仅用于隔离 smoke、旧测试库备份和迁移导出；内部试点和后续生产化部署均以 PostgreSQL 为数据库。
 - 当前 CSV 中 `免疫制剂2` 出现两次，V0.1 schema 将第二个字段规范为 `免疫制剂2（第2项）`，避免 JSON payload 字段覆盖。
 
 ## Study 权限与隔离
 
 - RWD EDC 主链路统一使用 `study_id` 作为研究隔离字段，不使用 `project_id`。
 - Study Workspace 是唯一业务租户边界；患者、CRF、样本、随访、文件、Query、质控、导出和审批等业务 list 接口使用 `/studies/{study_id}/...`，未带 Study 上下文的业务 list 请求会被后端拒绝。
-- LZ 平台角色可在 LZ 系统管理态查看首页工作台、患者队列管理、样本及检测、临床数据采集、患者旅程、导出/报表和 Study 系统管理。跨 Study 读取由前端按授权 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总，不使用无 Study 上下文的业务 list 接口。
+- LZ 平台角色可在 LZ 全局管理态查看首页工作台、患者队列管理、样本及检测、临床数据采集、患者旅程、导出/报表和 Study 系统管理。`LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER` 登录后默认停留在 LZ 全局态，不自动切入单个 Study；全局首页工作台读取后端 `/analytics/summary`，由后端按平台角色 Study scope 聚合统计。跨 Study 业务列表读取由前端按授权 Study 列表逐个调用 `/studies/{study_id}/...` 后汇总，不使用无 Study 上下文的业务 list 接口。
 - LZ 全局态的 `Study 系统管理` 管理 Study、用户、Study 绑定和平台角色；业务写入仍必须带明确 `study_id`，并由后端按 Study scope、角色权限和 Study 生命周期状态独立校验。
+- LZ 全局态的 `Study 系统管理` 维护疾病类型、样本类型、检测类型和单位类型全局字典，配置通过 `/global-configuration` 持久化到后端数据库，患者队列和样本及检测表单下拉框读取该配置；新增患者、样本和检测仍必须在保存时写入后端。患者队列管理页下方嵌入样本台账和多组学检测列表，患者列表的“样本查看”会定位到该患者；样本支持存储位置、初始量、剩余量和可配置单位，检测支持人工选择一个或多个样本并记录每个样本的使用量。
 - `LZ_ADMIN` 可通过 Study Registry 新建、终止和软删除 Study，并维护 Study ID、Study 名称、leading PI 信息、状态和系统管理员等主数据；`STUDY_CONFIG_ADMIN` 是本 Study 系统管理员，拥有本 Study 内患者、知情同意、CRF、访视、随访、样本、检测、文件、Query、质控、导出、审批和 Study 配置的全部权限，同时可创建/修改本 Study 研究级用户、启停成员角色并分配本 Study 系统管理员。账号与角色列表展示后端记录的 Last Login。`terminated` 或 `deleted` Study 会拒绝患者、CRF、访视、随访、样本、组学、文件、质控和导出等业务写入。
 - GA 版本先使用后端应用层 Study 过滤与权限校验；PostgreSQL Row Level Security（RLS）作为 GA 后生产强化项推进。
 - 显式测试 seed 包含 `LGL-1111`、`RWD-NMO-2026` 和 `LZXK-01` 三个 Study，并生成 Study 成员、平台授权范围和独立 CRF 版本。
@@ -279,7 +280,7 @@ cp backend/.env.example backend/.env
 
 ### 前端没有后端是否能运行？
 
-可以启动前端外壳。正式功能测试应连接 PostgreSQL 后端；API 不可用时页面只能作为静态/开发预览，不应作为正式数据状态判断依据。
+可以启动前端外壳。内部试点应连接 PostgreSQL 后端；API 不可用时页面只能作为静态/开发预览，不应作为正式数据状态判断依据。
 
 ### 静态 HTML 为什么还会有 `assets/`？
 

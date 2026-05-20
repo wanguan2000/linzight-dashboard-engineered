@@ -132,6 +132,10 @@ async function run() {
         const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
         const page = await context.newPage();
         await login(page, role);
+        if (role.entry === 'admin') {
+          await page.locator('nav button').filter({ hasText: 'Study 系统管理' }).click();
+          await page.waitForLoadState('networkidle');
+        }
         for (const expected of role.expected) {
           await page.getByText(expected, { exact: false }).first().waitFor({ timeout: 10000 });
         }
