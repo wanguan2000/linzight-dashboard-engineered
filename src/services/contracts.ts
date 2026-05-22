@@ -69,8 +69,8 @@ export type ApiStudy = {
   updated_at: string;
 };
 
-export type ApiStudyCreate = Pick<ApiStudy, 'id' | 'code' | 'name' | 'indication'> &
-  Partial<Pick<ApiStudy, 'phase' | 'status' | 'owner_org' | 'leading_pi_info' | 'system_admin'>>;
+export type ApiStudyCreate = Pick<ApiStudy, 'id' | 'name' | 'indication'> &
+  Partial<Pick<ApiStudy, 'code' | 'phase' | 'status' | 'owner_org' | 'leading_pi_info' | 'system_admin'>>;
 
 export type ApiStudyUpdate = Partial<Pick<ApiStudy, 'code' | 'name' | 'indication' | 'phase' | 'status' | 'owner_org' | 'leading_pi_info' | 'system_admin'>>;
 
@@ -105,6 +105,8 @@ export type ApiPatient = {
   clinical_data: Record<string, string | number>;
   clinical_data_version?: string;
   clinical_data_format?: 'jsonb' | 'json' | 'legacy';
+  created_at: string;
+  updated_at: string;
 };
 
 export type ApiSample = {

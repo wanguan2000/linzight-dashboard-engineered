@@ -285,7 +285,6 @@ async function runSmoke() {
     token: lzAdmin.access_token,
     body: {
       id: smokeStudyId,
-      code: smokeStudyId,
       name: 'Smoke Lifecycle Study',
       indication: 'smoke',
       phase: 'RWD',
@@ -294,12 +293,12 @@ async function runSmoke() {
     },
   });
   assert(createdStudy.status === 201 && createdStudy.data.status === 'draft', 'LZ_ADMIN should create a draft Study');
+  assert(/^\d{2}$/.test(createdStudy.data.code), 'created Study should receive a two-digit Study Code');
   await request('/studies', {
     method: 'POST',
     token: configAdmin.access_token,
     body: {
       id: `${smokeStudyId}-BLOCKED`,
-      code: `${smokeStudyId}-BLOCKED`,
       name: 'Blocked Study',
       indication: 'smoke',
     },
@@ -352,13 +351,14 @@ async function runSmoke() {
   assert(dataManagerPatients.data[0].hospital_no.includes('****'), 'data manager hospital number should be masked in API view');
 
   const patient = patients.data[0];
-  const createdPatientName = `RJ-SMOKE-${Date.now()}`;
+  const rejectedPatientName = `RJ-SMOKE-${Date.now()}`;
   const createdPatient = await request('/studies/LZXK-01/patients', {
     method: 'POST',
     token: crc.access_token,
     body: {
       study_id: 'LZXK-01',
-      name: createdPatientName,
+      name: rejectedPatientName,
+      patient_number: rejectedPatientName,
       hospital_no: `RJ-${Date.now()}`,
       sex: '女',
       age: 52,
@@ -368,10 +368,31 @@ async function runSmoke() {
       clinical_data: { ECOG评分: 1 },
     },
   });
-  assert(createdPatient.status === 201 && createdPatient.data.name === createdPatientName, 'Study CRC should create a scoped patient');
+  assert(createdPatient.status === 201, 'Study CRC should create a scoped patient');
+  assert(/^H\d{5}$/.test(createdPatient.data.patient_number), 'created patient should receive an automatic H00010-H99999 patient number');
+  assert(createdPatient.data.patient_number === createdPatient.data.name, 'patient number compatibility field should stay in sync with the generated number');
+  assert(createdPatient.data.patient_number !== rejectedPatientName, 'backend should ignore caller-supplied patient number values');
+  assert(createdPatient.data.created_at && createdPatient.data.updated_at, 'created patient response should include created_at and updated_at');
+  const immutableNumberUpdate = await request(`/patients/${createdPatient.data.id}`, {
+    method: 'PUT',
+    token: crc.access_token,
+    body: { patient_number: 'A01000', name: 'A01000', note: 'attempt patient number mutation' },
+  });
+  assert(immutableNumberUpdate.data.patient_number === createdPatient.data.patient_number, 'patient number update should be ignored');
+  assert(immutableNumberUpdate.data.name === createdPatient.data.name, 'patient number compatibility name update should be ignored');
+  await request(`/patients/${patient.id}`, {
+    method: 'PUT',
+    token: crc.access_token,
+    body: { note: `updated after create ${Date.now()}` },
+  });
+  const patientsAfterOlderUpdate = await request('/studies/LZXK-01/patients', { token: crc.access_token });
+  assert(
+    patientsAfterOlderUpdate.data[0]?.id === createdPatient.data.id,
+    'patient list should default to newest created patient, not most recently updated patient'
+  );
   const consentList = await request('/studies/LZXK-01/consents', { token: crc.access_token });
   const createdPatientConsent = consentList.data.find((consent) => consent.patient_id === createdPatient.data.id);
-  assert(createdPatientConsent?.patient_name === createdPatientName, 'newly created patient should have a matching pending consent record');
+  assert(createdPatientConsent?.patient_name === createdPatient.data.patient_number, 'newly created patient should have a matching pending consent record');
   assert(createdPatientConsent?.status === '待签署', 'newly created patient consent should start as pending signature');
   const patientConsent = consentList.data.find((consent) => consent.patient_id === patient.id) ?? consentList.data[0];
   assert(patientConsent?.study_id === 'LZXK-01', 'consent list should stay in LZXK-01');
@@ -663,19 +684,25 @@ async function runSmoke() {
     token: crc.access_token,
     body: {
       id: `SPL-SMOKE-${Date.now()}`,
-      patient_id: patient.id,
-      patient_name: patient.name,
-      hospital_no: patient.hospital_no,
+      patient_id: createdPatient.data.id,
+      patient_name: createdPatient.data.name,
+      hospital_no: createdPatient.data.hospital_no,
       sample_type: '血液',
       visit: 'V1',
       collected_at: '2026-05-11',
       storage: 'A-01',
+      initial_quantity: '5',
+      quantity_unit: 'mL',
       status: '已采集',
       linked_omics: [],
     },
   });
   assert(sample.status === 201, 'sample create should return 201');
   assert(sample.data.study_id === 'LZXK-01', 'sample should inherit patient study_id');
+  const lzxkStudies = await request('/studies', { token: crc.access_token });
+  const lzxkStudyCode = lzxkStudies.data.find((study) => study.id === 'LZXK-01')?.code;
+  assert(sample.data.id === `S${lzxkStudyCode}${createdPatient.data.patient_number.slice(-3)}01`, 'sample id should be generated from Study Code, patient number suffix, and patient sample sequence');
+  assert(sample.data.remaining_quantity === '5', 'sample remaining quantity should start from initial quantity');
   const scopedSamples = await request('/studies/LZXK-01/samples', { token: crc.access_token });
   assert(scopedSamples.data.length > 0, 'scoped sample list should not be empty');
   assert(scopedSamples.data.every((row) => row.study_id === 'LZXK-01'), 'sample list leaked another study');
@@ -703,9 +730,13 @@ async function runSmoke() {
     token: crc.access_token,
     body: {
       testing_project_id: 'TP-LUNG-NGS',
-      patient_id: patient.id,
-      patient_name: patient.name,
+      patient_id: createdPatient.data.id,
+      patient_name: createdPatient.data.name,
       sample_id: sample.data.id,
+      sample_ids: [sample.data.id],
+      sample_usage: {
+        [sample.data.id]: { usedQuantity: '2', returnedQuantity: '0.5', unit: 'mL', role: '主样本' },
+      },
       sample_type: sample.data.sample_type,
       assay: 'NGS panel',
       platform: 'NovaSeq',
@@ -718,7 +749,20 @@ async function runSmoke() {
   });
   assert(omics.status === 201, 'omics create should return 201');
   assert(omics.data.study_id === 'LZXK-01', 'omics should inherit patient study_id');
-  const omicsResultFile = await uploadOmicsResultFile(crc.access_token, patient.id, sample.data.id, omics.data.id);
+  const sampleAfterOmicsCreate = await request(`/samples/${sample.data.id}`, { token: crc.access_token });
+  assert(sampleAfterOmicsCreate.data.remaining_quantity === '3.5', 'remaining quantity should subtract sent amount and add returned amount');
+  await request(`/omics/${omics.data.id}`, {
+    method: 'PUT',
+    token: crc.access_token,
+    body: {
+      sample_usage: {
+        [sample.data.id]: { usedQuantity: '2', returnedQuantity: '1', unit: 'mL', role: '主样本' },
+      },
+    },
+  });
+  const sampleAfterReturnUpdate = await request(`/samples/${sample.data.id}`, { token: crc.access_token });
+  assert(sampleAfterReturnUpdate.data.remaining_quantity === '4', 'remaining quantity should update when returned quantity changes');
+  const omicsResultFile = await uploadOmicsResultFile(crc.access_token, createdPatient.data.id, sample.data.id, omics.data.id);
   assert(omicsResultFile.category === 'omics_result', 'uploaded omics result should use omics_result category');
   assert(omicsResultFile.omics_id === omics.data.id, 'uploaded omics result should link omics_id');
   assert(omicsResultFile.sample_id === sample.data.id, 'uploaded omics result should link sample_id');

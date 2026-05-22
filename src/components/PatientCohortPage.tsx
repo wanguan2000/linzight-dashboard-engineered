@@ -42,6 +42,7 @@ type SampleSummaryItem = {
 
 type PatientEditorMode = 'create' | 'edit';
 type StudyNameLookup = Record<string, string>;
+type StudyCodeLookup = Record<string, string>;
 
 const sampleSummaryFallbackTypes = ['肿瘤FFPE', '肿瘤组织', 'CSF', '血液', '胸水'];
 const detectionSummaryFallbackTypes = ['RNA-seq', 'WES', 'scRNA-seq', '类器官构建', 'Olink'];
@@ -162,6 +163,26 @@ function defaultStudyNameLookup(): StudyNameLookup {
 
 function studyNameForPatient(patient: PatientRecord, studyNameById: StudyNameLookup) {
   return patient.studyName || studyNameById[patient.studyId] || patient.studyId || '-';
+}
+
+function formatStudyCode(value?: string | null) {
+  const number = Number.parseInt(String(value ?? '').trim(), 10);
+  if (Number.isFinite(number) && number >= 1 && number <= 99) return number.toString().padStart(2, '0');
+  return '--';
+}
+
+function studyCodeForPatient(patient: PatientRecord, studyCodeById: StudyCodeLookup) {
+  return formatStudyCode(studyCodeById[patient.studyId]);
+}
+
+function patientSortTimestamp(patient: PatientRecord) {
+  const value = patient.createdAt ?? patient.lastUpdated ?? '';
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function comparePatientsByCreatedAtDesc(a: PatientRecord, b: PatientRecord) {
+  return patientSortTimestamp(b) - patientSortTimestamp(a) || a.name.localeCompare(b.name);
 }
 
 function formatPercent(value: number, total: number) {
@@ -376,6 +397,7 @@ interface PatientTableProps {
   emptyMessage?: string;
   showStudyId?: boolean;
   studyNameById?: StudyNameLookup;
+  studyCodeById?: StudyCodeLookup;
 }
 
 function PatientTable({
@@ -390,7 +412,8 @@ function PatientTable({
   canEdit = true,
   emptyMessage = '暂无匹配患者',
   showStudyId = false,
-  studyNameById = defaultStudyNameLookup()
+  studyNameById = defaultStudyNameLookup(),
+  studyCodeById = {}
 }: PatientTableProps) {
   const { t } = useI18n();
   const [revealedPatientIds, setRevealedPatientIds] = useState<Set<string>>(new Set());
@@ -403,6 +426,7 @@ function PatientTable({
             <th>{t('患者编号')}</th>
             <th>{t('患者姓名')}</th>
             {showStudyId ? <th>{t('Study ID')}</th> : null}
+            {showStudyId ? <th>Study Code</th> : null}
             {showStudyId ? <th>{t('Study 名称')}</th> : null}
             <th>{t('住院号')}</th>
             <th>{t('性别')}</th>
@@ -424,6 +448,7 @@ function PatientTable({
             const canRevealPatientName = hasPatientName && patient.patientName !== patientNameInitials;
             const showFullPatientName = revealedPatientIds.has(revealKey) && canRevealPatientName;
             const studyName = studyNameForPatient(patient, studyNameById);
+            const studyCode = studyCodeForPatient(patient, studyCodeById);
               return (
               <tr className={patient.name === activePatientName ? 'is-active' : undefined} key={`${patient.studyId}-${patient.name}`}>
                 <td data-label={t('患者编号')}>{patient.patientNumber || patient.name || patient.id || '-'}</td>
@@ -450,6 +475,7 @@ function PatientTable({
                   </div>
                 </td>
                 {showStudyId ? <td data-label={t('Study ID')}><span className="status-pill status-pill--info">{patient.studyId}</span></td> : null}
+                {showStudyId ? <td data-label="Study Code"><span className="status-pill status-pill--info">{studyCode}</span></td> : null}
                 {showStudyId ? <td data-label={t('Study 名称')}>{t(studyName)}</td> : null}
                 <td data-label={t('住院号')}>{patient.hospitalNo}</td>
                 <td data-label={t('性别')}>{t(patient.sex)}</td>
@@ -502,7 +528,7 @@ function PatientTable({
           })}
           {!patients.length && (
             <tr>
-	              <td colSpan={showStudyId ? 13 : 11}>{t(emptyMessage)}</td>
+	              <td colSpan={showStudyId ? 14 : 11}>{t(emptyMessage)}</td>
             </tr>
           )}
         </tbody>
@@ -534,14 +560,18 @@ export function PatientListModule({
   const [ageRange, setAgeRange] = useState('全部');
   const [disease, setDisease] = useState<'全部' | DiseaseType>('全部');
   const [studyFilter, setStudyFilter] = useState('全部 Study');
-  const [sort, setSort] = useState('最近更新');
+  const [sort, setSort] = useState('最新建立');
   const [currentPage, setCurrentPage] = useState(1);
+  const [runtimeStudyNames, setRuntimeStudyNames] = useState<StudyNameLookup>(defaultStudyNameLookup);
+  const [runtimeStudyCodes, setRuntimeStudyCodes] = useState<StudyCodeLookup>({});
   const studyOptions = useMemo(() => uniqueStudyIds(patients), [patients]);
   const showStudyId = studyOptions.length > 1;
   const studyNameById = useMemo(() => ({
     ...defaultStudyNameLookup(),
+    ...runtimeStudyNames,
     ...Object.fromEntries(patients.filter((patient) => patient.studyName).map((patient) => [patient.studyId, patient.studyName as string]))
-  }), [patients]);
+  }), [patients, runtimeStudyNames]);
+  const studyCodeById = useMemo(() => runtimeStudyCodes, [runtimeStudyCodes]);
   const diseaseOptions = useMemo<Array<'全部' | DiseaseType>>(
     () => ['全部', ...Array.from(new Set(patients.filter((patient) => studyFilter === '全部 Study' || patient.studyId === studyFilter).map((patient) => patient.diseaseType)))],
     [patients, studyFilter]
@@ -556,7 +586,8 @@ export function PatientListModule({
         return [
 	          patient.name,
 	          patient.patientName ?? '',
-	          patient.patientNameInitials ?? '',
+          patient.patientNameInitials ?? '',
+          studyCodeForPatient(patient, studyCodeById),
           studyNameForPatient(patient, studyNameById),
 	          patient.hospitalNo,
           patient.diseaseType,
@@ -575,9 +606,9 @@ export function PatientListModule({
       .sort((a, b) => {
         if (sort === '完整性优先') return calculateClinicalCompleteness(b.clinicalData) - calculateClinicalCompleteness(a.clinicalData);
         if (sort === '年龄升序') return a.age - b.age;
-        return a.name.localeCompare(b.name);
+        return comparePatientsByCreatedAtDesc(a, b);
       });
-  }, [ageRange, disease, patients, search, sex, sort, studyFilter, studyNameById]);
+  }, [ageRange, disease, patients, search, sex, sort, studyCodeById, studyFilter, studyNameById]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPatients.length / patientPageSize));
   const visiblePage = Math.min(currentPage, totalPages);
@@ -593,6 +624,24 @@ export function PatientListModule({
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    let ignore = false;
+    void fetchStudies()
+      .then((studies) => {
+        if (ignore) return;
+        const activeStudies = studies.filter((study) => study.status !== 'deleted');
+        setRuntimeStudyNames({
+          ...defaultStudyNameLookup(),
+          ...Object.fromEntries(activeStudies.map((study) => [study.id, study.name]))
+        });
+        setRuntimeStudyCodes(Object.fromEntries(activeStudies.map((study) => [study.id, formatStudyCode(study.code)])));
+      })
+      .catch(() => undefined);
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   return (
     <section className={`patient-list-card${className ? ` ${className}` : ''}`}>
@@ -659,7 +708,7 @@ export function PatientListModule({
         <label>
           <span>{t('排序')}</span>
           <select value={sort} onChange={(event) => setSort(event.target.value)}>
-            <option value="最近更新">{t('最近更新')}</option>
+            <option value="最新建立">{t('最新建立')}</option>
             <option value="完整性优先">{t('CRF完整性优先')}</option>
             <option value="年龄升序">{t('年龄升序')}</option>
           </select>
@@ -671,6 +720,7 @@ export function PatientListModule({
         activePatientName={activePatientName}
         onEditPatient={onEditPatient}
         onViewPatient={onViewPatient}
+        studyCodeById={studyCodeById}
         studyNameById={studyNameById}
         showStudyId={showStudyId}
       />
@@ -735,7 +785,7 @@ export function PatientCohortPage({
   const [ageRange, setAgeRange] = useState('全部');
   const [disease, setDisease] = useState<'全部' | DiseaseType>('全部');
   const [studyFilter, setStudyFilter] = useState('全部 Study');
-  const [sort, setSort] = useState('最近更新');
+  const [sort, setSort] = useState('最新建立');
   const [currentPage, setCurrentPage] = useState(1);
   const [editorMode, setEditorMode] = useState<PatientEditorMode | null>(null);
   const [draftPatient, setDraftPatient] = useState<PatientRecord | null>(null);
@@ -747,6 +797,7 @@ export function PatientCohortPage({
   const [configuredDetectionTypes, setConfiguredDetectionTypes] = useState(getGlobalDetectionTypes);
   const [runtimeStudyOptions, setRuntimeStudyOptions] = useState<string[]>([]);
   const [runtimeStudyNames, setRuntimeStudyNames] = useState<StudyNameLookup>(defaultStudyNameLookup);
+  const [runtimeStudyCodes, setRuntimeStudyCodes] = useState<StudyCodeLookup>({});
   const [sampleFocusPatient, setSampleFocusPatient] = useState<PatientRecord | null>(null);
   const [sampleCreateRequest, setSampleCreateRequest] = useState(0);
   const [omicsCreateRequest, setOmicsCreateRequest] = useState(0);
@@ -769,6 +820,7 @@ export function PatientCohortPage({
     ...runtimeStudyNames,
     ...Object.fromEntries(patients.filter((patient) => patient.studyName).map((patient) => [patient.studyId, patient.studyName as string]))
   }), [patients, runtimeStudyNames]);
+  const studyCodeById = useMemo(() => runtimeStudyCodes, [runtimeStudyCodes]);
   const studyScopedPatients = useMemo(
     () => patients.filter((patient) => studyFilter === '全部 Study' || patient.studyId === studyFilter),
     [patients, studyFilter]
@@ -822,6 +874,7 @@ export function PatientCohortPage({
   useEffect(() => {
     if (!currentUser) {
       setRuntimeStudyOptions([]);
+      setRuntimeStudyCodes({});
       return undefined;
     }
     let ignore = false;
@@ -834,9 +887,13 @@ export function PatientCohortPage({
           ...defaultStudyNameLookup(),
           ...Object.fromEntries(activeStudies.map((study) => [study.id, study.name]))
         });
+        setRuntimeStudyCodes(Object.fromEntries(activeStudies.map((study) => [study.id, formatStudyCode(study.code)])));
       })
       .catch(() => {
-        if (!ignore) setRuntimeStudyOptions([]);
+        if (!ignore) {
+          setRuntimeStudyOptions([]);
+          setRuntimeStudyCodes({});
+        }
       });
     return () => {
       ignore = true;
@@ -882,6 +939,7 @@ export function PatientCohortPage({
 	          patient.name,
 	          patient.patientName ?? '',
 	          patient.patientNameInitials ?? '',
+          studyCodeForPatient(patient, studyCodeById),
           studyNameForPatient(patient, studyNameById),
 	          patient.hospitalNo,
           patient.diseaseType,
@@ -901,9 +959,9 @@ export function PatientCohortPage({
 	      .sort((a, b) => {
 	        if (sort === '完整性优先') return calculateClinicalCompleteness(b.clinicalData) - calculateClinicalCompleteness(a.clinicalData);
 	        if (sort === '年龄升序') return a.age - b.age;
-	        return a.name.localeCompare(b.name);
+	        return comparePatientsByCreatedAtDesc(a, b);
 	      });
-	  }, [ageRange, disease, sampleCollectedOnly, search, sex, sort, studyNameById, studyScopedPatients]);
+	  }, [ageRange, disease, sampleCollectedOnly, search, sex, sort, studyCodeById, studyNameById, studyScopedPatients]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPatients.length / patientPageSize));
   const pageStart = (currentPage - 1) * patientPageSize;
@@ -982,8 +1040,8 @@ export function PatientCohortPage({
       setSaveStatus('请先选择一个 Study，再保存患者');
       return;
     }
-	    if (!draftPatient.name.trim() || !draftPatient.patientName?.trim() || !draftPatient.hospitalNo.trim()) {
-	      setSaveStatus('患者编号、患者姓名和住院号为必填项');
+	    if (!draftPatient.patientName?.trim() || !draftPatient.hospitalNo.trim()) {
+	      setSaveStatus('患者姓名和住院号为必填项；患者编号由系统自动生成');
       return;
     }
 
@@ -992,7 +1050,7 @@ export function PatientCohortPage({
 	      studyId: targetStudyId,
 	      patientNumber: draftPatient.patientNumber?.trim() || draftPatient.name.trim(),
 	      patientName: draftPatient.patientName?.trim() ?? '',
-	      name: draftPatient.name.trim(),
+	      name: draftPatient.name.trim() || draftPatient.patientNumber?.trim() || 'AUTO',
       hospitalNo: draftPatient.hospitalNo.trim(),
       note: draftPatient.note.trim()
     };
@@ -1163,7 +1221,7 @@ export function PatientCohortPage({
             <label>
               <span>{t('排序')}</span>
               <select value={sort} onChange={(event) => setSort(event.target.value)}>
-                <option value="最近更新">{t('最近更新')}</option>
+                <option value="最新建立">{t('最新建立')}</option>
                 <option value="完整性优先">{t('CRF完整性优先')}</option>
                 <option value="年龄升序">{t('年龄升序')}</option>
               </select>
@@ -1202,7 +1260,7 @@ export function PatientCohortPage({
                 </label>
 	                <label>
 	                  <span>{t('患者编号')}</span>
-	                  <input value={draftPatient.name} onChange={(event) => patchDraftPatient({ name: event.target.value })} />
+	                  <input value={editorMode === 'create' ? '保存后自动生成' : draftPatient.patientNumber || draftPatient.name || '-'} readOnly />
 	                </label>
 	                <label>
 	                  <span>{t('患者姓名')}</span>
@@ -1252,6 +1310,7 @@ export function PatientCohortPage({
             onAddSample={addPatientSample}
             onAddOmics={addPatientOmics}
             onDeletePatient={(patient) => void removePatient(patient)}
+            studyCodeById={studyCodeById}
             studyNameById={studyNameById}
             showStudyId={showStudyId}
           />

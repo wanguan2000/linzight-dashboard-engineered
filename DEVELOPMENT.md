@@ -91,6 +91,13 @@ npm run restore:sqlite -- backups/linzight-<timestamp>
 - Playwright 核心路径测试。
 - 更完整的权限矩阵和真实浏览器交互回归测试。
 
+## 业务编号规则
+
+- Study Code：`studies.code` 由后端规范为 `01`-`99` 两位数字，`study_id` 仍是路由、权限和数据隔离键。
+- 患者编号：`patients.patient_number` 由后端自动生成，全局唯一，从 `H00010` 到 `H99999`；前端创建和编辑时只读，后端忽略请求里的 `patient_number` 与兼容字段 `name`。
+- 样本编号：`samples.id` 由后端自动生成且不可修改，格式为 `S` + 两位 Study Code + 患者编号后三位 + 该患者样本序号 `01`-`99`，例如 Study Code `05`、患者编号 `H00080` 的第一个样本为 `S0508001`。
+- 样本余量：后端按 `initial_quantity - sum(sample_usage.usedQuantity) + sum(sample_usage.returnedQuantity)` 自动计算 `remaining_quantity`，前端只读展示，不再提供手工校正量。
+
 ## 推荐 Git 工作流
 
 - 默认分支：`main`。

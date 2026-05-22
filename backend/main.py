@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -237,6 +238,101 @@ def dump_model(model: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     if hasattr(model, "model_dump"):
         return model.model_dump(exclude_unset=exclude_unset)
     return model.dict(exclude_unset=exclude_unset)
+
+
+def parse_study_code_number(value: Any) -> int | None:
+    text = str(value or "").strip()
+    if not re.fullmatch(r"\d{1,2}", text):
+        return None
+    number = int(text)
+    if 1 <= number <= 99:
+        return number
+    return None
+
+
+def format_study_code(number: int) -> str:
+    return f"{number:02d}"
+
+
+def next_study_code(conn: Any) -> str:
+    used_numbers = {
+        number
+        for number in (parse_study_code_number(row["code"]) for row in conn.execute("SELECT code FROM studies").fetchall())
+        if number is not None
+    }
+    for number in range(1, 100):
+        if number not in used_numbers:
+            return format_study_code(number)
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study Code capacity exhausted; only 01-99 are supported")
+
+
+def normalize_study_code(value: Any) -> str:
+    number = parse_study_code_number(value)
+    if number is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Study Code must be a two-digit number from 01 to 99")
+    return format_study_code(number)
+
+
+def ensure_two_digit_study_codes(conn: Any) -> None:
+    rows = conn.execute("SELECT id, code FROM studies ORDER BY CASE WHEN status = 'deleted' THEN 1 ELSE 0 END, created_at, id").fetchall()
+    if len(rows) > 99:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study Code capacity exhausted; only 01-99 are supported")
+    assignments = [(format_study_code(index), row["id"], row["code"]) for index, row in enumerate(rows, start=1)]
+    if any(code != current_code for code, _, current_code in assignments):
+        now = utc_now()
+        conn.executemany(
+            "UPDATE studies SET code = ? WHERE id = ?",
+            [(f"__renumbering_{index:02d}__", study_id) for index, (_, study_id, _) in enumerate(assignments, start=1)],
+        )
+        conn.executemany("UPDATE studies SET code = ?, updated_at = ? WHERE id = ?", [(code, now, study_id) for code, study_id, _ in assignments])
+
+
+def next_patient_number(conn: Any) -> str:
+    used_numbers: set[int] = set()
+    for row in conn.execute("SELECT patient_number, name FROM patients").fetchall():
+        for value in (row["patient_number"], row["name"]):
+            match = re.fullmatch(r"H(\d{5})", str(value or "").strip())
+            if match:
+                used_numbers.add(int(match.group(1)))
+    for number in range(10, 100000):
+        if number not in used_numbers:
+            return f"H{number:05d}"
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Patient number capacity exhausted; only H00010-H99999 are supported")
+
+
+def sample_patient_digits(patient_number: str) -> str:
+    digits = "".join(re.findall(r"\d", patient_number))
+    if len(digits) < 3:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="patient number must contain at least three digits before sample id can be generated")
+    return digits[-3:]
+
+
+def next_sample_id(conn: Any, patient_id: str) -> str:
+    patient = fetch_one(
+        conn,
+        """
+        SELECT p.id, p.patient_number, p.study_id, s.code AS study_code
+        FROM patients p
+        JOIN studies s ON s.id = p.study_id
+        WHERE p.id = ?
+        """,
+        (patient_id,),
+    )
+    study_code = normalize_study_code(patient["study_code"])
+    patient_digits = sample_patient_digits(patient["patient_number"])
+    prefix = f"S{study_code}{patient_digits}"
+    rows = conn.execute("SELECT id FROM samples WHERE patient_id = ? ORDER BY created_at, id", (patient_id,)).fetchall()
+    max_matching_sequence = 0
+    for row in rows:
+        match = re.fullmatch(rf"{re.escape(prefix)}(\d{{2}})", row["id"])
+        if match:
+            max_matching_sequence = max(max_matching_sequence, int(match.group(1)))
+    start_sequence = max(max_matching_sequence, len(rows)) + 1
+    for sequence in range(start_sequence, 100):
+        sample_id = f"{prefix}{sequence:02d}"
+        if not conn.execute("SELECT 1 FROM samples WHERE id = ?", (sample_id,)).fetchone():
+            return sample_id
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Sample id capacity exhausted for this patient; only 01-99 are supported")
 
 
 def not_found() -> HTTPException:
@@ -687,6 +783,66 @@ def omics_record_ids_for_sample(conn: Any, sample_id: str) -> list[str]:
         if row["sample_id"] == sample_id or sample_id in sample_ids:
             record_ids.append(row["id"])
     return record_ids
+
+
+def parse_quantity_value(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return Decimal(text)
+    except InvalidOperation:
+        return None
+
+
+def format_quantity_value(value: Decimal) -> str:
+    normalized = value.normalize()
+    if normalized == normalized.to_integral():
+        return str(normalized.quantize(Decimal("1")))
+    return format(normalized, "f")
+
+
+def omics_sample_ids(record: dict[str, Any]) -> list[str]:
+    sample_ids = record.get("sample_ids") or []
+    primary_sample_id = record.get("sample_id")
+    ids: list[str] = []
+    for sample_id in [primary_sample_id, *sample_ids]:
+        if sample_id and sample_id not in ids:
+            ids.append(sample_id)
+    return ids
+
+
+def recalculate_sample_remaining_quantity(conn: Any, sample_id: str) -> None:
+    try:
+        sample = row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
+    except KeyError:
+        return
+    initial_quantity = parse_quantity_value(sample.get("initial_quantity"))
+    if initial_quantity is None:
+        remaining_quantity = ""
+    else:
+        sent_quantity = Decimal("0")
+        returned_quantity = Decimal("0")
+        for row in conn.execute("SELECT * FROM omics_records").fetchall():
+            record = row_to_omics(row)
+            if sample_id not in omics_sample_ids(record):
+                continue
+            usage = (record.get("sample_usage") or {}).get(sample_id) or {}
+            sent_quantity += parse_quantity_value(usage.get("usedQuantity") or usage.get("used_quantity") or usage.get("sentQuantity") or usage.get("sent_quantity")) or Decimal("0")
+            returned_quantity += parse_quantity_value(usage.get("returnedQuantity") or usage.get("returned_quantity")) or Decimal("0")
+        remaining_quantity = format_quantity_value(initial_quantity - sent_quantity + returned_quantity)
+    conn.execute("UPDATE samples SET remaining_quantity = ?, updated_at = ? WHERE id = ?", (remaining_quantity, utc_now(), sample_id))
+
+
+def recalculate_remaining_for_omics_records(conn: Any, *records: dict[str, Any] | None) -> None:
+    sample_ids: set[str] = set()
+    for record in records:
+        if record:
+            sample_ids.update(omics_sample_ids(record))
+    for sample_id in sample_ids:
+        recalculate_sample_remaining_quantity(conn, sample_id)
 
 
 def cascade_patient_study_id(conn: Any, patient_id: str, target_study_id: str) -> None:
@@ -1526,7 +1682,11 @@ def create_study(payload: StudyCreate, authorization: str | None = Header(defaul
         actor = authorize(authorization, "studies", "write", conn=conn)
         if user_role(actor) != "LZ_ADMIN":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can create Studies")
-        if conn.execute("SELECT 1 FROM studies WHERE id = ? OR code = ?", (data["id"], data["code"])).fetchone():
+        ensure_two_digit_study_codes(conn)
+        data["code"] = next_study_code(conn)
+        if conn.execute("SELECT 1 FROM studies WHERE id = ?", (data["id"],)).fetchone():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study id already exists")
+        if conn.execute("SELECT 1 FROM studies WHERE code = ?", (data["code"],)).fetchone():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study id or code already exists")
         conn.execute(
             """
@@ -1556,13 +1716,14 @@ def create_study(payload: StudyCreate, authorization: str | None = Header(defaul
 def list_studies(authorization: str | None = Header(default=None)) -> list[dict[str, Any]]:
     with connect() as conn:
         user = authorize(authorization, "studies", "read", conn=conn)
+        ensure_two_digit_study_codes(conn)
         sql = "SELECT * FROM studies"
         params: list[Any] = []
         where: list[str] = []
         append_study_filter(conn, user, where, params, "id")
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY id"
+        sql += " ORDER BY code, id"
         return [row_to_study(row) for row in conn.execute(sql, params).fetchall()]
 
 
@@ -1589,12 +1750,17 @@ def update_global_configuration(payload: GlobalConfigurationUpdate, authorizatio
 
 @app.patch("/studies/{study_id}")
 def update_study(study_id: str, payload: StudyUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    data = dump_model(payload)
+    data = dump_model(payload, exclude_unset=True)
     with connect() as conn:
         actor = authorize(authorization, "studies", "write", study_id=study_id, conn=conn)
         if user_role(actor) != "LZ_ADMIN":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can update Study lifecycle")
+        ensure_two_digit_study_codes(conn)
         before = row_to_study(fetch_one(conn, "SELECT * FROM studies WHERE id = ?", (study_id,)))
+        if "code" in data and data["code"] is not None:
+            data["code"] = normalize_study_code(data["code"])
+            if conn.execute("SELECT 1 FROM studies WHERE code = ? AND id <> ?", (data["code"], study_id)).fetchone():
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Study Code already exists")
         columns: list[str] = []
         values: list[Any] = []
         for key in ("code", "name", "indication", "phase", "status", "owner_org", "leading_pi_info", "system_admin"):
@@ -2338,7 +2504,7 @@ def list_patients(
             params.append(disease_type)
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY updated_at DESC"
+        sql += " ORDER BY created_at DESC, updated_at DESC, id DESC"
         patients = [row_to_patient(row) for row in conn.execute(sql, params).fetchall()]
         return apply_field_permissions_to_records(conn, user, patients)
 
@@ -2352,12 +2518,13 @@ def create_patient(payload: PatientCreate, path_study_id: str | None = None, aut
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match payload study_id")
         data["study_id"] = path_study_id
     patient_id = data.pop("id") or f"PAT-{uuid4().hex[:8].upper()}"
-    patient_number = data.get("patient_number") or data["name"]
     patient_name = data.get("patient_name") or data["clinical_data"].get("姓名") or ""
     now = utc_now()
     try:
         with connect() as conn:
             user = authorize(authorization, "patients", "write", study_id=data["study_id"], conn=conn)
+            patient_number = next_patient_number(conn)
+            data["clinical_data"]["患者编号"] = patient_number
             clinical_data_jsonb, clinical_data_format, clinical_data_version = sqlite_json_storage(conn, data["clinical_data"])
             conn.execute(
                 """
@@ -2370,7 +2537,7 @@ def create_patient(payload: PatientCreate, path_study_id: str | None = None, aut
                     data["study_id"],
                     patient_number,
                     patient_name,
-                    data["name"],
+                    patient_number,
                     data["hospital_no"],
                     data["sex"],
                     data["age"],
@@ -2428,6 +2595,10 @@ def update_patient(patient_id: str, payload: PatientUpdate, authorization: str |
             if user_role(user) != "LZ_ADMIN":
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can move patients between studies")
             authorize(authorization, "patients", "write", study_id=target_study_id, conn=conn)
+        data.pop("patient_number", None)
+        data.pop("name", None)
+        if isinstance(data.get("clinical_data"), dict):
+            data["clinical_data"]["患者编号"] = before["patient_number"]
         columns: list[str] = []
         values: list[Any] = []
         for key, value in data.items():
@@ -2499,15 +2670,16 @@ def list_samples(
 @app.post("/samples", status_code=status.HTTP_201_CREATED)
 def create_sample(payload: SampleCreate, path_study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     data = dump_model(payload)
-    sample_id = data.pop("id").strip()
-    if not sample_id:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="sample id is required")
+    data.pop("id", None)
+    data["remaining_quantity"] = data["initial_quantity"]
     now = utc_now()
     with connect() as conn:
+        ensure_two_digit_study_codes(conn)
         study_id = patient_study_id(conn, data["patient_id"])
         if path_study_id and path_study_id != study_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="path study_id does not match patient")
         user = authorize(authorization, "samples", "write", study_id=study_id, conn=conn)
+        sample_id = next_sample_id(conn, data["patient_id"])
         try:
             conn.execute(
                 """
@@ -2535,6 +2707,7 @@ def create_sample(payload: SampleCreate, path_study_id: str | None = None, autho
                     now,
                 ),
             )
+            recalculate_sample_remaining_quantity(conn, sample_id)
             row = row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
             log_operation(conn, user, "CREATE", "samples", sample_id, study_id=study_id, after=row)
             return row
@@ -2572,7 +2745,11 @@ def update_sample(sample_id: str, payload: SampleUpdate, authorization: str | No
         columns: list[str] = []
         values: list[Any] = []
         for key, value in data.items():
+            if key == "id":
+                continue
             if key == "study_id":
+                continue
+            if key == "remaining_quantity":
                 continue
             if key == "patient_id" and value:
                 new_study_id = patient_study_id(conn, value)
@@ -2599,6 +2776,7 @@ def update_sample(sample_id: str, payload: SampleUpdate, authorization: str | No
         result = conn.execute(f"UPDATE samples SET {', '.join(columns)} WHERE id = ?", values)
         if result.rowcount == 0:
             raise not_found()
+        recalculate_sample_remaining_quantity(conn, sample_id)
         after = row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
         if after["study_id"] != before["study_id"]:
             conn.execute("UPDATE uploaded_files SET study_id = ? WHERE sample_id = ?", (after["study_id"], sample_id))
@@ -2982,6 +3160,7 @@ def create_omics(payload: OmicsCreate, path_study_id: str | None = None, authori
                 ),
             )
             row = row_to_omics(fetch_one(conn, "SELECT * FROM omics_records WHERE id = ?", (record_id,)))
+            recalculate_remaining_for_omics_records(conn, row)
             log_operation(conn, user, "CREATE", "omics_records", record_id, study_id=study_id, after=row)
             return row
         except Exception as exc:
@@ -3039,6 +3218,7 @@ def update_omics(record_id: str, payload: OmicsUpdate, authorization: str | None
         if result.rowcount == 0:
             raise not_found()
         after = row_to_omics(fetch_one(conn, "SELECT * FROM omics_records WHERE id = ?", (record_id,)))
+        recalculate_remaining_for_omics_records(conn, before, after)
         log_operation(conn, user, "UPDATE", "omics_records", record_id, study_id=after["study_id"], before=before, after=after)
         return after
 
@@ -3051,6 +3231,7 @@ def delete_omics(record_id: str, authorization: str | None = Header(default=None
         result = conn.execute("DELETE FROM omics_records WHERE id = ?", (record_id,))
         if result.rowcount == 0:
             raise not_found()
+        recalculate_remaining_for_omics_records(conn, record)
         log_operation(conn, user, "DELETE", "omics_records", record_id, study_id=record["study_id"], before=record)
 
 
@@ -4216,19 +4397,17 @@ async def import_patients(
     reader = csv.DictReader(io.StringIO(content))
     required = {"hospital_no", "sex", "age", "disease_type"}
     if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
-        raise HTTPException(status_code=400, detail="CSV must include patient_number or name, plus hospital_no,sex,age,disease_type")
+        raise HTTPException(status_code=400, detail="CSV must include hospital_no,sex,age,disease_type")
     now = utc_now()
     imported = 0
     with connect() as conn:
         user = authorize(authorization, "patients", "write", study_id=study_id, conn=conn)
         for row in reader:
-            patient_number = row.get("patient_number") or row.get("患者编号") or row.get("name") or ""
             patient_name = row.get("patient_name") or row.get("患者姓名") or row.get("姓名") or ""
-            if not patient_number:
-                raise HTTPException(status_code=400, detail="CSV row must include patient_number or name")
             patient_id = row.get("id") or f"PAT-IMP-{uuid4().hex[:6].upper()}"
             before_row = conn.execute("SELECT * FROM patients WHERE id = ?", (patient_id,)).fetchone()
             before = row_to_patient(before_row) if before_row else {}
+            patient_number = before.get("patient_number") or next_patient_number(conn)
             organs = [item.strip() for item in (row.get("organs") or "").replace("/", "、").split("、") if item.strip()]
             clinical_data = {
                 "患者编号": patient_number,
@@ -4269,7 +4448,7 @@ async def import_patients(
                     study_id,
                     patient_number,
                     patient_name,
-                    row.get("name") or patient_number,
+                    patient_number,
                     row["hospital_no"],
                     row["sex"],
                     int(row["age"]),

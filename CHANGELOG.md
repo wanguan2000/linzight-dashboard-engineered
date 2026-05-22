@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project uses Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- Study Registry and patient list now display a backend-normalized two-digit Study Code.
+- Multi-omics testing list filters for sample type, assay, vendor, sample usage, status, sent date, and QC.
+
+### Changed
+
+- Patient lists default to newest-created ordering.
+- Patient numbers are backend-generated, globally unique, read-only identifiers from `H00010` to `H99999`.
+- Sample IDs are backend-generated and read-only using `S` + Study Code + patient-number suffix + per-patient sequence, such as `S0508001`.
+- Sample remaining quantity is now calculated from initial quantity, sent quantity, and returned quantity.
+
 ## [1.0.3] - 2026-05-21
 
 ### Added

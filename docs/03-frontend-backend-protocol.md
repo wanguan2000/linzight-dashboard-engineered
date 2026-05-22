@@ -27,7 +27,7 @@ Study 配置总表由 `/study-configurations` 和 `/studies/{study_id}/configura
 
 随访记录由 `follow_up_records` 保存，不写入 CRF 版本配置表。它隶属于患者信息，绑定 `study_id + patient_id`，并可选通过 `visit_id` 关联某次随访访视，用于记录随访方式、随访人、生存/疾病状态、疗效、转移、不良事件、生活质量和失访原因。
 
-正式 GA 数据字段以 PostgreSQL 为准：患者基本信息使用 `patient_number / patient_name / study_id / hospital_no / sex / age / disease_type / note`；患者 CRF 使用每个 Study 的 `study_crf_versions.schema_json` 与 `crf_entries.payload`，默认 section 覆盖病程记录、住院、治疗方案、检查，JSON 格式按 Study CRF 方案配置；患者随访使用 `study_configurations.follow_up_schema` 与 `follow_up_records.payload`，默认覆盖访视、日期、类型、疗效评估和记录，JSON 格式按 Study 随访方案配置；样本信息使用 `patient_id / id / sample_type / collected_at / storage / initial_quantity / remaining_quantity / quantity_unit / note / linked_omics`，其中 `id` 是人工填写的条码/样本编号，后端不自动生成；多组学检测使用 `sample_id / sample_ids / sample_usage / testing_project_id / assay / vendor / platform / status / sent_at / completed_at / qc / result_file_id`。疾病类型、样本类型、检测类型和单位类型下拉框由 LZ 全局配置维护，前端通过 `/global-configuration` 从 `global_configurations` 表读取；API 按字符串接收这些字段；一个患者可有多个样本，一个检测可人工选择一个或多个样本。
+正式 GA 数据字段以 PostgreSQL 为准：患者基本信息使用 `patient_number / patient_name / study_id / hospital_no / sex / age / disease_type / note`，其中 `patient_number` 由后端自动生成唯一编号，从 `H00010` 到 `H99999`，前端创建和编辑时均不得手工修改；患者 CRF 使用每个 Study 的 `study_crf_versions.schema_json` 与 `crf_entries.payload`，默认 section 覆盖病程记录、住院、治疗方案、检查，JSON 格式按 Study CRF 方案配置；患者随访使用 `study_configurations.follow_up_schema` 与 `follow_up_records.payload`，默认覆盖访视、日期、类型、疗效评估和记录，JSON 格式按 Study 随访方案配置；样本信息使用 `patient_id / id / sample_type / collected_at / storage / initial_quantity / remaining_quantity / quantity_unit / note / linked_omics`，其中 `id` 由后端自动生成且不可修改，规则为 `S` + 两位 `Study Code` + 患者编号后三位数字 + 该患者样本序号 `01`-`99`，例如 Study Code `05`、患者编号 `H00080` 的第一个样本为 `S0508001`；`remaining_quantity` 由检测送样量和返还量自动计算；多组学检测使用 `sample_id / sample_ids / sample_usage / testing_project_id / assay / vendor / platform / status / sent_at / completed_at / qc / result_file_id`。疾病类型、样本类型、检测类型和单位类型下拉框由 LZ 全局配置维护，前端通过 `/global-configuration` 从 `global_configurations` 表读取；API 按字符串接收这些字段；一个患者可有多个样本，一个检测可人工选择一个或多个样本。
 
 患者姓名隐私展示由后端字段权限控制。API 返回 `patient_name_initials` 供默认显示；完整 `patient_name` 只对 `LZ_ADMIN`、`STUDY_CONFIG_ADMIN`、`STUDY_CRC` 和 `LZ_CRC` 返回。前端“授权查看”只能切换后端已授权返回的完整姓名，不能在前端拼接、还原或绕过后端权限。
 
@@ -35,13 +35,13 @@ Study 配置总表由 `/study-configurations` 和 `/studies/{study_id}/configura
 
 患者队列新建或编辑患者成功后，前端必须把保存后的患者设置为当前患者上下文，并同步给知情同意、临床数据采集和患者旅程等页面。后端 `POST /studies/{study_id}/patients` 创建患者主档，并创建一条 `status=待签署` 的 consent 记录；知情同意页面优先选择当前患者对应的 consent，不允许默认回退到列表第一名患者。新患者没有真实 CRF、访视、随访、样本或检测记录前，Patient Journey 必须显示空事件状态。
 患者编辑保存时，前端必须把当前表单中的 `study_id` 一并发送到 `PUT /patients/{patient_id}`。只有 `LZ_ADMIN` 可以跨 Study 更正患者所属 Study；后端会级联更新该患者的知情同意、访视、CRF、随访、样本、检测、文件、Query 和质控记录的 `study_id`，防止列表按 Study 过滤后主档与业务记录断裂。
-样本编辑保存时，前端也必须把表单中的 `study_id` 一并发送到 `PUT /samples/{sample_id}`。后端以目标患者的 Study 为准重算样本 `study_id`；若该样本已经被任何检测记录引用，则禁止直接更换患者，要求先处理关联检测记录，避免多样本检测中的 `sample_ids` 与患者/Study 不一致。
+样本编辑保存时，前端也必须把表单中的 `study_id` 一并发送到 `PUT /samples/{sample_id}`。后端以目标患者的 Study 为准重算样本 `study_id`，但样本编号 `id` 不允许修改；若该样本已经被任何检测记录引用，则禁止直接更换患者，要求先处理关联检测记录，避免多样本检测中的 `sample_ids` 与患者/Study 不一致。
 
 系统管理页的账号创建通过 `POST /users` 执行。前端传入 `username`、`display_name`、`role`、`password`、`study_id` 和 `member_status`；后端创建用户前会执行基础密码策略，密码使用 PBKDF2-HMAC-SHA256 加盐哈希保存。如果是研究级角色，会同步创建当前 Study 的 `study_members` 记录并返回 `study_memberships`。LZ 全局态由 `LZ_ADMIN` 创建 `LZ_ADMIN`、`LZ_CRC`、`LZ_DATA_MANAGER` 平台账户时，非 Admin 平台角色随后调用 `PATCH /users/{user_id}/study-scope` 写入授权 Study 范围。Create Account 按钮必须使用这些接口，不应只在前端插入本地账号。
 
 系统管理页的 Study 成员列表通过 `/studies/{study_id}/members` 读取，Study PI、Study CRC、Study Admin 和 Study DM 都默认可只读查看本 Study 成员和角色列表；已有成员启用/停用研究级角色通过同一路径 `POST` upsert，仍只允许 Study Admin 或 LZ Admin 写入。平台级 `LZ_ADMIN` 启用/禁用账号时调用 `PATCH /users/{user_id}/status`，该接口会影响登录生命周期。账号删除使用 `DELETE /users/{user_id}` 软删除/归档：前端显示 `Deleted`，后端保留 `users` 行和历史审计链，仅将账号状态置为 `deleted` 并禁用 Study membership。后端禁止当前用户自删，也禁止删除最后一个 active `LZ_ADMIN`。这些响应必须包含 `username`、`display_name` 和 `last_login_at`，与列表接口一致，前端才能在保存后直接更新账号行。
 
-LZ 全局态的 Study Registry 通过 `GET /studies` 读取 Study 主数据和生命周期状态。Registry 正式列为 `Study ID`、`Study 名称`、`leading_pi_info`、`status` 和 `system_admin`；`LZ_ADMIN` 的 New Study、Terminate 和 Delete 操作分别调用 `POST /studies`、`PATCH /studies/{study_id}` 和 `DELETE /studies/{study_id}`；删除为软删除，返回状态为 `deleted` 的 Study 行。前端必须展示 `draft / active / terminated / deleted` 状态，并在 terminated/deleted 时把业务写入预期解释为后端拒绝。
+LZ 全局态的 Study Registry 通过 `GET /studies` 读取 Study 主数据和生命周期状态。Registry 正式列为 `Study ID`、`Study Code`、`Study 名称`、`leading_pi_info`、`status` 和 `system_admin`；`Study ID` 继续用于路由和权限隔离，`Study Code` 是后端规范化的 `01`-`99` 两位展示码。`LZ_ADMIN` 的 New Study、Terminate 和 Delete 操作分别调用 `POST /studies`、`PATCH /studies/{study_id}` 和 `DELETE /studies/{study_id}`；删除为软删除，返回状态为 `deleted` 的 Study 行。前端必须展示 `draft / active / terminated / deleted` 状态，并在 terminated/deleted 时把业务写入预期解释为后端拒绝。患者列表在跨 Study 视图中通过 `GET /studies` 关联展示对应 Study Code。
 
 系统管理页的用户列表通过 `GET /users` 或 `GET /users?study_id=...` 补齐后端用户 ID、Study membership、`study_scope` 和 `last_login_at`。账号表正式列为姓名、账号邮箱、对应 StudyID、角色、Status、Last Login 和 Actions；Last Login 只显示后端返回值。同一个用户可以绑定多个 Study；单 Study 视角下 Study PI、Study CRC、Study Admin 和 Study DM 都应看到本 Study 成员列表与账户概览，写操作按钮再按角色禁用。平台态账号编辑面板按 Study 逐行调用 `/studies/{study_id}/members` upsert，每行独立选择 `STUDY_CONFIG_ADMIN`（Study Admin）、`STUDY_PI`、`STUDY_CRC` 或 `STUDY_DATA_MANAGER`（Study DM），并用 `/permissions/matrix` 的正式权限矩阵展示该 Study 角色对应权限。Study Workspace 内只能调整当前 Study 的 membership。Study 系统管理员用 `PATCH /users/{user_id}?study_id=...` 修改本 Study 成员基础资料；`Set Admin` 使用 `/studies/{study_id}/members` 将成员角色 upsert 为 `STUDY_CONFIG_ADMIN`，LZ 管理员会同步写入 Study 主数据 `system_admin`。平台级授权范围由 `LZ_ADMIN` 通过 `PATCH /users/{user_id}/study-scope` 写入 `global_role_study_scope`，前端的 Scope 操作只在 LZ 平台系统管理态对非 `LZ_ADMIN` 的 `LZ_*` 角色开放。`Deleted` 账号仍可在列表中留痕展示，但前端禁用编辑、密码、启停、Set Admin 和 Scope 操作。
 
@@ -65,7 +65,7 @@ GA 版本已移除 standalone audit log 模块；前端不再调用 `/audit-logs
 | 后端字段 | 前端字段 | 说明 |
 | --- | --- | --- |
 | `study_id` | `studyId` | RWD EDC Study 隔离字段 |
-| `patient_number` | `patientNumber` | 业务患者编号；后端 `id` 仍为系统主键 |
+| `patient_number` | `patientNumber` | 后端自动生成的业务患者编号，范围 `H00010`-`H99999`；后端 `id` 仍为系统主键 |
 | `patient_name` | `patientName` | 患者姓名；未授权角色返回拼音首字母 |
 | `patient_name_initials` | `patientNameInitials` | 患者姓名拼音首字母，用于默认显示 |
 | `visit_plan_id` | `visitPlanId` | 患者访视关联的 Study 访视计划 |
@@ -92,18 +92,20 @@ GA 版本已移除 standalone audit log 模块；前端不再调用 `/audit-logs
 | `clinical_data` | `clinicalData` | 当前 Study CRF 宽表字段，保留中文字段名；LZXK-01 不混入 SLE 字段 |
 | `clinical_data_version` | `clinicalDataVersion` | CRF payload 版本，SLE 为 `V0.1`，LZXK-01 为 `V1.0` |
 | `clinical_data_format` | `clinicalDataFormat` | 后端存储格式，优先为 `jsonb` |
+| `created_at` | `createdAt` | 患者主档创建时间；患者队列默认按该字段倒序展示最新建立患者 |
+| `updated_at` | `lastUpdated` | 患者主档更新时间；用于展示或兼容回退，不作为默认队列排序 |
 | `sample_type` | `sampleType` | 样本类型 |
 | `collected_at` | `collectedAt` | 样本采集日期 |
 | `storage` | `storage` | 样本保存地址 |
 | `initial_quantity` | `initialQuantity` | 样本初始量，字符串保存以支持混合单位 |
-| `remaining_quantity` | `remainingQuantity` | 样本剩余量，由人工编辑维护，不自动计算、不默认等于初始量，也不随检测自动扣减 |
+| `remaining_quantity` | `remainingQuantity` | 样本剩余量，由后端自动计算：初始量减所有检测送样量，再加检测返还量；前端只读展示 |
 | `quantity_unit` | `quantityUnit` | 样本数量单位；由 `Study 系统管理` 的全局单位类型字典单选，可为空 |
 | `note` | `note` | 患者或样本注释，按数据域区分 |
 | `linked_omics` | `linkedOmics` | 样本关联检测项目 |
 | `testing_project_id` | `testingProjectId` | 样本检测项目编号，不等同于 RWD EDC Study |
 | `sample_id` | `sampleId` | 组学检测关联样本 |
 | `sample_ids` | `sampleIds` | 组学检测人工选择的一个或多个样本；`sample_id` 保留为主样本 |
-| `sample_usage` | `sampleUsage` | 每个样本在检测中的使用量、单位和用途 |
+| `sample_usage` | `sampleUsage` | 每个样本在检测中的送样量 `usedQuantity`、返还量 `returnedQuantity`、单位和用途 |
 | `run_id` | `runId` | 检测批次号 |
 | `vendor` | `vendor` | 多组学检测供应商 |
 | `qc` | `qc` | 检测 QC 状态 |

@@ -1011,9 +1011,8 @@ export async function createPatientRecord(patient: PatientRecord): Promise<Patie
   const studyId = patient.studyId || getCurrentScopedStudyId();
   const response = await postJson<ApiPatient>(studyBusinessPath(studyId, 'patients'), {
     study_id: studyId,
-    patient_number: patient.patientNumber ?? patient.name,
     patient_name: patient.patientName ?? '',
-    name: patient.name,
+    name: patient.name || patient.patientNumber || 'AUTO',
     hospital_no: patient.hospitalNo,
     sex: patient.sex,
     age: patient.age,
@@ -1031,9 +1030,7 @@ export async function updatePatientRecord(patient: PatientRecord): Promise<Patie
   if (!patient.id) throw new Error('patient id is required');
   const response = await putJson<ApiPatient>(`/patients/${patient.id}`, {
     study_id: patient.studyId,
-    patient_number: patient.patientNumber ?? patient.name,
     patient_name: patient.patientName ?? '',
-    name: patient.name,
     hospital_no: patient.hospitalNo,
     sex: patient.sex,
     age: patient.age,
@@ -1083,7 +1080,6 @@ export async function saveClinicalCrfEntry(patient: PatientRecord, payload: Pati
 export async function createSampleRecord(record: SampleRecord): Promise<SampleRecord> {
   if (!record.patientId) throw new Error('patient id is required');
   const response = await postJson<ApiSample>(studyBusinessPath(record.studyId, 'samples'), {
-    id: record.id.trim(),
     patient_id: record.patientId,
     patient_name: record.patientName,
     hospital_no: record.hospitalNo,
@@ -1092,7 +1088,6 @@ export async function createSampleRecord(record: SampleRecord): Promise<SampleRe
     collected_at: record.collectedAt,
     storage: record.storage,
     initial_quantity: record.initialQuantity ?? '',
-    remaining_quantity: record.remainingQuantity ?? '',
     quantity_unit: record.quantityUnit ?? '',
     note: record.note ?? '',
     status: record.status,
@@ -1114,7 +1109,6 @@ export async function updateSampleRecord(record: SampleRecord): Promise<SampleRe
     collected_at: record.collectedAt,
     storage: record.storage,
     initial_quantity: record.initialQuantity ?? '',
-    remaining_quantity: record.remainingQuantity ?? '',
     quantity_unit: record.quantityUnit ?? '',
     note: record.note ?? '',
     status: record.status,
@@ -1223,6 +1217,8 @@ function toPatientRecord(patient: ApiPatient, allSamples: ApiSample[], allOmics:
     samples: toSamplesByType(patientSamples),
     omicsStatus: toPatientOmicsStatus(patientSamples, patientOmics),
     note: patient.note,
+    createdAt: patient.created_at,
+    lastUpdated: patient.updated_at,
     clinicalDataVersion: patient.clinical_data_version,
     clinicalDataFormat: patient.clinical_data_format,
     clinicalData: patient.clinical_data

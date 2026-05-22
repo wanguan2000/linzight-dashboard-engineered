@@ -49,7 +49,7 @@ export interface SampleRecord {
   linkedOmics: string[];
 }
 
-export type OmicsSampleUsage = Record<string, { usedQuantity?: string; unit?: string; role?: string }>;
+export type OmicsSampleUsage = Record<string, { usedQuantity?: string; returnedQuantity?: string; unit?: string; role?: string }>;
 
 export interface OmicsRecord {
   id: string;
@@ -269,7 +269,7 @@ export const omicsRecords: OmicsRecord[] = samples.flatMap((sample, sampleIndex)
       sampleId: sample.id,
       sampleIds: [sample.id],
       sampleUsage: {
-        [sample.id]: { usedQuantity: sample.sampleType === '组织' ? '1' : '1.5', unit: sample.quantityUnit ?? 'mL', role: '主样本' }
+        [sample.id]: { usedQuantity: sample.sampleType === '组织' ? '1' : '1.5', returnedQuantity: '', unit: sample.quantityUnit ?? 'mL', role: '主样本' }
       },
       sampleType: sample.sampleType,
       assay: assay as OmicsRecord['assay'],

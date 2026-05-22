@@ -767,8 +767,10 @@ function omicsUsageSummary(record: OmicsRecord) {
   return sampleIds
     .map((sampleId) => {
       const usage = record.sampleUsage?.[sampleId];
-      const used = usage?.usedQuantity ? `${usage.usedQuantity}${usage.unit ?? ''}` : '未填';
-      return `${sampleId}: ${used}`;
+      const unit = usage?.unit ?? '';
+      const sent = usage?.usedQuantity ? `${usage.usedQuantity}${unit}` : '未填';
+      const returned = usage?.returnedQuantity ? ` / 返还 ${usage.returnedQuantity}${unit}` : '';
+      return `${sampleId}: 送样 ${sent}${returned}`;
     })
     .join(' / ');
 }
@@ -1479,7 +1481,7 @@ function SampleTable({
 
               return (
                 <tr key={record.id}>
-                  <td>{isEditing ? <input className="module-table-input" value={record.id} onChange={(event) => updateRecord(record.id, { id: event.target.value })} /> : useLibraryCode ? formatSampleLibraryId(record) : record.id}</td>
+                  <td>{isEditing ? <input className="module-table-input" value={record.id} readOnly /> : useLibraryCode ? formatSampleLibraryId(record) : record.id}</td>
                   {!compact && <td>{record.patientName}</td>}
                   <td>{isEditing ? <input className="module-table-input" value={record.sampleType} onChange={(event) => updateRecord(record.id, { sampleType: event.target.value })} /> : t(record.sampleType)}</td>
                   <td>{isEditing ? <input className="module-table-input" type="date" value={formatDateOnly(record.collectedAt)} onChange={(event) => updateRecord(record.id, { collectedAt: event.target.value })} /> : formatDateOnly(record.collectedAt)}</td>
@@ -2380,10 +2382,9 @@ export function SampleManagementPage() {
     }
 
     const now = new Date();
-    const localId = `SMP-${String(sampleRows.length + 1).padStart(3, '0')}`;
     const record: SampleRecord = {
       ...base,
-      id: localId,
+      id: '',
       sampleType: '血液',
       visit: base.visit || 'Baseline',
       collectedAt: now.toISOString().slice(0, 10),
@@ -2392,12 +2393,12 @@ export function SampleManagementPage() {
       linkedOmics: []
     };
 
-    setEditingSampleId(localId);
+    setEditingSampleId(null);
     setSampleActionStatus('新增样本正在同步后端...');
 
     try {
       const created = await createSampleRecord(record);
-      setSampleRows((rows) => rows.map((item) => (item.id === localId ? { ...item, ...created } : item)));
+      setSampleRows((rows) => [created, ...rows.filter((item) => item.id !== created.id)]);
       setEditingSampleId(created.id);
       setSampleActionStatus(`新增样本已同步后端：${created.id}`);
     } catch {
@@ -2610,6 +2611,11 @@ export function SampleTestingPage({
   const [sampleLedgerPage, setSampleLedgerPage] = useState(1);
   const [omicsStatusFilter, setOmicsStatusFilter] = useState<OmicsFilterStatus>('全部');
   const [omicsAssayFilter, setOmicsAssayFilter] = useState('全部');
+  const [omicsSampleTypeFilter, setOmicsSampleTypeFilter] = useState('全部');
+  const [omicsVendorFilter, setOmicsVendorFilter] = useState('全部');
+  const [omicsUsageFilter, setOmicsUsageFilter] = useState('全部');
+  const [omicsSentAtFilter, setOmicsSentAtFilter] = useState('全部');
+  const [omicsQcFilter, setOmicsQcFilter] = useState('全部');
   const [omicsPatientQuery, setOmicsPatientQuery] = useState('');
   const [omicsSampleQuery, setOmicsSampleQuery] = useState('');
   const [omicsPage, setOmicsPage] = useState(1);
@@ -2682,18 +2688,43 @@ export function SampleTestingPage({
       a.assay.localeCompare(b.assay)
     );
   }, [detectionRows]);
+  const omicsSampleTypeFilterOptions = useMemo(
+    () => ['全部', ...Array.from(new Set(sortedDetectionRows.map((row) => row.sampleType).filter(Boolean)))],
+    [sortedDetectionRows]
+  );
+  const omicsVendorFilterOptions = useMemo(
+    () => ['全部', ...Array.from(new Set(sortedDetectionRows.map((row) => row.vendor || '-')))],
+    [sortedDetectionRows]
+  );
+  const omicsUsageFilterOptions = useMemo(
+    () => ['全部', ...Array.from(new Set(sortedDetectionRows.map((row) => row.usageSummary || '-')))],
+    [sortedDetectionRows]
+  );
+  const omicsSentAtFilterOptions = useMemo(
+    () => ['全部', ...Array.from(new Set(sortedDetectionRows.map((row) => formatDateOnly(row.sentAt)).filter((item) => item && item !== '-'))).sort().reverse()],
+    [sortedDetectionRows]
+  );
+  const omicsQcFilterOptions = useMemo(
+    () => ['全部', ...Array.from(new Set(sortedDetectionRows.map((row) => row.qc)))],
+    [sortedDetectionRows]
+  );
   const filteredDetectionRows = useMemo(() => {
     const patientQuery = omicsPatientQuery.trim().toLowerCase();
     const sampleQuery = omicsSampleQuery.trim().toLowerCase();
 
     return sortedDetectionRows.filter((row) => {
+      if (omicsSampleTypeFilter !== '全部' && row.sampleType !== omicsSampleTypeFilter) return false;
       if (omicsStatusFilter !== '全部' && row.status !== omicsStatusFilter) return false;
       if (omicsAssayFilter !== '全部' && row.assay !== omicsAssayFilter) return false;
+      if (omicsVendorFilter !== '全部' && (row.vendor || '-') !== omicsVendorFilter) return false;
+      if (omicsUsageFilter !== '全部' && (row.usageSummary || '-') !== omicsUsageFilter) return false;
+      if (omicsSentAtFilter !== '全部' && formatDateOnly(row.sentAt) !== omicsSentAtFilter) return false;
+      if (omicsQcFilter !== '全部' && row.qc !== omicsQcFilter) return false;
       if (patientQuery && !row.patientName.toLowerCase().includes(patientQuery) && !row.studyId?.toLowerCase().includes(patientQuery)) return false;
       if (sampleQuery && !row.sampleId.toLowerCase().includes(sampleQuery)) return false;
       return true;
     });
-  }, [omicsAssayFilter, omicsPatientQuery, omicsSampleQuery, omicsStatusFilter, sortedDetectionRows]);
+  }, [omicsAssayFilter, omicsPatientQuery, omicsQcFilter, omicsSampleQuery, omicsSampleTypeFilter, omicsSentAtFilter, omicsStatusFilter, omicsUsageFilter, omicsVendorFilter, sortedDetectionRows]);
   const omicsTotalPages = Math.max(1, Math.ceil(filteredDetectionRows.length / omicsTestingPageSize));
   const safeOmicsPage = Math.min(omicsPage, omicsTotalPages);
   const pagedDetectionRows = filteredDetectionRows.slice(
@@ -2896,6 +2927,11 @@ export function SampleTestingPage({
     setOmicsSampleQuery('');
     setOmicsStatusFilter('全部');
     setOmicsAssayFilter('全部');
+    setOmicsSampleTypeFilter('全部');
+    setOmicsVendorFilter('全部');
+    setOmicsUsageFilter('全部');
+    setOmicsSentAtFilter('全部');
+    setOmicsQcFilter('全部');
   }, [selectedPatient, studyOptions]);
 
   useEffect(() => {
@@ -2904,7 +2940,7 @@ export function SampleTestingPage({
 
   useEffect(() => {
     setOmicsPage(1);
-  }, [omicsAssayFilter, omicsPatientQuery, omicsSampleQuery, omicsStatusFilter, studyFilter]);
+  }, [omicsAssayFilter, omicsPatientQuery, omicsQcFilter, omicsSampleQuery, omicsSampleTypeFilter, omicsSentAtFilter, omicsStatusFilter, omicsUsageFilter, omicsVendorFilter, studyFilter]);
 
   useEffect(() => {
     if (studyFilter !== '全部 Study' && !studyOptions.includes(studyFilter)) {
@@ -3012,7 +3048,7 @@ export function SampleTestingPage({
       return { kind: 'sample', isNew: true, draft: defaultSampleDraftForPatient(targetPatient, '') };
     });
     setSampleTestingFlow(null);
-    setUploadStatus('请确认样本类型、采集时间、条码和保存位置后保存');
+    setUploadStatus('请确认样本类型、采集时间和保存位置后保存；样本编号保存后自动生成');
   }, [defaultSampleDraftForPatient]);
 
   useEffect(() => {
@@ -3089,7 +3125,7 @@ export function SampleTestingPage({
     const sampleUsage = Object.fromEntries(
       selectedSamples.map((item, index) => [
         item.id,
-        { usedQuantity: '', unit: item.quantityUnit ?? '', role: index === 0 ? '主样本' : '辅助样本' }
+        { usedQuantity: '', returnedQuantity: '', unit: item.quantityUnit ?? '', role: index === 0 ? '主样本' : '辅助样本' }
       ])
     );
     const nextRecord: OmicsRecord = {
@@ -3149,7 +3185,7 @@ export function SampleTestingPage({
       sampleId: sample.id,
       sampleIds: [sample.id],
       sampleUsage: {
-        [sample.id]: { usedQuantity: '', unit: sample.quantityUnit ?? '', role: '主样本' }
+        [sample.id]: { usedQuantity: '', returnedQuantity: '', unit: sample.quantityUnit ?? '', role: '主样本' }
       },
       sampleType: sample.sampleType,
       assay: configuredDetectionTypes[0] ?? (sample.studyId === 'LZXK-01' ? 'ctDNA' : 'WGS'),
@@ -3213,7 +3249,7 @@ export function SampleTestingPage({
       const nextUsage = { ...(editor.draft.sampleUsage ?? {}) };
       for (const sample of selectedSamples) {
         if (!nextUsage[sample.id]) {
-          nextUsage[sample.id] = { usedQuantity: '', unit: sample.quantityUnit ?? '', role: selectedSamples[0]?.id === sample.id ? '主样本' : '辅助样本' };
+          nextUsage[sample.id] = { usedQuantity: '', returnedQuantity: '', unit: sample.quantityUnit ?? '', role: selectedSamples[0]?.id === sample.id ? '主样本' : '辅助样本' };
         }
       }
       const firstSample = selectedSamples[0];
@@ -3230,7 +3266,7 @@ export function SampleTestingPage({
     });
   }
 
-  function patchOmicsDraftSampleUsage(sampleId: string, patch: { usedQuantity?: string; unit?: string; role?: string }) {
+  function patchOmicsDraftSampleUsage(sampleId: string, patch: { usedQuantity?: string; returnedQuantity?: string; unit?: string; role?: string }) {
     setSampleTestingEditor((editor) => {
       if (!editor || editor.kind !== 'omics') return editor;
       return {
@@ -3292,24 +3328,25 @@ export function SampleTestingPage({
     if (sampleTestingEditor.kind === 'sample') {
       const draft = sampleTestingEditor.draft;
       const sampleId = draft.id.trim();
-      if (!sampleId || !draft.patientId || !draft.patientName || !draft.sampleType || !draft.collectedAt) {
-        setUploadStatus('样本表单缺少必填字段：条码 / 样本编号、患者、样本类型和采集日期为必填项');
+      if ((!sampleTestingEditor.isNew && !sampleId) || !draft.patientId || !draft.patientName || !draft.sampleType || !draft.collectedAt) {
+        setUploadStatus('样本表单缺少必填字段：患者、样本类型和采集日期为必填项');
         return;
       }
       const normalizedDraft = {
         ...draft,
-        id: sampleId,
+        id: sampleTestingEditor.isNew ? '' : sampleId,
         initialQuantity: draft.initialQuantity?.trim() ?? '',
         remainingQuantity: draft.remainingQuantity?.trim() ?? ''
       };
-      setUploadStatus(`样本 ${normalizedDraft.id} 正在同步后端...`);
+      const savingLabel = sampleTestingEditor.isNew ? '新样本' : normalizedDraft.id;
+      setUploadStatus(`样本 ${savingLabel} 正在同步后端...`);
       try {
         const saved = sampleTestingEditor.isNew ? await createSampleRecord(normalizedDraft) : await updateSampleRecord(normalizedDraft);
-        setSampleRows((rows) => (rows.some((row) => row.id === normalizedDraft.id) ? rows.map((row) => (row.id === normalizedDraft.id ? saved : row)) : [saved, ...rows]));
+        setSampleRows((rows) => (rows.some((row) => row.id === saved.id) ? rows.map((row) => (row.id === saved.id ? saved : row)) : [saved, ...rows]));
         setSampleTestingEditor(null);
         setUploadStatus(`样本 ${saved.id} 已同步后端`);
       } catch {
-        setUploadStatus(`保存失败：样本 ${normalizedDraft.id} 未写入后端`);
+        setUploadStatus(`保存失败：样本 ${savingLabel} 未写入后端`);
       }
       return;
     }
@@ -3476,7 +3513,7 @@ export function SampleTestingPage({
             <header>
               <div>
                 <strong>{t('样本编辑表单')}</strong>
-                <span>{sampleTestingEditor.draft.id || t('待填写样本编号')}</span>
+                <span>{sampleTestingEditor.draft.id || t('保存后自动生成')}</span>
               </div>
               <div className="module-table-actions">
                 <button className="module-link-button module-link-button--primary" type="button" onClick={() => void saveSampleTestingEditor()}>{t('保存')}</button>
@@ -3494,7 +3531,7 @@ export function SampleTestingPage({
             <div className="sample-testing-editor-grid">
               <label>
                 <span>{t('条码 / 样本编号')}</span>
-                <input value={sampleTestingEditor.draft.id} required onChange={(event) => patchSampleTestingDraft({ id: event.target.value })} />
+                <input value={sampleTestingEditor.isNew ? t('保存后自动生成') : sampleTestingEditor.draft.id} readOnly />
               </label>
               <label>
                 <span>{t('样本类型')}</span>
@@ -3520,7 +3557,7 @@ export function SampleTestingPage({
               </label>
               <label>
                 <span>{t('剩余量')}</span>
-                <input value={sampleTestingEditor.draft.remainingQuantity ?? ''} onChange={(event) => patchSampleTestingDraft({ remainingQuantity: event.target.value })} />
+                <input value={sampleTestingEditor.draft.remainingQuantity || sampleTestingEditor.draft.initialQuantity || ''} readOnly title={t('剩余量由初始量减送样量加返还量自动计算')} />
               </label>
               <label>
                 <span>{t('单位')}</span>
@@ -3769,7 +3806,8 @@ export function SampleTestingPage({
                         </label>
                         {isChecked ? (
                           <div className="sample-testing-sample-picker__usage">
-                            <input value={usage.usedQuantity ?? ''} onChange={(event) => patchOmicsDraftSampleUsage(sample.id, { usedQuantity: event.target.value })} placeholder={t('使用量')} />
+                            <input value={usage.usedQuantity ?? ''} onChange={(event) => patchOmicsDraftSampleUsage(sample.id, { usedQuantity: event.target.value })} placeholder={t('送样量')} />
+                            <input value={usage.returnedQuantity ?? ''} onChange={(event) => patchOmicsDraftSampleUsage(sample.id, { returnedQuantity: event.target.value })} placeholder={t('返还量')} />
                             <select value={usage.unit ?? sample.quantityUnit ?? ''} onChange={(event) => patchOmicsDraftSampleUsage(sample.id, { unit: event.target.value })} aria-label={t('单位')}>
                               <option value="">{t('未选择')}</option>
                               {Array.from(new Set([...quantityUnitOptions, usage.unit ?? '', sample.quantityUnit ?? ''].filter(Boolean))).map((item) => <option value={item} key={item}>{t(item)}</option>)}
@@ -3854,6 +3892,49 @@ export function SampleTestingPage({
             <label>
               <span>{t('样本编号')}</span>
               <input value={omicsSampleQuery} onChange={(event) => setOmicsSampleQuery(event.target.value)} placeholder={t('搜索样本编号')} />
+            </label>
+            <label>
+              <span>{t('样本类型')}</span>
+              <select value={omicsSampleTypeFilter} onChange={(event) => setOmicsSampleTypeFilter(event.target.value)}>
+                {omicsSampleTypeFilterOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>{t('检测项目')}</span>
+              <select value={omicsAssayFilter} onChange={(event) => setOmicsAssayFilter(event.target.value)}>
+                <option value="全部">{t('全部')}</option>
+                {omicsAssayOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>{t('供应商')}</span>
+              <select value={omicsVendorFilter} onChange={(event) => setOmicsVendorFilter(event.target.value)}>
+                {omicsVendorFilterOptions.map((item) => <option value={item} key={item}>{item === '全部' ? t(item) : item}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>{t('使用量')}</span>
+              <select value={omicsUsageFilter} onChange={(event) => setOmicsUsageFilter(event.target.value)}>
+                {omicsUsageFilterOptions.map((item) => <option value={item} key={item}>{item === '全部' ? t(item) : item}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>{t('当前状态')}</span>
+              <select value={omicsStatusFilter} onChange={(event) => setOmicsStatusFilter(event.target.value as OmicsFilterStatus)}>
+                {omicsStatusOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>{t('送检测时间')}</span>
+              <select value={omicsSentAtFilter} onChange={(event) => setOmicsSentAtFilter(event.target.value)}>
+                {omicsSentAtFilterOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>QC</span>
+              <select value={omicsQcFilter} onChange={(event) => setOmicsQcFilter(event.target.value)}>
+                {omicsQcFilterOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
+              </select>
             </label>
             <div className="workspace-filter-row">
               {omicsStatusOptions.map((item) => (
@@ -3989,6 +4070,21 @@ function formatLastLogin(value?: string | null) {
   if (!value) return '-';
   const normalized = value.replace('T', ' ').replace(/\+00:00$/, 'Z');
   return normalized.slice(0, 16);
+}
+
+function formatStudyCode(value?: string | null) {
+  const number = Number.parseInt(String(value ?? '').trim(), 10);
+  if (Number.isFinite(number) && number >= 1 && number <= 99) return number.toString().padStart(2, '0');
+  return '--';
+}
+
+function nextStudyCode(studies: Array<Pick<ApiStudy, 'code'>>) {
+  const usedCodes = new Set(studies.map((study) => formatStudyCode(study.code)).filter((code) => code !== '--'));
+  for (let number = 1; number <= 99; number += 1) {
+    const code = number.toString().padStart(2, '0');
+    if (!usedCodes.has(code)) return code;
+  }
+  return '';
 }
 
 function accountFromStudyMember(member: ApiStudyMember): SystemAccount {
@@ -4326,9 +4422,9 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [consentTemplateDraft, setConsentTemplateDraft] = useState('');
   const [consentTemplateFileRows, setConsentTemplateFileRows] = useState<ApiFileMetadata[]>([]);
   const normalizedQuery = systemQuery.trim().toLowerCase();
+  const suggestedStudyCode = useMemo(() => nextStudyCode(studyRows), [studyRows]);
   const isStudyCreateReady = Boolean(
     studyCreateDraft?.id.trim() &&
-      studyCreateDraft.code.trim() &&
       studyCreateDraft.name.trim() &&
       studyCreateDraft.indication.trim()
   );
@@ -4836,7 +4932,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     }
     setStudyCreateDraft({
       id: '',
-      code: '',
+      code: suggestedStudyCode,
       name: '',
       indication: '',
 	      phase: 'RWD',
@@ -4845,17 +4941,17 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
 		      leading_pi_info: '',
 		      system_admin: ''
 		    });
-    setSystemActionStatus('请先填写 Study ID、Code、名称和适应症，再提交创建 Study');
+    setSystemActionStatus('请先填写 Study ID、名称和适应症，再提交创建 Study');
   }
 
   async function submitSystemStudyCreate() {
     if (!studyCreateDraft) return;
     const id = studyCreateDraft.id.trim();
-    const code = studyCreateDraft.code.trim();
+    const code = studyCreateDraft.code.trim() || suggestedStudyCode;
     const name = studyCreateDraft.name.trim();
     const indication = studyCreateDraft.indication.trim();
-    if (!id || !code || !name || !indication) {
-      setSystemActionStatus('请完整填写 Study ID、Code、Study 名称和适应症');
+    if (!id || !name || !indication) {
+      setSystemActionStatus('请完整填写 Study ID、Study 名称和适应症');
       return;
     }
     setSystemActionStatus(`Study ${id} 正在创建...`);
@@ -6009,7 +6105,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
               </label>
               <label>
                 <span>Study Code</span>
-                <input required value={studyCreateDraft.code} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, code: event.target.value })} placeholder="LZ-RWS-001" />
+                <input readOnly value={studyCreateDraft.code || suggestedStudyCode} placeholder="01" />
               </label>
 		              <label>
 		                <span>{t('Study 名称')}</span>
@@ -6053,6 +6149,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
               <thead>
 	                <tr>
 	                  <th>Study ID</th>
+	                  <th>Study Code</th>
 	                  <th>{t('Study 名称')}</th>
 		                  <th>{t('Leading PI 信息')}</th>
 		                  <th>{t('状态')}</th>
@@ -6063,12 +6160,13 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
 		              <tbody>
 		                {!studyRegistryRows.length ? (
 		                  <tr>
-		                    <td colSpan={6}>{t('暂无 Study，请点击新建 Study 创建第一个研究。')}</td>
+		                    <td colSpan={7}>{t('暂无 Study，请点击新建 Study 创建第一个研究。')}</td>
 		                  </tr>
 		                ) : null}
 		                {studyRegistryRows.map((study) => (
 		                  <tr key={study.studyId}>
 		                    <td><span className="status-pill status-pill--info">{study.studyId}</span></td>
+		                    <td><span className="status-pill status-pill--info">{formatStudyCode(study.code)}</span></td>
 		                    <td>{t(study.name)}</td>
 		                    <td>{study.leadingPiInfo}</td>
 		                    <td><span className={`status-pill status-pill--${study.status === 'active' ? 'success' : study.status === 'draft' ? 'warning' : 'danger'}`}>{study.status}</span></td>

@@ -34,9 +34,9 @@ PLATFORMS = {
     "病理复核": "Pathology Archive",
 }
 STUDY_ROWS = [
-    ("LGL-1111", "LGL-1111", "免疫相关性神经系统疾病 RWD 研究", "NPSLE / MS / NMOSD / HC", "RWD", "active", "LinZight"),
-    ("RWD-NMO-2026", "RWD-NMO-2026", "NMOSD 真实世界随访研究", "NMOSD / MS", "RWD", "active", "LinZight"),
-    (LUNG_RESISTANCE_STUDY_ID, LUNG_RESISTANCE_STUDY_ID, "真实世界肺癌耐药研究", "NSCLC / EGFR-TKI resistance / ALK resistance", "RWD", "active", "LinZight"),
+    ("LGL-1111", "01", "免疫相关性神经系统疾病 RWD 研究", "NPSLE / MS / NMOSD / HC", "RWD", "active", "LinZight"),
+    ("RWD-NMO-2026", "02", "NMOSD 真实世界随访研究", "NMOSD / MS", "RWD", "active", "LinZight"),
+    (LUNG_RESISTANCE_STUDY_ID, "03", "真实世界肺癌耐药研究", "NSCLC / EGFR-TKI resistance / ALK resistance", "RWD", "active", "LinZight"),
 ]
 USER_ROWS = [
     ("USR-001", "pi@demo.linzight", "任约翰", "investigator", "STUDY_PI"),

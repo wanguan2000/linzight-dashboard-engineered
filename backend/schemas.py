@@ -117,7 +117,7 @@ class PatientBase(BaseModel):
     study_id: str = "LGL-1111"
     patient_number: str | None = None
     patient_name: str = ""
-    name: str
+    name: str = ""
     hospital_no: str
     sex: Sex
     age: int = Field(ge=0, le=120)
@@ -163,7 +163,7 @@ class SampleBase(BaseModel):
 
 
 class SampleCreate(SampleBase):
-    id: str
+    id: str | None = None
 
 
 class SampleUpdate(BaseModel):
@@ -436,7 +436,7 @@ class AnalysisSummary(BaseModel):
 
 class StudyCreate(BaseModel):
     id: str
-    code: str
+    code: str | None = None
     name: str
     indication: str
     phase: str = "RWD"

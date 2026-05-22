@@ -30,6 +30,7 @@ export interface PatientRecord {
   clinicalDataFormat?: 'jsonb' | 'json' | 'legacy';
   studyName?: string;
   status?: string;
+  createdAt?: string;
   lastUpdated?: string;
 }
 

@@ -62,8 +62,8 @@
 - 访视计划不放在 CRF 字段表内。CRF 版本定义表单结构，访视计划定义时间点和该时间点需要录入哪些表单。
 - `follow_up_records.patient_id` 关联 `patients.id`，可选 `visit_id` 关联 `visits.id`。它记录随访时间、方式、随访人、生存状态、疾病状态、疗效评估、转移、不良事件、生活质量和失访原因，不属于 CRF 版本配置表。
 - `omics_records.testing_project_id` 是样本检测项目编号，不作为 RWD EDC 数据隔离字段。
-- `samples.storage` 保存存储位置；`samples.initial_quantity`、`remaining_quantity` 和 `quantity_unit` 以字符串保存，支持人工维护的混合单位样本量。
-- `omics_records.sample_id` 关联主样本并兼容旧逻辑；`omics_records.sample_ids_json` 支持一次检测人工选择多个样本；`omics_records.sample_usage_json` 保存每个样本的人工填写使用量、单位和用途；`omics_records.vendor` 保存检测供应商。
+- `samples.storage` 保存存储位置；`samples.initial_quantity`、`remaining_quantity` 和 `quantity_unit` 以字符串保存，`remaining_quantity` 由后端按初始量、检测送样量和返还量自动计算。
+- `omics_records.sample_id` 关联主样本并兼容旧逻辑；`omics_records.sample_ids_json` 支持一次检测人工选择多个样本；`omics_records.sample_usage_json` 保存每个样本的送样量 `usedQuantity`、返还量 `returnedQuantity`、单位和用途；`omics_records.vendor` 保存检测供应商。
 - `uploaded_files` 可关联患者、样本、组学记录或知情同意记录，文件实体统一落本地 `uploads` 目录。
 - `export_jobs.file_id` 指向导出文件元数据，便于数据分析页展示导出状态。
 - `operation_logs` 记录后端所有核心写操作，包括 `CREATE / UPDATE / DELETE / UPSERT / STATUS_CHANGE / LOGIN / UPLOAD / ARCHIVE / EXPORT / APPROVAL` 等动作。日志保存 `study_id`、操作者、实体类型、实体 ID、before/after/diff JSONB 和时间戳；GA 不恢复前端 Audit Diff 模块，日志作为后台审计底座保留。
