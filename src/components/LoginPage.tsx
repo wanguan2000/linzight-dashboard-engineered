@@ -34,6 +34,11 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
   const pendingStudy = pendingStudyOptions.find((study) => study.id === pendingStudyId) ?? pendingStudyOptions[0] ?? { id: '', name: '' };
 
   useEffect(() => {
+    document.body.classList.add('login-page-active');
+    return () => document.body.classList.remove('login-page-active');
+  }, []);
+
+  useEffect(() => {
     setPendingUser(null);
     setError('');
   }, [entryMode, username]);

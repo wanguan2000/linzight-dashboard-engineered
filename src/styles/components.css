@@ -1,13 +1,11 @@
 /* Brand and sidebar */
 .login-shell {
-  width: min(100%, 1500px);
   min-height: 100svh;
-  margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(560px, 1fr) minmax(360px, 420px);
+  grid-template-columns: minmax(0, 1fr) 420px;
   align-items: center;
-  gap: clamp(18px, 2vw, 26px);
-  padding: clamp(18px, 3.2vw, 42px);
+  gap: 26px;
+  padding: 42px;
 }
 
 .login-panel,
@@ -21,12 +19,11 @@
 }
 
 .login-panel {
-  height: clamp(520px, calc(100svh - clamp(36px, 6.4vw, 84px)), 680px);
-  min-height: 0;
+  min-height: 520px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: clamp(24px, 2.8vw, 34px);
+  padding: 34px;
   border-radius: 22px;
 }
 
@@ -126,10 +123,8 @@
   display: flex;
   flex-direction: column;
   align-self: center;
-  gap: 14px;
-  width: 100%;
-  max-height: calc(100svh - clamp(36px, 6.4vw, 84px));
-  padding: 22px;
+  gap: 18px;
+  padding: 26px;
   border-radius: 18px;
 }
 
@@ -197,7 +192,7 @@
 .login-card input,
 .login-card select {
   width: 100%;
-  min-height: 40px;
+  min-height: 42px;
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -280,7 +275,7 @@
 }
 
 .login-submit {
-  min-height: 42px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -379,6 +374,79 @@
 
   .login-submit {
     min-height: 38px;
+  }
+}
+
+@media (max-width: 900px) {
+  body.login-page-active {
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  body.login-page-active #root {
+    height: auto;
+    min-height: 100svh;
+  }
+
+  .login-shell {
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .login-card {
+    order: 1;
+    width: 100%;
+    max-height: none;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .login-panel {
+    order: 2;
+    width: 100%;
+    min-height: 0;
+    gap: 28px;
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .login-panel__brand img {
+    width: 132px;
+  }
+
+  .login-panel__brand {
+    gap: 12px;
+  }
+
+  .login-panel__copy h1 {
+    font-size: 30px;
+  }
+
+  .login-panel__copy p {
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .login-chain {
+    gap: 6px;
+  }
+
+  .login-chain span {
+    min-height: 28px;
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+
+  .login-entry-switch button,
+  .login-card input,
+  .login-card select {
+    min-height: 42px;
   }
 }
 
