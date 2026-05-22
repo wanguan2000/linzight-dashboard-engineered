@@ -1,11 +1,11 @@
 /* Brand and sidebar */
 .login-shell {
-  min-height: 100%;
+  min-height: 100svh;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 420px;
-  align-items: center;
-  gap: 26px;
-  padding: 42px;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
+  align-items: stretch;
+  gap: clamp(18px, 2vw, 26px);
+  padding: clamp(18px, 3.2vw, 42px);
 }
 
 .login-panel,
@@ -19,11 +19,11 @@
 }
 
 .login-panel {
-  min-height: 520px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 34px;
+  padding: clamp(24px, 2.8vw, 34px);
   border-radius: 22px;
 }
 
@@ -122,8 +122,10 @@
 .login-card {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 26px;
+  align-self: center;
+  gap: 14px;
+  max-height: calc(100svh - clamp(36px, 6.4vw, 84px));
+  padding: 22px;
   border-radius: 18px;
 }
 
@@ -191,7 +193,7 @@
 .login-card input,
 .login-card select {
   width: 100%;
-  min-height: 42px;
+  min-height: 40px;
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -274,7 +276,7 @@
 }
 
 .login-submit {
-  min-height: 44px;
+  min-height: 42px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -301,6 +303,78 @@
 
 .login-icp {
   margin-top: -4px;
+}
+
+@media (max-height: 760px) and (min-width: 901px) {
+  .login-shell {
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 390px);
+    padding: 16px 30px;
+  }
+
+  .login-panel {
+    padding: 22px;
+  }
+
+  .login-panel__brand img {
+    width: 132px;
+  }
+
+  .login-panel__copy h1 {
+    font-size: 36px;
+  }
+
+  .login-panel__copy p {
+    margin-top: 10px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .login-chain {
+    gap: 6px;
+  }
+
+  .login-chain span {
+    min-height: 28px;
+    padding: 5px 10px;
+  }
+
+  .login-card {
+    gap: 10px;
+    max-height: calc(100svh - 32px);
+    padding: 16px;
+  }
+
+  .login-card__icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+
+  .login-card h2 {
+    font-size: 20px;
+  }
+
+  .login-entry-switch button,
+  .login-card input,
+  .login-card select {
+    min-height: 36px;
+  }
+
+  .login-card label {
+    gap: 5px;
+  }
+
+  .login-management-summary,
+  .login-scope-preview,
+  .login-user-preview,
+  .login-reset-panel {
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+
+  .login-submit {
+    min-height: 38px;
+  }
 }
 
 .logo {
