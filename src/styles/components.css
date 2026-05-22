@@ -1,9 +1,11 @@
 /* Brand and sidebar */
 .login-shell {
+  width: min(100%, 1500px);
   min-height: 100svh;
+  margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
-  align-items: stretch;
+  grid-template-columns: minmax(560px, 1fr) minmax(360px, 420px);
+  align-items: center;
   gap: clamp(18px, 2vw, 26px);
   padding: clamp(18px, 3.2vw, 42px);
 }
@@ -19,6 +21,7 @@
 }
 
 .login-panel {
+  height: clamp(520px, calc(100svh - clamp(36px, 6.4vw, 84px)), 680px);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -124,6 +127,7 @@
   flex-direction: column;
   align-self: center;
   gap: 14px;
+  width: 100%;
   max-height: calc(100svh - clamp(36px, 6.4vw, 84px));
   padding: 22px;
   border-radius: 18px;
@@ -312,6 +316,7 @@
   }
 
   .login-panel {
+    height: calc(100svh - 32px);
     padding: 22px;
   }
 
