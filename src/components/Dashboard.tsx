@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CohortOverviewCard } from './CohortOverviewCard';
 import { EnrollmentTrendCard } from './EnrollmentTrendCard';
 import { MetricGrid } from './MetricGrid';
@@ -7,7 +7,7 @@ import { PatientJourneyCard } from './PatientJourneyCard';
 import { QuickActions } from './QuickActions';
 import { SmartSummaryCard } from './SmartSummaryCard';
 import { WorkflowProgressCard } from './WorkflowProgressCard';
-import { fetchAnalyticsSummary } from '../services/api';
+import { fetchAnalyticsSummary, workspaceDataChangedEvent } from '../services/api';
 import type { ApiAnalysisSummary } from '../services/contracts';
 import { authStorageKey, normalizeAuthenticatedUser, type AuthenticatedUser } from '../data/auth';
 import type { PatientRecord } from '../data/patientCohort';
@@ -205,20 +205,25 @@ export function Dashboard({ currentUser, activeStudy, selectedModule, selectedPa
   const [summary, setSummary] = useState<ApiAnalysisSummary | null>(null);
   const dashboardUser = currentUser ?? getStoredDashboardUser();
   const isGlobalPlatformView = Boolean(dashboardUser?.role?.startsWith('LZ_') && !activeStudy);
+  const activeStudyId = activeStudy?.id;
+
+  const refreshDashboardSummary = useCallback(async () => {
+    try {
+      setSummary(await fetchAnalyticsSummary(activeStudyId));
+    } catch {
+      // Keep the last visible dashboard metrics if a background refresh fails.
+    }
+  }, [activeStudyId]);
 
   useEffect(() => {
-    let ignore = false;
+    void refreshDashboardSummary();
+  }, [refreshDashboardSummary]);
 
-    void fetchAnalyticsSummary(activeStudy?.id)
-      .then((nextSummary) => {
-        if (!ignore) setSummary(nextSummary);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      ignore = true;
-    };
-  }, [activeStudy?.id]);
+  useEffect(() => {
+    const refresh = () => void refreshDashboardSummary();
+    window.addEventListener(workspaceDataChangedEvent, refresh);
+    return () => window.removeEventListener(workspaceDataChangedEvent, refresh);
+  }, [refreshDashboardSummary]);
 
   const dashboardData = useMemo(() => buildDashboardData(summary ?? undefined), [summary]);
   const disabledQuickActions = useMemo(() => getDisabledQuickActions(dashboardUser), [dashboardUser]);

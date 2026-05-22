@@ -24,6 +24,7 @@
 - `POST /auth/logout`
 - `POST /users`
 - `PATCH /users/{user_id}/status`
+- `DELETE /users/{user_id}`
 - `GET /field-permissions`
 - `GET /permissions/matrix`
 
@@ -32,7 +33,7 @@
 正式权限矩阵由 `/permissions/matrix` 输出，文档版本见 `docs/08-permission-matrix.md`。前端按钮状态必须与该矩阵和后端 403 保持一致。
 
 登录响应会返回新角色码、`study_scope` 和 `study_memberships`。后续请求需要携带 Bearer token，后端按 `study_id` 自动过滤授权数据。
-`POST /users` 用于系统管理页创建账号；`STUDY_CONFIG_ADMIN` 可在本 Study 内创建研究级账号并同步写入 `study_members`，平台级账号创建仅限 `LZ_ADMIN`。
+`POST /users` 用于系统管理页创建账号；`STUDY_CONFIG_ADMIN` 可在本 Study 内创建研究级账号并同步写入 `study_members`，平台级账号创建仅限 `LZ_ADMIN`。`DELETE /users/{user_id}` 用于 `LZ_ADMIN` 软删除/归档账号：账号状态置为 `deleted`、关联 Study membership 置为 `disabled`、历史审计链保留；后端拒绝当前用户自删和删除最后一个 active `LZ_ADMIN`。
 
 ### Studies 和权限
 
@@ -79,6 +80,8 @@ RWD EDC 主链路统一使用 `study_id`，不使用 `project_id`。样本检测
 - `GET /patients/{patient_id}/panorama`
 - `GET /patients/{patient_id}/journey`
 
+`PUT /patients/{patient_id}` 可更新患者主档字段。`LZ_ADMIN` 可通过 payload 中的 `study_id` 更正患者所属 Study；后端会同时迁移该患者关联的 consent、visit、CRF、follow-up、sample、omics、file、Query 和 quality issue 的 `study_id`，避免患者主表与业务子表 Study 不一致。非 `LZ_ADMIN` 不能跨 Study 移动患者。
+
 ### Samples
 
 - `GET /samples`
@@ -87,7 +90,8 @@ RWD EDC 主链路统一使用 `study_id`，不使用 `project_id`。样本检测
 - `PUT /samples/{sample_id}`
 - `DELETE /samples/{sample_id}`
 
-样本 payload 包含 `storage`、`initial_quantity`、`remaining_quantity`、`quantity_unit` 和 `linked_omics`。样本量字段按字符串保存，单位从全局单位类型字典单选；剩余量由人工维护。
+样本 payload 必须包含人工填写的 `id` 作为条码/样本编号；后端不再自动生成样本编号。payload 还包含 `storage`、`initial_quantity`、`remaining_quantity`、`quantity_unit` 和 `linked_omics`。样本量字段按字符串保存，单位从全局单位类型字典单选；剩余量由人工维护，不自动计算，也不默认等于初始量。
+`PUT /samples/{sample_id}` 中的 `study_id` 必须与样本所属患者一致；样本更换患者时后端会按目标患者重算样本 `study_id`。已有检测记录引用的样本不能直接更换患者，避免多样本检测记录跨患者或跨 Study 断裂。
 
 ### Visits
 

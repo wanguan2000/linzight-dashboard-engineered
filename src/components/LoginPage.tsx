@@ -48,8 +48,12 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
     setResetStatus(t('重置邮件正在发送...'));
     setError('');
     try {
-      await requestPasswordReset({ username: resetEmail });
-      setResetStatus(t('如果账号存在，系统会发送密码重置邮件。'));
+      const response = await requestPasswordReset({ username: resetEmail });
+      setResetStatus(
+        response.email === 'sent'
+          ? t('如果账号存在，系统会发送密码重置邮件。')
+          : t('邮件服务尚未配置，请联系 LZ 系统管理员。')
+      );
     } catch {
       setResetStatus(t('邮件服务暂不可用，请联系 LZ 系统管理员。'));
     }

@@ -786,7 +786,6 @@ def seed_database() -> None:
         )
         field_permission_rows = []
         sensitive_fields = [
-            ("patients", "name", "name"),
             ("patients", "patient_name", "name"),
             ("patients", "hospital_no", "hospital_no"),
             ("patients", "病历号", "hospital_no"),
@@ -797,10 +796,13 @@ def seed_database() -> None:
             ("patients", "住址", "address"),
         ]
         masked_roles = {"LZ_DATA_MANAGER", "LZ_AUDITOR", "STUDY_DATA_MANAGER"}
+        patient_name_full_access_roles = {"LZ_ADMIN", "STUDY_CONFIG_ADMIN", "STUDY_CRC", "LZ_CRC"}
         for role in ROLE_VALUES:
             for resource, field_name, mask_rule in sensitive_fields:
-                can_export = 0 if role in masked_roles else 1
-                field_permission_rows.append((role, resource, field_name, 1, can_export, "none" if role == "LZ_ADMIN" or role not in masked_roles else mask_rule, now, now))
+                should_mask = role not in patient_name_full_access_roles if field_name == "patient_name" else role in masked_roles and role != "LZ_ADMIN"
+                if field_name == "patient_name" and should_mask:
+                    mask_rule = "pinyin_initials"
+                field_permission_rows.append((role, resource, field_name, 1, 0 if should_mask else 1, mask_rule if should_mask else "none", now, now))
         conn.executemany(
             """
             INSERT INTO field_permissions (role, resource, field_name, can_view, can_export, mask_rule, created_at, updated_at)

@@ -8,7 +8,7 @@ Frontend:
 
 | Variable | Example | Notes |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | `https://edc-api.example.com` | Build-time API base URL for the Vite frontend. For local Docker Compose, use `http://localhost:8000` so it resolves to the Compose-published backend port. |
+| `VITE_API_BASE_URL` | `/api` | Build-time API base URL for the Vite frontend. For reverse-proxied deployments such as `rws.createcured.com`, use `/api` so browsers call the same remote host instead of a local `127.0.0.1` backend. For local Docker Compose, use `http://localhost:8000` so it resolves to the Compose-published backend port. |
 
 Backend:
 
@@ -20,6 +20,15 @@ Backend:
 | `LINZIGHT_ALLOW_SQLITE_RUNTIME` | unset | Set to `1` only for isolated smoke tests, legacy SQLite backups, or migration export tooling. Do not set for formal runtime. |
 | `LINZIGHT_UPLOADS_DIR` | `/uploads` | Local upload directory for demo files. Production should use controlled object storage. |
 | `LINZIGHT_BACKUP_DIR` | `./backups` | Optional backup output path for legacy SQLite backup scripts. |
+| `LINZIGHT_INITIAL_ADMIN_EMAIL` | `guan.wang@linzight.com` | First LZ system administrator account created when the `users` table is empty. |
+| `LINZIGHT_INITIAL_ADMIN_PASSWORD` | `<secret>` | Initial administrator password. Store only in the deployment secret store or systemd env file. |
+| `LINZIGHT_PUBLIC_APP_URL` | `https://rws.createcured.com` | Public frontend origin used to build password-reset links. Must match the deployed HTTPS hostname. |
+| `LINZIGHT_SMTP_HOST` | `smtp.feishu.cn` | SMTP host for password-reset email. |
+| `LINZIGHT_SMTP_PORT` | `465` | SMTP port. Use `465` with `ssl` or the provider-specific STARTTLS port with `starttls`. |
+| `LINZIGHT_SMTP_SECURITY` | `ssl` | SMTP transport security, either `ssl` or `starttls`. |
+| `LINZIGHT_SMTP_USERNAME` | `rws@linzight.com` | SMTP login username. |
+| `LINZIGHT_SMTP_PASSWORD` | `<secret>` | SMTP password or app-specific authorization code. Do not commit this value. |
+| `LINZIGHT_SMTP_FROM` | `rws@linzight.com` | Sender address for password-reset emails. |
 
 Do not commit `.env`, real tokens, real patient data, local database files, upload payloads, private keys, or deployment secrets.
 

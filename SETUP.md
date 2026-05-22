@@ -28,6 +28,20 @@ cp backend/.env.example backend/.env
 
 如果只看前端外壳，可以不创建环境变量文件。内部试点应连接 PostgreSQL 后端；API 不可用时只能作为静态/开发预览。
 
+远程安装或升级时，除了数据库和上传目录，还必须配置首个管理员、公开访问地址和 SMTP。缺少 SMTP 时，登录页的“发送重置邮件”不会真正发出邮件。
+
+```bash
+LINZIGHT_INITIAL_ADMIN_EMAIL=guan.wang@linzight.com
+LINZIGHT_INITIAL_ADMIN_PASSWORD=<secret>
+LINZIGHT_PUBLIC_APP_URL=https://rws.createcured.com
+LINZIGHT_SMTP_HOST=smtp.feishu.cn
+LINZIGHT_SMTP_PORT=465
+LINZIGHT_SMTP_SECURITY=ssl
+LINZIGHT_SMTP_USERNAME=rws@linzight.com
+LINZIGHT_SMTP_PASSWORD=<secret>
+LINZIGHT_SMTP_FROM=rws@linzight.com
+```
+
 ## 第一次启动步骤
 
 1. 安装前端依赖：`npm install`

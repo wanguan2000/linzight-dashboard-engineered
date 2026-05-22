@@ -124,9 +124,14 @@ function persistGlobalConfiguration(config: GlobalConfigurationRecord) {
 }
 
 const configuredBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
-const apiBases = Array.from(new Set([configuredBase, 'http://127.0.0.1:8000', 'http://127.0.0.1:8001'].filter(Boolean))) as string[];
+const sameOriginApiBase =
+  typeof window !== 'undefined' && !['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+    ? `${window.location.origin}/api`
+    : undefined;
+const apiBases = Array.from(new Set([configuredBase, sameOriginApiBase, 'http://127.0.0.1:8000', 'http://127.0.0.1:8001'].filter(Boolean))) as string[];
 export const authTokenStorageKey = 'linzight-auth-token';
 export const authSessionInvalidatedEvent = 'linzight-auth-session-invalidated';
+export const workspaceDataChangedEvent = 'linzight-workspace-data-changed';
 type FetchInit = Parameters<typeof window.fetch>[1];
 
 export class ApiRequestError extends Error {
@@ -150,6 +155,11 @@ function invalidateStoredSession() {
   window.localStorage.removeItem(activeStudyStorageKey);
   window.localStorage.removeItem('linzight-demo-token');
   window.dispatchEvent(new window.CustomEvent(authSessionInvalidatedEvent));
+}
+
+function emitWorkspaceDataChanged(detail: { resource?: string; id?: string; studyId?: string } = {}) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new window.CustomEvent(workspaceDataChangedEvent, { detail }));
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -288,6 +298,7 @@ export async function uploadFileToBackend(
     sampleId?: string;
     omicsId?: string;
     consentId?: string;
+    studyId?: string;
     isDeidentified?: boolean;
   }
 ): Promise<ApiFileMetadata> {
@@ -299,17 +310,24 @@ export async function uploadFileToBackend(
   if (metadata.sampleId) formData.append('sample_id', metadata.sampleId);
   if (metadata.omicsId) formData.append('omics_id', metadata.omicsId);
   if (metadata.consentId) formData.append('consent_id', metadata.consentId);
+  if (metadata.studyId) formData.append('study_id', metadata.studyId);
 
   const token = window.localStorage.getItem(authTokenStorageKey);
-  return requestJson<ApiFileMetadata>('/files', {
+  const response = await requestJson<ApiFileMetadata>('/files', {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: formData
   });
+  emitWorkspaceDataChanged({ resource: 'files', id: response.id, studyId: response.study_id });
+  return response;
 }
 
 export async function fetchFileMetadata(): Promise<ApiFileMetadata[]> {
   return fetchStudyBusinessRows<ApiFileMetadata>('files');
+}
+
+export async function fetchStudyFileMetadata(studyId: string): Promise<ApiFileMetadata[]> {
+  return getJson<ApiFileMetadata[]>(studyBusinessPath(studyId, 'files'));
 }
 
 export async function openFileFromBackend(file: Pick<ApiFileMetadata, 'id' | 'original_filename'>): Promise<void> {
@@ -383,27 +401,39 @@ export async function createApprovalRequest(payload: {
   comment?: string;
   submit?: boolean;
 }): Promise<ApiApprovalRequest> {
-  return postJson<ApiApprovalRequest>('/approvals', payload);
+  const response = await postJson<ApiApprovalRequest>('/approvals', payload);
+  emitWorkspaceDataChanged({ resource: 'approvals', id: response.id, studyId: response.study_id });
+  return response;
 }
 
 export async function approveApprovalRequest(approvalId: string, comment = ''): Promise<ApiApprovalRequest> {
-  return postJson<ApiApprovalRequest>(`/approvals/${encodeURIComponent(approvalId)}/approve`, { comment });
+  const response = await postJson<ApiApprovalRequest>(`/approvals/${encodeURIComponent(approvalId)}/approve`, { comment });
+  emitWorkspaceDataChanged({ resource: 'approvals', id: response.id, studyId: response.study_id });
+  return response;
 }
 
 export async function rejectApprovalRequest(approvalId: string, comment = ''): Promise<ApiApprovalRequest> {
-  return postJson<ApiApprovalRequest>(`/approvals/${encodeURIComponent(approvalId)}/reject`, { comment });
+  const response = await postJson<ApiApprovalRequest>(`/approvals/${encodeURIComponent(approvalId)}/reject`, { comment });
+  emitWorkspaceDataChanged({ resource: 'approvals', id: response.id, studyId: response.study_id });
+  return response;
 }
 
 export async function completeApprovalRequest(approvalId: string, comment = ''): Promise<ApiApprovalRequest> {
-  return postJson<ApiApprovalRequest>(`/approvals/${encodeURIComponent(approvalId)}/complete`, { comment });
+  const response = await postJson<ApiApprovalRequest>(`/approvals/${encodeURIComponent(approvalId)}/complete`, { comment });
+  emitWorkspaceDataChanged({ resource: 'approvals', id: response.id, studyId: response.study_id });
+  return response;
 }
 
 export async function requestConsentWithdrawal(consentId: string, comment = ''): Promise<ApiApprovalRequest> {
-  return postJson<ApiApprovalRequest>(`/consents/${encodeURIComponent(consentId)}/withdrawal-request`, { comment });
+  const response = await postJson<ApiApprovalRequest>(`/consents/${encodeURIComponent(consentId)}/withdrawal-request`, { comment });
+  emitWorkspaceDataChanged({ resource: 'approvals', id: response.id, studyId: response.study_id });
+  return response;
 }
 
 export async function requestConsentResign(consentId: string, comment = ''): Promise<ApiApprovalRequest> {
-  return postJson<ApiApprovalRequest>(`/consents/${encodeURIComponent(consentId)}/resign-request`, { comment });
+  const response = await postJson<ApiApprovalRequest>(`/consents/${encodeURIComponent(consentId)}/resign-request`, { comment });
+  emitWorkspaceDataChanged({ resource: 'approvals', id: response.id, studyId: response.study_id });
+  return response;
 }
 
 export async function downloadExportJob(job: ApiExportJob): Promise<void> {
@@ -508,11 +538,13 @@ export async function fetchStudyConfiguration(studyId = getCurrentScopedStudyId(
 
 export async function updateStudyConfiguration(studyId: string, payload: ApiStudyConfigurationUpdate): Promise<ApiStudyConfiguration> {
   studyId = requireStudyId(studyId, 'study configuration');
-  return requestJson<ApiStudyConfiguration>(`/studies/${encodeURIComponent(studyId)}/configuration`, {
+  const response = await requestJson<ApiStudyConfiguration>(`/studies/${encodeURIComponent(studyId)}/configuration`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
+  emitWorkspaceDataChanged({ resource: 'study_configurations', id: response.study_id, studyId: response.study_id });
+  return response;
 }
 
 export async function fetchStudies(): Promise<ApiStudy[]> {
@@ -686,14 +718,18 @@ export async function createDataQuery(payload: {
   description?: string;
   assigned_to?: string | null;
 }): Promise<ApiDataQuery> {
-  return postJson<ApiDataQuery>(studyBusinessPath(payload.study_id, 'queries'), payload);
+  const response = await postJson<ApiDataQuery>(studyBusinessPath(payload.study_id, 'queries'), payload);
+  emitWorkspaceDataChanged({ resource: 'queries', id: response.id, studyId: response.study_id });
+  return response;
 }
 
 export async function updateDataQuery(
   queryId: string,
   payload: Partial<Pick<ApiDataQuery, 'status' | 'assigned_to' | 'response'>>
 ): Promise<ApiDataQuery> {
-  return putJson<ApiDataQuery>(`/queries/${encodeURIComponent(queryId)}`, payload);
+  const response = await putJson<ApiDataQuery>(`/queries/${encodeURIComponent(queryId)}`, payload);
+  emitWorkspaceDataChanged({ resource: 'queries', id: response.id, studyId: response.study_id });
+  return response;
 }
 
 export async function createUserAccount(payload: ApiUserCreate): Promise<ApiUser> {
@@ -723,6 +759,12 @@ export async function updateUserAccountStatus(userId: string, payload: ApiUserSt
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteUserAccount(userId: string): Promise<ApiUser> {
+  return requestJson<ApiUser>(`/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE'
   });
 }
 
@@ -858,7 +900,9 @@ export async function updateStudyCrfField(field: StudyCrfFieldRecord): Promise<S
 
 export async function runQualityChecks(studyId = getCurrentScopedStudyId()): Promise<{ status: string; created: number }> {
   const token = window.localStorage.getItem(authTokenStorageKey);
-  return postJson<{ status: string; created: number }>(studyBusinessPath(studyId, 'quality/run'), {}, token ? { Authorization: `Bearer ${token}` } : undefined);
+  const response = await postJson<{ status: string; created: number }>(studyBusinessPath(studyId, 'quality/run'), {}, token ? { Authorization: `Bearer ${token}` } : undefined);
+  emitWorkspaceDataChanged({ resource: 'quality', studyId });
+  return response;
 }
 
 export async function fetchAnalyticsSummary(studyId = getCurrentScopedStudyId()): Promise<ApiAnalysisSummary> {
@@ -950,13 +994,17 @@ export async function updateConsentRecord(id: string, payload: Partial<Pick<Cons
       method: payload.method
     })
   });
-  return toConsentRecord(response);
+  const record = toConsentRecord(response);
+  emitWorkspaceDataChanged({ resource: 'consents', id: record.id, studyId: record.studyId });
+  return record;
 }
 
 export async function updatePatientClinicalData(patient: PatientRecord, clinicalData: PatientRecord['clinicalData']): Promise<PatientRecord> {
   if (!patient.id) throw new Error('patient id is required');
   const response = await putJson<ApiPatient>(`/patients/${patient.id}`, { clinical_data: clinicalData });
-  return toPatientRecord(response, [], []);
+  const record = toPatientRecord(response, [], []);
+  emitWorkspaceDataChanged({ resource: 'patients', id: record.id, studyId: record.studyId });
+  return record;
 }
 
 export async function createPatientRecord(patient: PatientRecord): Promise<PatientRecord> {
@@ -974,12 +1022,15 @@ export async function createPatientRecord(patient: PatientRecord): Promise<Patie
     note: patient.note,
     clinical_data: patient.clinicalData
   });
-  return toPatientRecord(response, [], []);
+  const record = toPatientRecord(response, [], []);
+  emitWorkspaceDataChanged({ resource: 'patients', id: record.id, studyId: record.studyId });
+  return record;
 }
 
 export async function updatePatientRecord(patient: PatientRecord): Promise<PatientRecord> {
   if (!patient.id) throw new Error('patient id is required');
   const response = await putJson<ApiPatient>(`/patients/${patient.id}`, {
+    study_id: patient.studyId,
     patient_number: patient.patientNumber ?? patient.name,
     patient_name: patient.patientName ?? '',
     name: patient.name,
@@ -991,11 +1042,14 @@ export async function updatePatientRecord(patient: PatientRecord): Promise<Patie
     note: patient.note,
     clinical_data: patient.clinicalData
   });
-  return toPatientRecord(response, [], []);
+  const record = toPatientRecord(response, [], []);
+  emitWorkspaceDataChanged({ resource: 'patients', id: record.id, studyId: record.studyId });
+  return record;
 }
 
 export async function deletePatientRecord(patientId: string): Promise<void> {
   await requestJson<void>(`/patients/${encodeURIComponent(patientId)}`, { method: 'DELETE' });
+  emitWorkspaceDataChanged({ resource: 'patients', id: patientId });
 }
 
 export async function fetchCrfEntries(patientId: string): Promise<ApiCrfEntry[]> {
@@ -1017,15 +1071,19 @@ export async function saveClinicalCrfEntry(patient: PatientRecord, payload: Pati
   };
 
   if (existingEntry) {
-    return putJson<ApiCrfEntry>(`/crf/${existingEntry.id}`, body);
+    const response = await putJson<ApiCrfEntry>(`/crf/${existingEntry.id}`, body);
+    emitWorkspaceDataChanged({ resource: 'crf', id: response.id, studyId: response.study_id });
+    return response;
   }
-  return postJson<ApiCrfEntry>(studyBusinessPath(patient.studyId, 'crf'), body);
+  const response = await postJson<ApiCrfEntry>(studyBusinessPath(patient.studyId, 'crf'), body);
+  emitWorkspaceDataChanged({ resource: 'crf', id: response.id, studyId: response.study_id });
+  return response;
 }
 
 export async function createSampleRecord(record: SampleRecord): Promise<SampleRecord> {
   if (!record.patientId) throw new Error('patient id is required');
   const response = await postJson<ApiSample>(studyBusinessPath(record.studyId, 'samples'), {
-    id: record.id.startsWith('SPL-NEW-') ? undefined : record.id,
+    id: record.id.trim(),
     patient_id: record.patientId,
     patient_name: record.patientName,
     hospital_no: record.hospitalNo,
@@ -1040,11 +1098,14 @@ export async function createSampleRecord(record: SampleRecord): Promise<SampleRe
     status: record.status,
     linked_omics: record.linkedOmics
   });
-  return toSampleRecord(response);
+  const sample = toSampleRecord(response);
+  emitWorkspaceDataChanged({ resource: 'samples', id: sample.id, studyId: sample.studyId });
+  return sample;
 }
 
 export async function updateSampleRecord(record: SampleRecord): Promise<SampleRecord> {
   const response = await putJson<ApiSample>(`/samples/${record.id}`, {
+    study_id: record.studyId,
     patient_id: record.patientId,
     patient_name: record.patientName,
     hospital_no: record.hospitalNo,
@@ -1059,7 +1120,9 @@ export async function updateSampleRecord(record: SampleRecord): Promise<SampleRe
     status: record.status,
     linked_omics: record.linkedOmics
   });
-  return toSampleRecord(response);
+  const sample = toSampleRecord(response);
+  emitWorkspaceDataChanged({ resource: 'samples', id: sample.id, studyId: sample.studyId });
+  return sample;
 }
 
 export async function createOmicsRecord(record: OmicsRecord): Promise<OmicsRecord> {
@@ -1083,7 +1146,9 @@ export async function createOmicsRecord(record: OmicsRecord): Promise<OmicsRecor
     sent_at: record.sentAt,
     completed_at: record.completedAt
   });
-  return toOmicsRecord(response);
+  const omics = toOmicsRecord(response);
+  emitWorkspaceDataChanged({ resource: 'omics', id: omics.id, studyId: omics.studyId });
+  return omics;
 }
 
 export async function updateOmicsRecord(record: OmicsRecord): Promise<OmicsRecord> {
@@ -1105,7 +1170,9 @@ export async function updateOmicsRecord(record: OmicsRecord): Promise<OmicsRecor
     sent_at: record.sentAt,
     completed_at: record.completedAt
   });
-  return toOmicsRecord(response);
+  const omics = toOmicsRecord(response);
+  emitWorkspaceDataChanged({ resource: 'omics', id: omics.id, studyId: omics.studyId });
+  return omics;
 }
 
 function toSamplesByType(records: ApiSample[]): SampleCollection[] {
@@ -1538,7 +1605,9 @@ export async function saveVisitFollowUpRecord(record: VisitRecord, patient: Pati
 
   if (record.id.startsWith('FUP-')) {
     const response = await putJson<ApiFollowUpRecord>(`/follow-up-records/${encodeURIComponent(record.id)}`, payload);
-    return followUpRecordToVisitRecord(toFollowUpRecord(response), record);
+    const saved = followUpRecordToVisitRecord(toFollowUpRecord(response), record);
+    emitWorkspaceDataChanged({ resource: 'follow_up_records', id: saved.id, studyId: saved.studyId });
+    return saved;
   }
 
   const existingRecords = await getJson<ApiFollowUpRecord[]>(`${studyBusinessPath(payload.study_id, 'follow-up-records')}?patient_id=${encodeURIComponent(patientId ?? '')}`)
@@ -1549,14 +1618,18 @@ export async function saveVisitFollowUpRecord(record: VisitRecord, patient: Pati
 
   if (existing) {
     const response = await putJson<ApiFollowUpRecord>(`/follow-up-records/${encodeURIComponent(existing.id)}`, payload);
-    return followUpRecordToVisitRecord(toFollowUpRecord(response), record);
+    const saved = followUpRecordToVisitRecord(toFollowUpRecord(response), record);
+    emitWorkspaceDataChanged({ resource: 'follow_up_records', id: saved.id, studyId: saved.studyId });
+    return saved;
   }
 
   const response = await postJson<ApiFollowUpRecord>(studyBusinessPath(payload.study_id, 'follow-up-records'), {
     id: record.id.startsWith('V-NEW-') ? undefined : `FUP-${record.id}`,
     ...payload
   });
-  return followUpRecordToVisitRecord(toFollowUpRecord(response), record);
+  const saved = followUpRecordToVisitRecord(toFollowUpRecord(response), record);
+  emitWorkspaceDataChanged({ resource: 'follow_up_records', id: saved.id, studyId: saved.studyId });
+  return saved;
 }
 
 export async function fetchPatientPanorama(patientId: string): Promise<WorkspaceDataset> {

@@ -69,6 +69,8 @@ health:   http://127.0.0.1:8000/health
 
 - `VITE_API_BASE_URL`
 
+远程 Nginx 同域反代部署时，前端构建必须使用 `VITE_API_BASE_URL=/api`，或保留代码里的同源 `/api` 默认值。不要让远程浏览器优先访问 `http://127.0.0.1:8000`，否则用户本机如果运行过旧后端，会登录到本地旧数据，看起来像远程页面回退到旧版本。
+
 后端：
 
 - `DATABASE_URL`
@@ -76,8 +78,17 @@ health:   http://127.0.0.1:8000/health
 - `LINZIGHT_POSTGRES_URL`
 - `LINZIGHT_UPLOADS_DIR`
 - `LINZIGHT_BACKUP_DIR`
+- `LINZIGHT_INITIAL_ADMIN_EMAIL`
+- `LINZIGHT_INITIAL_ADMIN_PASSWORD`
+- `LINZIGHT_PUBLIC_APP_URL`
+- `LINZIGHT_SMTP_HOST`
+- `LINZIGHT_SMTP_PORT`
+- `LINZIGHT_SMTP_SECURITY`
+- `LINZIGHT_SMTP_USERNAME`
+- `LINZIGHT_SMTP_PASSWORD`
+- `LINZIGHT_SMTP_FROM`
 
-真实生产密钥应放入部署平台 secret，不要写入仓库。
+安装或升级远程系统时必须同时配置 `LINZIGHT_PUBLIC_APP_URL` 和 `LINZIGHT_SMTP_*`，否则“忘记密码 / 修改密码”只能生成后端 token 记录，不能发送重置邮件。真实生产密钥应放入部署平台 secret 或 systemd env file，不要写入仓库。
 
 更完整的环境变量、Nginx 反向代理示例和旧 SQLite 测试库备份恢复说明见 `docs/deployment-ops.md`。
 

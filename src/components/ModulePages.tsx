@@ -47,6 +47,7 @@ import {
   createStudyCrfVersion,
   createStudyVisitPlan,
   createUserAccount,
+  deleteUserAccount,
   deleteStudy,
   downloadExportJob,
   downloadOperationLogsCsv,
@@ -62,6 +63,7 @@ import {
   fetchStudyCrfMigrations,
   fetchStudyCrfVersions,
   fetchStudyConfiguration,
+  fetchStudyFileMetadata,
   fetchStudyMembers,
   fetchStudySites,
   fetchStudyVisitPlans,
@@ -75,8 +77,6 @@ import {
   openFileFromBackend,
   previewStudyCrfMigration,
   recordBelongsToCurrentStudyScope,
-  requestConsentResign,
-  requestConsentWithdrawal,
   requestStudyCrfMigrationApproval,
   rejectApprovalRequest,
   runQualityChecks,
@@ -96,7 +96,8 @@ import {
   updateUserAccount,
   updateUserAccountStatus,
   upsertStudyMember,
-  uploadFileToBackend
+  uploadFileToBackend,
+  workspaceDataChangedEvent
 } from '../services/api';
 import type { ApiApprovalRequest, ApiDataQuery, ApiExportJob, ApiFileMetadata, ApiOperationLog, ApiPermissionMatrixRow, ApiQualityIssue, ApiSiteUser, ApiStudy, ApiStudyConfiguration, ApiStudyMember, ApiStudySite, ApiUser } from '../services/contracts';
 import type { CrfMigrationApprovalRecord, CrfMigrationPreview, StudyCrfVersionRecord } from '../services/api';
@@ -112,8 +113,7 @@ const sampleTestingPatientPickerPageSize = 6;
 const systemAccountPageSize = 5;
 const systemFieldPageSize = 5;
 const consentVersion = 'V1.0';
-const consentPreviewPdfUrl = './consent-v1.0.pdf';
-const consentStatusOptions: Array<'全部' | ConsentRecord['status']> = ['全部', '待签署', '已签署', '撤回审批中', '已撤回', '重签审批中', '已重签'];
+const consentStatusOptions: Array<'全部' | ConsentRecord['status']> = ['全部', '待签署', '已签署', '已撤回'];
 const consentStatusClass: Record<'全部' | ConsentRecord['status'], string> = {
   全部: 'all',
   待签署: 'pending',
@@ -362,12 +362,126 @@ const lungConsentPreviewContent: ConsentPreviewSection[] = [
   }
 ];
 
-function getConsentPreviewContent(studyId?: string) {
-  return studyId === 'LZXK-01' ? lungConsentPreviewContent : consentPreviewContent;
+const consentTemplateCatalog = [
+  {
+    id: 'lung-cancer-rwd-consent-v1.0',
+    title: '真实世界肺癌耐药研究知情同意',
+    label: '真实世界肺癌耐药研究知情同意 v1.0',
+    description: '适用于肺癌、NSCLC、靶向/免疫治疗及耐药真实世界研究。',
+    sections: lungConsentPreviewContent
+  },
+  {
+    id: 'immune-neurology-consent-v20260423',
+    title: '免疫相关性神经系统疾病多组学解析及机制探索',
+    label: '免疫相关性神经系统疾病知情同意 v20260423',
+    description: '适用于 NPSLE、MS、NMOSD 等免疫相关性神经系统疾病多组学研究。',
+    sections: consentPreviewContent
+  }
+] as const;
+
+const customConsentTemplateOption = 'custom';
+
+function consentTemplateCatalogItem(templateId?: string) {
+  const normalized = templateId?.trim();
+  if (!normalized) return undefined;
+  return consentTemplateCatalog.find((item) => item.id === normalized);
 }
 
-function getConsentStudyTitle(studyId?: string) {
-  return studyId === 'LZXK-01' ? '真实世界肺癌耐药研究知情同意' : '免疫相关性神经系统疾病多组学解析及机制探索';
+function isLungConsentConfiguration(studyId?: string, configuration?: ApiStudyConfiguration, ...context: Array<string | undefined>) {
+  const marker = [
+    studyId,
+    configuration?.disease_area,
+    configuration?.consent_template,
+    configuration?.active_crf_version_id,
+    configuration?.testing_profile?.testing_project_id,
+    ...context
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return ['lzxk', 'lung', 'nsclc', 'luad', 'lusc', 'egfr', 'alk', '肺癌', '耐药'].some((item) => marker.includes(item));
+}
+
+function isImmuneNeurologyConsentConfiguration(studyId?: string, configuration?: ApiStudyConfiguration, ...context: Array<string | undefined>) {
+  const marker = [
+    studyId,
+    configuration?.disease_area,
+    configuration?.consent_template,
+    configuration?.active_crf_version_id,
+    ...context
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return ['npsle', 'nmosd', 'ms', 'sle', 'immune', 'neurology', '免疫', '神经', '红斑狼疮', '多发性硬化', '视神经脊髓炎'].some((item) =>
+    marker.includes(item)
+  );
+}
+
+function configuredConsentContent(studyId?: string, configuration?: ApiStudyConfiguration, ...context: Array<string | undefined>): ConsentPreviewSection[] {
+  if (isLungConsentConfiguration(studyId, configuration, ...context)) return lungConsentPreviewContent;
+  if (isImmuneNeurologyConsentConfiguration(studyId, configuration, ...context)) return consentPreviewContent;
+  const template = configuration?.consent_template?.trim();
+  if (!template) return consentPreviewContent;
+  return [
+    {
+      title: '知情同意模板配置',
+      icon: 'file',
+      eyebrow: '当前 Study 配置总表',
+      blocks: [
+        {
+          paragraphs: [
+            `当前 Study 已绑定知情同意模板：${template}`,
+            `疾病领域：${configuration?.disease_area || '未配置'}`,
+            '请在 Study 系统管理中维护当前 Study 的知情同意模板编号或说明；知情同意页会按该配置展示模板信息，并与患者签署记录保持同一 Study 范围。'
+          ]
+        }
+      ]
+    },
+    consentPreviewContent[7]
+  ];
+}
+
+function getConsentStudyTitle(studyId?: string, configuration?: ApiStudyConfiguration, ...context: Array<string | undefined>) {
+  if (isLungConsentConfiguration(studyId, configuration, ...context)) return '真实世界肺癌耐药研究知情同意';
+  if (isImmuneNeurologyConsentConfiguration(studyId, configuration, ...context)) return '免疫相关性神经系统疾病多组学解析及机制探索';
+  return configuration?.consent_template || '当前 Study 知情同意模板';
+}
+
+function inferConsentTemplateId(studyId?: string, configuration?: ApiStudyConfiguration, ...context: Array<string | undefined>) {
+  const explicitTemplate = configuration?.consent_template?.trim();
+  if (explicitTemplate) return explicitTemplate;
+  if (isLungConsentConfiguration(studyId, configuration, ...context)) return 'lung-cancer-rwd-consent-v1.0';
+  if (isImmuneNeurologyConsentConfiguration(studyId, configuration, ...context)) return 'immune-neurology-consent-v20260423';
+  return '';
+}
+
+function escapeConsentHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function consentPrintableHtml(title: string, sections: ConsentPreviewSection[]) {
+  const sectionHtml = sections.map((section) => {
+    const blockHtml = section.blocks.map((block) => {
+      const titleHtml = block.title ? `<h3>${escapeConsentHtml(block.title)}</h3>` : '';
+      const paragraphs = (block.paragraphs ?? []).map((paragraph) => `<p>${escapeConsentHtml(paragraph)}</p>`).join('');
+      const items = block.items?.length
+        ? `<ul>${block.items.map((item) => `<li>${escapeConsentHtml(item)}</li>`).join('')}</ul>`
+        : '';
+      return `<section>${titleHtml}${paragraphs}${items}</section>`;
+    }).join('');
+    return `<article><h2>${escapeConsentHtml(section.title)}</h2>${blockHtml}</article>`;
+  }).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeConsentHtml(title)}</title><style>
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:40px;color:#17223b;line-height:1.7}
+    h1{text-align:center;margin-bottom:32px} h2{margin-top:28px;border-bottom:1px solid #d8e2f0;padding-bottom:8px}
+    h3{margin-bottom:8px} article{page-break-inside:avoid} li{margin:6px 0}
+  </style></head><body><h1>${escapeConsentHtml(title)}</h1>${sectionHtml}</body></html>`;
 }
 
 function statusTone(status: string) {
@@ -426,7 +540,7 @@ function ConsentSectionPreview({
             <div className="consent-document-actions">
               <button type="button" onClick={onPrint}><Icon name="reports" />{t('打印知情')}</button>
               <button type="button" onClick={onUpload}><Icon name="filePlus" />{t('上传知情')}</button>
-              <a href={consentPreviewPdfUrl} target="_blank" rel="noreferrer"><Icon name="search" />{t('查看知情')}</a>
+              <button type="button" onClick={onPrint}><Icon name="search" />{t('查看知情')}</button>
             </div>
           ) : null}
           {block.items && block.variant !== 'choice' && block.variant !== 'documentActions' ? (
@@ -567,7 +681,7 @@ type SampleLedgerRow = {
 };
 
 type SampleTestingEditor =
-  | { kind: 'sample'; draft: SampleRecord }
+  | { kind: 'sample'; draft: SampleRecord; isNew: boolean }
   | { kind: 'omics'; draft: OmicsRecord };
 
 type SampleTestingFlow =
@@ -591,6 +705,8 @@ function patientMatchesSample(patient: PatientRecord, sample: SampleRecord) {
 
 function patientSearchHaystack(patient: PatientRecord) {
   return [
+    patientDisplayNumber(patient),
+    patient.id,
     patient.studyId,
     patient.studyName,
     patient.patientNumber,
@@ -606,7 +722,7 @@ function patientSearchHaystack(patient: PatientRecord) {
 }
 
 function patientDisplayNumber(patient: PatientRecord) {
-  return patient.patientNumber || patient.name;
+  return patient.patientNumber || patient.name || patient.id || '-';
 }
 
 function normalizeOmicsDisplayStatus(status?: OmicsRecord['status'], sampleStatus?: SampleRecord['status']): OmicsDisplayStatus {
@@ -657,8 +773,26 @@ function omicsUsageSummary(record: OmicsRecord) {
     .join(' / ');
 }
 
+function normalizeLinkedOmicsLabel(label: string) {
+  return label.replace(/\s*\([^)]*\)\s*$/, '').trim();
+}
+
 function buildSampleDetectionRows(sampleRows: SampleRecord[], omicsRows: OmicsRecord[], fileRows: ApiFileMetadata[] = []): SampleDetectionRow[] {
   const filesById = new Map(fileRows.map((file) => [file.id, file]));
+  const representedOmicsBySample = new Map<string, Set<string>>();
+  const representedSampleIds = new Set<string>();
+
+  for (const record of omicsRows) {
+    const sampleIds = (record.sampleIds?.length ? record.sampleIds : [record.sampleId]).filter(Boolean);
+    for (const sampleId of sampleIds) {
+      representedSampleIds.add(sampleId);
+      const labels = representedOmicsBySample.get(sampleId) ?? new Set<string>();
+      labels.add(record.assay);
+      labels.add(`${record.assay} (${record.id})`);
+      representedOmicsBySample.set(sampleId, labels);
+    }
+  }
+
   const rowsFromOmics = omicsRows.map((record) => {
     const linkedSamples = (record.sampleIds?.length ? record.sampleIds : [record.sampleId])
       .map((sampleId) => sampleRows.find((item) => item.id === sampleId))
@@ -688,11 +822,14 @@ function buildSampleDetectionRows(sampleRows: SampleRecord[], omicsRows: OmicsRe
     };
   });
 
-  const omicsSampleIds = new Set(omicsRows.map((record) => record.sampleId));
   const rowsFromSamples = sampleRows
-    .filter((sample) => !omicsSampleIds.has(sample.id))
     .flatMap((sample) => {
-      const assays = sample.linkedOmics.length ? sample.linkedOmics : ['待指定'];
+      const representedLabels = representedOmicsBySample.get(sample.id) ?? new Set<string>();
+      const unmatchedLinkedOmics = sample.linkedOmics.filter((assay) => {
+        if (!assay || assay === '待选择' || assay === '待指定') return false;
+        return !representedLabels.has(assay) && !representedLabels.has(normalizeLinkedOmicsLabel(assay));
+      });
+      const assays = unmatchedLinkedOmics.length ? unmatchedLinkedOmics : representedSampleIds.has(sample.id) ? [] : ['待指定'];
       const status = normalizeOmicsDisplayStatus(undefined, sample.status);
       const sampleId = formatSampleLedgerId(sample, sampleRows);
 
@@ -857,21 +994,25 @@ export function ClinicalDataCapturePage({
   const [sectionBackups, setSectionBackups] = useState<Record<string, Array<[string, string]>>>({});
   const [clinicalSaveStatus, setClinicalSaveStatus] = useState('等待保存');
 
-  useEffect(() => {
-    let ignore = false;
-
-    void fetchWorkspaceDataset()
-      .then((dataset) => {
-        if (ignore) return;
-        setPatients(dataset.patients);
-        setVisitRows([...dataset.visits, ...dataset.followUps.map(followUpRecordToClinicalVisit)]);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      ignore = true;
-    };
+  const refreshClinicalWorkspaceData = useCallback(async () => {
+    try {
+      const dataset = await fetchWorkspaceDataset();
+      setPatients(dataset.patients);
+      setVisitRows([...dataset.visits, ...dataset.followUps.map(followUpRecordToClinicalVisit)]);
+    } catch {
+      // Keep the current editable state if a background refresh fails.
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshClinicalWorkspaceData();
+  }, [refreshClinicalWorkspaceData]);
+
+  useEffect(() => {
+    const refresh = () => void refreshClinicalWorkspaceData();
+    window.addEventListener(workspaceDataChangedEvent, refresh);
+    return () => window.removeEventListener(workspaceDataChangedEvent, refresh);
+  }, [refreshClinicalWorkspaceData]);
 
   useEffect(() => {
     if (scopedSelectedPatient) setActivePatientName(scopedSelectedPatient.name);
@@ -1648,7 +1789,6 @@ function findConsentRecordForPatient(records: ConsentRecord[], patient?: Patient
 }
 
 export function ConsentManagementPage({
-  currentUser,
   selectedPatient
 }: {
   currentUser?: AuthenticatedUser | null;
@@ -1681,8 +1821,9 @@ export function ConsentManagementPage({
   const [activeConsentSection, setActiveConsentSection] = useState(0);
   const [consentActionStatus, setConsentActionStatus] = useState('等待知情同意操作');
   const [pendingConsentUploadRecord, setPendingConsentUploadRecord] = useState<ConsentRecord | null>(null);
-  const [consentApprovals, setConsentApprovals] = useState<ApiApprovalRequest[]>([]);
-  const [consentTemplatesByStudy, setConsentTemplatesByStudy] = useState<Record<string, string>>({});
+  const [consentFileRows, setConsentFileRows] = useState<ApiFileMetadata[]>([]);
+  const [consentConfigurationsByStudy, setConsentConfigurationsByStudy] = useState<Record<string, ApiStudyConfiguration>>({});
+  const [consentStudiesById, setConsentStudiesById] = useState<Record<string, ApiStudy>>({});
   const records = useMemo(() => {
     const mergedRecords = baseRecords.map((record) => ({ ...record, ...recordOverrides[record.id] }));
     if (scopedSelectedPatient && !findConsentRecordForPatient(mergedRecords, scopedSelectedPatient)) {
@@ -1711,15 +1852,34 @@ export function ConsentManagementPage({
       { 全部: 0, 待签署: 0, 已签署: 0, 撤回审批中: 0, 已撤回: 0, 重签审批中: 0, 已重签: 0 }
     );
   }, [studyFilteredRecords]);
-  const selectedConsentPreviewContent = getConsentPreviewContent(selectedRecord.studyId);
-  const selectedConsentTemplate = selectedRecord.studyId ? consentTemplatesByStudy[selectedRecord.studyId] : undefined;
-  const visibleConsentApprovals = useMemo(() => {
-    const visibleStudyIds = new Set(studyFilteredRecords.map((record) => record.studyId).filter(Boolean));
-    return consentApprovals
-      .filter((approval) => approval.approval_type.startsWith('econsent_'))
-      .filter((approval) => !visibleStudyIds.size || visibleStudyIds.has(approval.study_id))
-      .slice(0, 5);
-  }, [consentApprovals, studyFilteredRecords]);
+  const selectedStudyConfiguration = selectedRecord.studyId ? consentConfigurationsByStudy[selectedRecord.studyId] : undefined;
+  const selectedConsentStudy = selectedRecord.studyId ? consentStudiesById[selectedRecord.studyId] : undefined;
+  const selectedConsentPreviewContent = configuredConsentContent(
+    selectedRecord.studyId,
+    selectedStudyConfiguration,
+    selectedRecord.diseaseType,
+    selectedConsentStudy?.indication,
+    selectedConsentStudy?.name
+  );
+  const selectedConsentTemplate = selectedStudyConfiguration?.consent_template;
+  const selectedConsentStudyTitle = getConsentStudyTitle(
+    selectedRecord.studyId,
+    selectedStudyConfiguration,
+    selectedRecord.diseaseType,
+    selectedConsentStudy?.indication,
+    selectedConsentStudy?.name
+  );
+  const latestConsentFilesByRecordId = useMemo(() => {
+    const sortedFiles = [...consentFileRows]
+      .filter((file) => file.category === 'consent')
+      .sort((a, b) => b.uploaded_at.localeCompare(a.uploaded_at));
+    const byRecordId = new Map<string, ApiFileMetadata>();
+    for (const file of sortedFiles) {
+      if (file.consent_id && !byRecordId.has(file.consent_id)) byRecordId.set(file.consent_id, file);
+    }
+    return byRecordId;
+  }, [consentFileRows]);
+  const selectedConsentFile = selectedRecord.id ? latestConsentFilesByRecordId.get(selectedRecord.id) : undefined;
   const currentConsentSection = selectedConsentPreviewContent[Math.min(activeConsentSection, selectedConsentPreviewContent.length - 1)]!;
   const selectedUnderstood = understoodRecords[selectedRecord.id] || selectedRecord.status !== '待签署';
   const flowStepIndex = ['已签署', '已重签'].includes(selectedRecord.status)
@@ -1745,29 +1905,30 @@ export function ConsentManagementPage({
   const displayStart = filteredRecords.length ? pageStart + 1 : 0;
   const displayEnd = Math.min(pageStart + consentPageSize, filteredRecords.length);
 
-  const printConsentPdf = () => {
-    setUnderstoodRecords((current) => ({ ...current, [selectedRecord.id]: true }));
-    const previewWindow = window.open(consentPreviewPdfUrl, '_blank', 'noopener,noreferrer');
-    if (previewWindow) {
-      setConsentActionStatus('已打开知情同意 PDF 预览；如需纸质归档，请在预览页打印');
-    } else {
-      setConsentActionStatus('浏览器阻止了 PDF 预览弹窗，已尝试在后台触发打印');
-    }
-    const printFrame = document.createElement('iframe');
-    printFrame.src = consentPreviewPdfUrl;
-    printFrame.title = '打印知情同意书';
-    printFrame.style.position = 'fixed';
-    printFrame.style.right = '0';
-    printFrame.style.bottom = '0';
-    printFrame.style.width = '0';
-    printFrame.style.height = '0';
-    printFrame.style.border = '0';
-    printFrame.onload = () => {
-      printFrame.contentWindow?.focus();
-      printFrame.contentWindow?.print();
-      setTimeout(() => printFrame.remove(), 1000);
+  const consentTemplateContextForRecord = (record: ConsentRecord) => {
+    const studyConfiguration = record.studyId ? consentConfigurationsByStudy[record.studyId] : undefined;
+    const study = record.studyId ? consentStudiesById[record.studyId] : undefined;
+    return {
+      content: configuredConsentContent(record.studyId, studyConfiguration, record.diseaseType, study?.indication, study?.name),
+      title: getConsentStudyTitle(record.studyId, studyConfiguration, record.diseaseType, study?.indication, study?.name)
     };
-    document.body.appendChild(printFrame);
+  };
+
+  const printConsentPdf = (record = selectedRecord) => {
+    const { content, title } = consentTemplateContextForRecord(record);
+    setSelected(record);
+    setUnderstoodRecords((current) => ({ ...current, [record.id]: true }));
+    const previewWindow = window.open('', '_blank', 'noopener,noreferrer');
+    if (previewWindow) {
+      previewWindow.document.open();
+      previewWindow.document.write(consentPrintableHtml(title, content));
+      previewWindow.document.close();
+      previewWindow.focus();
+      previewWindow.print();
+      setConsentActionStatus('已打开当前 Study 知情同意模板预览；如需纸质归档，请在预览页打印');
+    } else {
+      setConsentActionStatus('浏览器阻止了知情同意预览弹窗，请允许弹窗后重试');
+    }
   };
 
   const applyConsentUpdate = async (record: ConsentRecord, payload: Partial<Pick<ConsentRecord, 'status' | 'signedAt' | 'version' | 'method'>>, message: string) => {
@@ -1806,16 +1967,17 @@ export function ConsentManagementPage({
 
     setConsentActionStatus(`知情文件 ${file.name} 正在上传...`);
     try {
-      await uploadFileToBackend(file, {
+      const uploaded = await uploadFileToBackend(file, {
         category: 'consent',
         patientId: record.patientId,
         consentId: record.id,
         isDeidentified: false
       });
+      setConsentFileRows((rows) => [uploaded, ...rows.filter((row) => row.id !== uploaded.id)]);
       await applyConsentUpdate(
         record,
-        { status: '已签署', signedAt: new Date().toISOString().slice(0, 10), method: '电子' },
-        `知情文件 ${file.name} 已上传并签署`
+        { status: '已签署', signedAt: new Date().toISOString().slice(0, 10), method: '纸质' },
+        `知情文件 ${file.name} 已上传并归档`
       );
     } catch {
       setConsentActionStatus(`知情文件 ${file.name} 上传失败；请确认后端连接和文件权限`);
@@ -1825,87 +1987,63 @@ export function ConsentManagementPage({
     }
   };
 
-  const signConsent = (record: ConsentRecord) => {
-    void applyConsentUpdate(
-      record,
-      { status: '已签署', signedAt: new Date().toISOString().slice(0, 10), method: '电子' },
-      '已完成签署'
-    );
-  };
-
   const withdrawConsent = (record: ConsentRecord) => {
-    setConsentActionStatus(`正在提交 ${record.patientName} 知情撤回审批...`);
-    void requestConsentWithdrawal(record.id, `撤回 ${record.patientName} 知情同意`)
-      .then((approval) => {
-        setConsentApprovals((rows) => [approval, ...rows.filter((row) => row.id !== approval.id)]);
-        setConsentActionStatus(`知情撤回审批已提交：${approval.id}`);
-      })
-      .catch(() => {
-        setConsentActionStatus('知情撤回审批提交失败；后端不可用或当前角色无权限');
-      });
+    void applyConsentUpdate(record, { status: '已撤回' }, '已标记知情同意撤回');
   };
 
-  const resignConsent = (record: ConsentRecord) => {
-    setConsentActionStatus(`正在提交 ${record.patientName} 知情重签审批...`);
-    void requestConsentResign(record.id, `重签 ${record.patientName} 知情同意`)
-      .then((approval) => {
-        setConsentApprovals((rows) => [approval, ...rows.filter((row) => row.id !== approval.id)]);
-        setConsentActionStatus(`知情重签审批已提交：${approval.id}`);
-      })
-      .catch(() => {
-        setConsentActionStatus('知情重签审批提交失败；后端不可用或当前角色无权限');
-      });
-  };
-
-  const viewConsent = (record: ConsentRecord) => {
-    setSelected(record);
-    setConsentActionStatus(`正在查看 ${record.patientName} 的知情同意记录`);
-  };
-
-  async function refreshConsentApprovals(studyIds = consentStudyOptions.length ? consentStudyOptions : selectedRecord.studyId ? [selectedRecord.studyId] : []) {
-    const results = await Promise.allSettled(studyIds.map((studyId) => fetchApprovalRequests(studyId)));
-    const approvals = results
-      .flatMap((result) => (result.status === 'fulfilled' ? result.value : []))
-      .filter((approval) => approval.approval_type.startsWith('econsent_'));
-    setConsentApprovals((rows) => {
-      const next = [...approvals, ...rows];
-      return next.filter((approval, index) => next.findIndex((item) => item.id === approval.id) === index);
-    });
-  }
-
-  async function approveConsentApproval(approval: ApiApprovalRequest) {
-    setConsentActionStatus(`eConsent 审批 ${approval.id} 正在批准...`);
-    try {
-      const approved = await approveApprovalRequest(approval.id, 'Approved from eConsent page.');
-      setConsentApprovals((rows) => [approved, ...rows.filter((row) => row.id !== approved.id)]);
-      setConsentActionStatus(`eConsent 审批已批准：${approved.id}`);
-    } catch {
-      setConsentActionStatus('eConsent 审批批准失败；可能是提交人自批或权限不足');
+  async function openConsentFile(record: ConsentRecord) {
+    const file = latestConsentFilesByRecordId.get(record.id);
+    if (!file) {
+      setSelected(record);
+      setConsentActionStatus(`患者 ${record.patientName} 暂无已上传知情文件`);
+      return;
     }
-  }
-
-  async function completeConsentApproval(approval: ApiApprovalRequest) {
-    setConsentActionStatus(`eConsent 审批 ${approval.id} 正在完成并同步知情状态...`);
+    setSelected(record);
+    setConsentActionStatus(`正在打开 ${record.patientName} 的已上传知情文件：${file.original_filename}`);
     try {
-      const completed = await completeApprovalRequest(approval.id, 'Completed from eConsent page.');
-      setConsentApprovals((rows) => [completed, ...rows.filter((row) => row.id !== completed.id)]);
-      const nextRecords = await fetchConsentRecords();
-      if (nextRecords.length) {
-        setBaseRecords(nextRecords);
-        setRecordOverrides({});
-        const refreshedSelected = nextRecords.find((record) => record.id === approval.entity_id) ?? nextRecords[0];
-        setSelected(refreshedSelected);
-      }
-      await refreshConsentApprovals([completed.study_id]);
-      setConsentActionStatus(`eConsent 审批已完成并同步状态：${completed.id}`);
+      await openFileFromBackend(file);
+      setConsentActionStatus(`已打开 ${record.patientName} 的已上传知情文件：${file.original_filename}`);
     } catch {
-      setConsentActionStatus('eConsent 审批完成失败；请确认当前角色具备完成权限');
+      setConsentActionStatus('已上传知情文件打开失败；请确认后端连接、文件权限和扫描状态');
     }
   }
 
   const markSelectedUnderstood = () => {
     setUnderstoodRecords((current) => ({ ...current, [selectedRecord.id]: true }));
   };
+
+  const refreshConsentRecordsForPage = useCallback(async () => {
+    try {
+      const nextRecords = await fetchConsentRecords();
+      setBaseRecords(nextRecords);
+      setRecordOverrides({});
+      setSelected(findConsentRecordForPatient(nextRecords, scopedSelectedPatient) ?? nextRecords[0] ?? (scopedSelectedPatient ? pendingConsentRecordForPatient(scopedSelectedPatient) : emptyConsentRecord));
+    } catch {
+      // Preserve current rows during transient background refresh failures.
+    }
+  }, [emptyConsentRecord, scopedSelectedPatient]);
+
+  const refreshConsentFilesForPage = useCallback(async () => {
+    try {
+      const files = await fetchFileMetadata();
+      setConsentFileRows(files.filter((file) => file.category === 'consent'));
+    } catch {
+      // Preserve current file metadata during transient background refresh failures.
+    }
+  }, []);
+
+  const refreshConsentConfigurationsForPage = useCallback(async (studyIds: string[]) => {
+    const uniqueStudyIds = Array.from(new Set(studyIds.filter(Boolean)));
+    if (!uniqueStudyIds.length) return;
+    const results = await Promise.allSettled(uniqueStudyIds.map((studyId) => fetchStudyConfiguration(studyId)));
+    setConsentConfigurationsByStudy((configurations) => {
+      const next = { ...configurations };
+      for (const result of results) {
+        if (result.status === 'fulfilled') next[result.value.study_id] = result.value;
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1925,56 +2063,49 @@ export function ConsentManagementPage({
   }, [records, scopedSelectedPatient]);
 
   useEffect(() => {
-    let ignore = false;
-
-    void fetchConsentRecords()
-      .then((nextRecords) => {
-        if (ignore) return;
-        setBaseRecords(nextRecords);
-        setRecordOverrides({});
-        setSelected(findConsentRecordForPatient(nextRecords, scopedSelectedPatient) ?? nextRecords[0] ?? (scopedSelectedPatient ? pendingConsentRecordForPatient(scopedSelectedPatient) : emptyConsentRecord));
-      })
-      .catch(() => undefined);
-
-    return () => {
-      ignore = true;
-    };
-  }, [emptyConsentRecord, scopedSelectedPatient]);
+    void refreshConsentRecordsForPage();
+    void refreshConsentFilesForPage();
+  }, [refreshConsentFilesForPage, refreshConsentRecordsForPage]);
 
   useEffect(() => {
     let ignore = false;
-    const studyIds = studyFilter === '全部 Study' ? consentStudyOptions : [studyFilter];
-    if (!studyIds.length) return undefined;
-    void Promise.allSettled(studyIds.map((studyId) => fetchApprovalRequests(studyId)))
-      .then((results) => {
+    void fetchStudies()
+      .then((studies) => {
         if (ignore) return;
-        const approvals = results
-          .flatMap((result) => (result.status === 'fulfilled' ? result.value : []))
-          .filter((approval) => approval.approval_type.startsWith('econsent_'));
-        setConsentApprovals((rows) => {
-          const next = [...approvals, ...rows];
-          return next.filter((approval, index) => next.findIndex((item) => item.id === approval.id) === index);
-        });
+        setConsentStudiesById(Object.fromEntries(studies.map((study) => [study.id, study])));
       })
       .catch(() => undefined);
-
     return () => {
       ignore = true;
     };
-  }, [consentStudyOptions, studyFilter]);
+  }, []);
 
   useEffect(() => {
-    const studyIds = consentStudyOptions.filter((studyId) => !consentTemplatesByStudy[studyId]);
+    const refresh = () => {
+      void refreshConsentRecordsForPage();
+      void refreshConsentFilesForPage();
+      const studyIds = consentStudyOptions.length ? consentStudyOptions : selectedRecord.studyId ? [selectedRecord.studyId] : [];
+      void refreshConsentConfigurationsForPage(studyIds);
+      void fetchStudies()
+        .then((studies) => setConsentStudiesById(Object.fromEntries(studies.map((study) => [study.id, study]))))
+        .catch(() => undefined);
+    };
+    window.addEventListener(workspaceDataChangedEvent, refresh);
+    return () => window.removeEventListener(workspaceDataChangedEvent, refresh);
+  }, [consentStudyOptions, refreshConsentConfigurationsForPage, refreshConsentFilesForPage, refreshConsentRecordsForPage, selectedRecord.studyId]);
+
+  useEffect(() => {
+    const studyIds = consentStudyOptions.filter((studyId) => !consentConfigurationsByStudy[studyId]);
     if (!studyIds.length) return undefined;
     let ignore = false;
 
     void Promise.allSettled(studyIds.map((studyId) => fetchStudyConfiguration(studyId)))
       .then((results) => {
         if (ignore) return;
-        setConsentTemplatesByStudy((templates) => {
-          const next = { ...templates };
+        setConsentConfigurationsByStudy((configurations) => {
+          const next = { ...configurations };
           for (const result of results) {
-            if (result.status === 'fulfilled') next[result.value.study_id] = result.value.consent_template;
+            if (result.status === 'fulfilled') next[result.value.study_id] = result.value;
           }
           return next;
         });
@@ -1984,7 +2115,7 @@ export function ConsentManagementPage({
     return () => {
       ignore = true;
     };
-  }, [consentStudyOptions, consentTemplatesByStudy]);
+  }, [consentConfigurationsByStudy, consentStudyOptions]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -1992,7 +2123,7 @@ export function ConsentManagementPage({
 
   useEffect(() => {
     setActiveConsentSection(0);
-  }, [selectedRecord.studyId]);
+  }, [selectedConsentTemplate, selectedRecord.studyId]);
 
   return (
     <div className="content workspace-page">
@@ -2006,12 +2137,13 @@ export function ConsentManagementPage({
               <span className="consent-workbench__badge--patient"><Icon name="patients" />{t('当前患者')} <strong>{selectedRecord.patientName}</strong></span>
               <span className="consent-workbench__badge--hospital"><Icon name="building" />{t('住院号')} <strong>{selectedRecord.hospitalNo}</strong></span>
               <span><Icon name="calendar" />{t('最近更新')} <strong>2026-04-23</strong></span>
+              <span><Icon name="file" />{t('已上传文件')} <strong>{selectedConsentFile?.original_filename ?? '-'}</strong></span>
               <span className="is-success"><Icon name="shield" />{t('伦理批准')}</span>
             </div>
           </div>
           <button className="consent-study-link" type="button" disabled title={t('研究详情入口当前为展示状态')}>
             <Icon name="building" />
-            {t(getConsentStudyTitle(selectedRecord.studyId))}
+            {t(selectedConsentStudyTitle)}
             <Icon name="chevronRight" />
           </button>
         </header>
@@ -2044,7 +2176,7 @@ export function ConsentManagementPage({
               </header>
               <ConsentSectionPreview
                 section={currentConsentSection}
-                onPrint={printConsentPdf}
+                onPrint={() => printConsentPdf(selectedRecord)}
                 onUnderstand={markSelectedUnderstood}
                 onUpload={() => startConsentUpload(selectedRecord)}
               />
@@ -2052,9 +2184,23 @@ export function ConsentManagementPage({
 
             <aside className="consent-visual-panel">
               <div className="consent-pdf-preview">
-                <iframe src={`${consentPreviewPdfUrl}#toolbar=0&navpanes=0&scrollbar=0`} title={t('知情同意书 V1.0 PDF 预览')} />
+                <div className="consent-paper-preview">
+                  <h3>{t(selectedConsentStudyTitle)}</h3>
+                  <span>{t('模板')}: {selectedConsentTemplate ?? consentVersion}</span>
+                  {selectedConsentPreviewContent.slice(0, 3).map((section) => (
+                    <article key={section.title}>
+                      <strong>{t(section.title)}</strong>
+                      {section.blocks[0]?.paragraphs?.slice(0, 2).map((paragraph) => (
+                        <p key={paragraph}>{t(paragraph)}</p>
+                      ))}
+                      {section.blocks[0]?.items?.slice(0, 3).map((item) => (
+                        <p key={item}>{t(item)}</p>
+                      ))}
+                    </article>
+                  ))}
+                </div>
               </div>
-              <button className="consent-print-button" type="button" onClick={printConsentPdf}><Icon name="reports" />{t('预览打印')}</button>
+              <button className="consent-print-button" type="button" onClick={() => printConsentPdf(selectedRecord)}><Icon name="reports" />{t('预览打印')}</button>
             </aside>
           </div>
         </div>
@@ -2064,8 +2210,8 @@ export function ConsentManagementPage({
           {[
             ['1', '阅读知情同意书', '了解研究目的与内容'],
             ['2', '确认理解', '确认已充分理解'],
-            ['3', '签署', '完成签署流程'],
-            ['4', '归档', '电子归档与留痕']
+            ['3', '线下签署', '打印后完成纸质签署'],
+            ['4', '上传归档', '上传已签署文件并归档留痕']
           ].map(([step, label, helper], index) => (
             <div className={`${index <= flowStepIndex ? 'is-complete' : ''} ${index === flowStepIndex ? 'is-active' : ''}`} key={step}>
               <strong>{step}</strong>
@@ -2077,45 +2223,6 @@ export function ConsentManagementPage({
         <div className="module-upload-status">
           <Icon name="shield" />
           <span>{t(consentActionStatus)}</span>
-        </div>
-        <div className="consent-approval-panel">
-          <div>
-            <strong>{t('eConsent 审批队列')}</strong>
-            <span>{t('撤回/重签必须进入 Approval Center 后才会改变知情状态')}</span>
-          </div>
-          <div className="consent-approval-list">
-            {visibleConsentApprovals.length ? visibleConsentApprovals.map((approval) => (
-              <div className="consent-approval-row" key={approval.id}>
-                <span className="status-pill status-pill--info">{approval.study_id}</span>
-                <span>{approval.id}</span>
-                <strong>{t(approvalTypeLabel(approval.approval_type))}</strong>
-                <span>{approval.entity_id}</span>
-                <span>{t('目标状态')}: {String(approval.payload?.requested_status ?? '-')}</span>
-                <span className={`status-pill status-pill--${approval.status === 'completed' || approval.status === 'approved' ? 'success' : approval.status === 'rejected' || approval.status === 'cancelled' ? 'danger' : 'warning'}`}>{t(approval.status)}</span>
-                <div className="module-table-actions">
-                  <button
-                    className="module-link-button"
-                    type="button"
-                    disabled={approval.status !== 'submitted' || approval.submitted_by === currentUser?.id}
-                    title={approval.submitted_by === currentUser?.id ? t('Separate reviewer required') : undefined}
-                    onClick={() => void approveConsentApproval(approval)}
-                  >
-                    {t('Approve')}
-                  </button>
-                  <button
-                    className="module-link-button module-link-button--primary"
-                    type="button"
-                    disabled={approval.status !== 'approved'}
-                    onClick={() => void completeConsentApproval(approval)}
-                  >
-                    {t('完成')}
-                  </button>
-                </div>
-              </div>
-            )) : (
-              <span className="module-empty-note">{t('暂无 eConsent 审批；点击已签署记录的撤回或已撤回记录的重签可创建。')}</span>
-            )}
-          </div>
         </div>
         <input
           ref={consentUploadInputRef}
@@ -2162,37 +2269,36 @@ export function ConsentManagementPage({
               <tbody>
                 {paginatedRecords.map((record) => (
                   <tr className={selectedRecord.id === record.id ? 'is-selected' : undefined} key={record.id} onClick={() => setSelected(record)}>
+                    {(() => {
+                      const uploadedFile = latestConsentFilesByRecordId.get(record.id);
+                      return (
+                        <>
                     {showConsentStudyId ? <td><span className="status-pill status-pill--info">{record.studyId}</span></td> : null}
                     <td>{record.patientName}</td><td>{record.hospitalNo}</td><td>{t(record.diseaseType)}</td><td><StatusPill value={record.status} /></td>
                     <td>{record.signedAt}</td><td>{record.version}</td>
                     <td>
                       <div className="module-table-actions">
+                        <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); printConsentPdf(record); }}>{t('打印模板')}</button>
                         {record.status === '待签署' ? (
-                          <>
-                            <button className="module-link-button module-link-button--primary" type="button" onClick={(event) => { event.stopPropagation(); signConsent(record); }}>{t('签署')}</button>
-                            <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); startConsentUpload(record); }}>{t('上传')}</button>
-                          </>
+                          <button className="module-link-button module-link-button--primary" type="button" onClick={(event) => { event.stopPropagation(); startConsentUpload(record); }}>{t('上传已签署文件')}</button>
                         ) : null}
                         {record.status === '已签署' || record.status === '已重签' ? (
                           <>
-                            <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); viewConsent(record); }}>{t('查看')}</button>
-                            <button className="module-link-button module-link-button--danger" type="button" onClick={(event) => { event.stopPropagation(); withdrawConsent(record); }}>{t('撤回')}</button>
+                            <button className="module-link-button" type="button" disabled={!uploadedFile} title={uploadedFile ? uploadedFile.original_filename : t('暂无已上传知情文件')} onClick={(event) => { event.stopPropagation(); void openConsentFile(record); }}>{t('查看已上传文件')}</button>
+                            <button className="module-link-button module-link-button--danger" type="button" onClick={(event) => { event.stopPropagation(); withdrawConsent(record); }}>{t('标记撤回')}</button>
                           </>
                         ) : null}
                         {record.status === '撤回审批中' || record.status === '重签审批中' ? (
-                          <>
-                            <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); viewConsent(record); }}>{t('查看')}</button>
-                            <button className="module-link-button" type="button" disabled title={t('审批完成后状态才会同步刷新')}>{t('审批中')}</button>
-                          </>
+                          <button className="module-link-button" type="button" disabled title={t('该状态来自历史审批流程，本版患者知情同意页不处理审批。')}>{t('审批中')}</button>
                         ) : null}
                         {record.status === '已撤回' ? (
-                          <>
-                            <button className="module-link-button" type="button" onClick={(event) => { event.stopPropagation(); viewConsent(record); }}>{t('查看')}</button>
-                            <button className="module-link-button module-link-button--primary" type="button" onClick={(event) => { event.stopPropagation(); resignConsent(record); }}>{t('重签')}</button>
-                          </>
+                          <button className="module-link-button" type="button" disabled={!uploadedFile} title={uploadedFile ? uploadedFile.original_filename : t('暂无已上传知情文件')} onClick={(event) => { event.stopPropagation(); void openConsentFile(record); }}>{t('查看已上传文件')}</button>
                         ) : null}
                       </div>
                     </td>
+                        </>
+                      );
+                    })()}
                   </tr>
                 ))}
               </tbody>
@@ -2248,19 +2354,23 @@ export function SampleManagementPage() {
     }, {});
   }, [sampleRows]);
 
-  useEffect(() => {
-    let ignore = false;
-
-    void fetchSamples()
-      .then((records) => {
-        if (!ignore) setSampleRows(records);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      ignore = true;
-    };
+  const refreshSampleRows = useCallback(async () => {
+    try {
+      setSampleRows(await fetchSamples());
+    } catch {
+      // Keep the currently visible ledger if a background refresh fails.
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshSampleRows();
+  }, [refreshSampleRows]);
+
+  useEffect(() => {
+    const refresh = () => void refreshSampleRows();
+    window.addEventListener(workspaceDataChangedEvent, refresh);
+    return () => window.removeEventListener(workspaceDataChangedEvent, refresh);
+  }, [refreshSampleRows]);
 
   async function handleCreateSample() {
     const base = sampleRows[0];
@@ -2364,22 +2474,25 @@ export function OmicsTestingPage() {
   const completed = records.filter((record) => record.status === '结果归档').length;
   const selectedRecord = selected ?? records[0];
 
-  useEffect(() => {
-    let ignore = false;
-
-    void fetchOmicsRecords()
-      .then((nextRecords) => {
-        if (!ignore) {
-          setRecords(nextRecords);
-          setSelected(nextRecords[0] ?? null);
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      ignore = true;
-    };
+  const refreshOmicsRows = useCallback(async () => {
+    try {
+      const nextRecords = await fetchOmicsRecords();
+      setRecords(nextRecords);
+      setSelected((current) => nextRecords.find((record) => record.id === current?.id) ?? nextRecords[0] ?? null);
+    } catch {
+      // Keep the current testing list during transient refresh failures.
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshOmicsRows();
+  }, [refreshOmicsRows]);
+
+  useEffect(() => {
+    const refresh = () => void refreshOmicsRows();
+    window.addEventListener(workspaceDataChangedEvent, refresh);
+    return () => window.removeEventListener(workspaceDataChangedEvent, refresh);
+  }, [refreshOmicsRows]);
 
   return (
     <div className="content workspace-page">
@@ -2472,11 +2585,13 @@ export function OmicsTestingPage() {
 
 export function SampleTestingPage({
   selectedPatient,
+  availablePatients = [],
   embedded = false,
   createSampleRequest = 0,
   createOmicsRequest = 0
 }: {
   selectedPatient?: PatientRecord | null;
+  availablePatients?: PatientRecord[];
   embedded?: boolean;
   createSampleRequest?: number;
   createOmicsRequest?: number;
@@ -2511,9 +2626,17 @@ export function SampleTestingPage({
   const [configuredQuantityUnits, setConfiguredQuantityUnits] = useState(getGlobalQuantityUnits);
   const studyOptions = useMemo(() => uniqueOptionalStudyIds([...patientRows, ...sampleRows, ...records]), [patientRows, records, sampleRows]);
   const showStudyId = studyOptions.length > 1;
+  const selectablePatients = useMemo(() => {
+    const byKey = new Map<string, PatientRecord>();
+    for (const patient of [...patientRows, ...availablePatients, ...(selectedPatient ? [selectedPatient] : [])]) {
+      const key = patient.id ?? `${patient.studyId}:${patient.name}:${patient.hospitalNo}`;
+      byKey.set(key, patient);
+    }
+    return Array.from(byKey.values());
+  }, [availablePatients, patientRows, selectedPatient]);
   const sampleWritablePatients = useMemo(
-    () => patientRows.filter((patient) => studyFilter === '全部 Study' || patient.studyId === studyFilter),
-    [patientRows, studyFilter]
+    () => selectablePatients.filter((patient) => studyFilter === '全部 Study' || patient.studyId === studyFilter),
+    [selectablePatients, studyFilter]
   );
   const filteredSampleRowsByStudy = useMemo(
     () => sampleRows.filter((sample) => studyFilter === '全部 Study' || sample.studyId === studyFilter),
@@ -2702,36 +2825,39 @@ export function SampleTestingPage({
   }, [filteredSampleRowsByStudy, samplePickerPatient]);
   const flowSelectedSampleIds = sampleTestingFlow?.kind === 'omics' && sampleTestingFlow.step === 'samples' ? sampleTestingFlow.selectedSampleIds : [];
 
+  const refreshSampleTestingData = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) {
+      setSampleDataLoadStatus('loading');
+      setUploadStatus(sampleDataLoadingMessage);
+    }
+    try {
+      const dataset = await fetchWorkspaceDataset();
+      setPatientRows(dataset.patients);
+      setSampleRows(dataset.samples);
+      setRecords(dataset.omics);
+      setSampleDataLoadStatus('ready');
+      setUploadStatus(dataset.patients.length ? '已读取患者、样本和检测数据' : noPatientInScopeMessage);
+      const nextFiles = await fetchFileMetadata().catch(() => [] as ApiFileMetadata[]);
+      setFileRows(nextFiles);
+    } catch (error) {
+      setPatientRows([]);
+      setSampleRows([]);
+      setRecords([]);
+      setFileRows([]);
+      setSampleDataLoadStatus('error');
+      setUploadStatus(isPermissionError(error) ? '后端登录已失效，请重新登录后再新增样本' : sampleDataLoadErrorMessage);
+    }
+  }, [noPatientInScopeMessage, sampleDataLoadErrorMessage, sampleDataLoadingMessage]);
+
   useEffect(() => {
-    let ignore = false;
+    void refreshSampleTestingData();
+  }, [refreshSampleTestingData]);
 
-    setSampleDataLoadStatus('loading');
-    setUploadStatus(sampleDataLoadingMessage);
-    void fetchWorkspaceDataset()
-      .then(async (dataset) => {
-        if (ignore) return;
-        setPatientRows(dataset.patients);
-        setSampleRows(dataset.samples);
-        setRecords(dataset.omics);
-        setSampleDataLoadStatus('ready');
-        setUploadStatus(dataset.patients.length ? '已读取患者、样本和检测数据' : noPatientInScopeMessage);
-        const nextFiles = await fetchFileMetadata().catch(() => [] as ApiFileMetadata[]);
-        if (!ignore) setFileRows(nextFiles);
-      })
-      .catch((error) => {
-        if (ignore) return;
-        setPatientRows([]);
-        setSampleRows([]);
-        setRecords([]);
-        setFileRows([]);
-        setSampleDataLoadStatus('error');
-        setUploadStatus(isPermissionError(error) ? '后端登录已失效，请重新登录后再新增样本' : sampleDataLoadErrorMessage);
-      });
-
-    return () => {
-      ignore = true;
-    };
-  }, []);
+  useEffect(() => {
+    const refresh = () => void refreshSampleTestingData({ silent: true });
+    window.addEventListener(workspaceDataChangedEvent, refresh);
+    return () => window.removeEventListener(workspaceDataChangedEvent, refresh);
+  }, [refreshSampleTestingData]);
 
   useEffect(() => {
     const refreshAll = () => {
@@ -2873,6 +2999,7 @@ export function SampleTestingPage({
       if (editor?.kind === 'sample') {
         return {
           kind: 'sample',
+          isNew: editor.isNew,
           draft: {
             ...editor.draft,
             studyId: targetPatient.studyId,
@@ -2882,7 +3009,7 @@ export function SampleTestingPage({
           }
         };
       }
-      return { kind: 'sample', draft: defaultSampleDraftForPatient(targetPatient, `SPL-NEW-${Date.now()}`) };
+      return { kind: 'sample', isNew: true, draft: defaultSampleDraftForPatient(targetPatient, '') };
     });
     setSampleTestingFlow(null);
     setUploadStatus('请确认样本类型、采集时间、条码和保存位置后保存');
@@ -2915,7 +3042,7 @@ export function SampleTestingPage({
   async function handleEditSample(row: SampleLedgerRow) {
     const target = sampleRows.find((sample) => sample.id === row.id);
     if (!target) return;
-    setSampleTestingEditor({ kind: 'sample', draft: { ...target, collectedAt: formatDateOnly(target.collectedAt), linkedOmics: [...target.linkedOmics] } });
+    setSampleTestingEditor({ kind: 'sample', isNew: false, draft: { ...target, collectedAt: formatDateOnly(target.collectedAt), linkedOmics: [...target.linkedOmics] } });
     setUploadStatus(`正在编辑样本 ${row.sampleId}`);
   }
 
@@ -3146,7 +3273,16 @@ export function SampleTestingPage({
   function patchSampleTestingDraft(patch: Partial<SampleRecord> | Partial<OmicsRecord>) {
     setSampleTestingEditor((editor) => {
       if (!editor) return editor;
-      return { ...editor, draft: { ...editor.draft, ...patch } } as SampleTestingEditor;
+      if (editor.kind === 'sample') {
+        return {
+          ...editor,
+          draft: {
+            ...editor.draft,
+            ...(patch as Partial<SampleRecord>)
+          }
+        };
+      }
+      return { ...editor, draft: { ...editor.draft, ...(patch as Partial<OmicsRecord>) } };
     });
   }
 
@@ -3155,18 +3291,25 @@ export function SampleTestingPage({
 
     if (sampleTestingEditor.kind === 'sample') {
       const draft = sampleTestingEditor.draft;
-      if (!draft.patientId || !draft.patientName || !draft.sampleType || !draft.collectedAt) {
-        setUploadStatus('样本表单缺少必填字段');
+      const sampleId = draft.id.trim();
+      if (!sampleId || !draft.patientId || !draft.patientName || !draft.sampleType || !draft.collectedAt) {
+        setUploadStatus('样本表单缺少必填字段：条码 / 样本编号、患者、样本类型和采集日期为必填项');
         return;
       }
-      setUploadStatus(`样本 ${draft.id} 正在同步后端...`);
+      const normalizedDraft = {
+        ...draft,
+        id: sampleId,
+        initialQuantity: draft.initialQuantity?.trim() ?? '',
+        remainingQuantity: draft.remainingQuantity?.trim() ?? ''
+      };
+      setUploadStatus(`样本 ${normalizedDraft.id} 正在同步后端...`);
       try {
-        const saved = draft.id.startsWith('SPL-NEW-') ? await createSampleRecord(draft) : await updateSampleRecord(draft);
-        setSampleRows((rows) => (rows.some((row) => row.id === draft.id) ? rows.map((row) => (row.id === draft.id ? saved : row)) : [saved, ...rows]));
+        const saved = sampleTestingEditor.isNew ? await createSampleRecord(normalizedDraft) : await updateSampleRecord(normalizedDraft);
+        setSampleRows((rows) => (rows.some((row) => row.id === normalizedDraft.id) ? rows.map((row) => (row.id === normalizedDraft.id ? saved : row)) : [saved, ...rows]));
         setSampleTestingEditor(null);
         setUploadStatus(`样本 ${saved.id} 已同步后端`);
       } catch {
-        setUploadStatus(`保存失败：样本 ${draft.id} 未写入后端`);
+        setUploadStatus(`保存失败：样本 ${normalizedDraft.id} 未写入后端`);
       }
       return;
     }
@@ -3333,7 +3476,7 @@ export function SampleTestingPage({
             <header>
               <div>
                 <strong>{t('样本编辑表单')}</strong>
-                <span>{sampleTestingEditor.draft.id}</span>
+                <span>{sampleTestingEditor.draft.id || t('待填写样本编号')}</span>
               </div>
               <div className="module-table-actions">
                 <button className="module-link-button module-link-button--primary" type="button" onClick={() => void saveSampleTestingEditor()}>{t('保存')}</button>
@@ -3351,7 +3494,7 @@ export function SampleTestingPage({
             <div className="sample-testing-editor-grid">
               <label>
                 <span>{t('条码 / 样本编号')}</span>
-                <input value={sampleTestingEditor.draft.id} onChange={(event) => patchSampleTestingDraft({ id: event.target.value })} />
+                <input value={sampleTestingEditor.draft.id} required onChange={(event) => patchSampleTestingDraft({ id: event.target.value })} />
               </label>
               <label>
                 <span>{t('样本类型')}</span>
@@ -3775,7 +3918,7 @@ type SystemAccount = {
   studyScope: string;
   assignedRoles?: Array<{ role: UserRole; roleLabel: string; studyScope: string }>;
   studyScopes?: string[];
-  status: 'Active' | 'Pending' | 'Disabled';
+  status: 'Active' | 'Pending' | 'Disabled' | 'Deleted';
   lastLogin: string;
 };
 
@@ -3871,7 +4014,13 @@ function accountFromApiUser(user: ApiUser, studyId: string): SystemAccount {
     role,
     roleLabel: roleLabels[role],
     studyScope: membership?.study_id ?? formatUserStudyScope(user, studyId),
-    status: membership?.status === 'disabled' || user.status === 'disabled' ? 'Disabled' : membership?.status === 'active' || user.status === 'active' ? 'Active' : 'Pending',
+    status: user.status === 'deleted'
+      ? 'Deleted'
+      : membership?.status === 'disabled' || user.status === 'disabled'
+        ? 'Disabled'
+        : membership?.status === 'active' || user.status === 'active'
+          ? 'Active'
+          : 'Pending',
     lastLogin: formatLastLogin(user.last_login_at)
   };
 }
@@ -3893,6 +4042,8 @@ function accountScopeTokens(account: SystemAccount, allStudyIds: string[]) {
 function mergeAccountStatus(statuses: SystemAccount['status'][]): SystemAccount['status'] {
   if (statuses.includes('Active')) return 'Active';
   if (statuses.includes('Pending')) return 'Pending';
+  if (statuses.includes('Disabled')) return 'Disabled';
+  if (statuses.includes('Deleted')) return 'Deleted';
   return 'Disabled';
 }
 
@@ -4004,6 +4155,38 @@ function permissionRowsFromMatrix(matrixRows: ApiPermissionMatrixRow[]): Permiss
   }));
 }
 
+function permissionValues(...roles: UserRole[]): PermissionRow['values'] {
+  return roles.reduce<PermissionRow['values']>((values, role) => {
+    values[role] = true;
+    return values;
+  }, {});
+}
+
+const allVisiblePermissionRoles = permissionColumns.map((column) => column.key);
+const crcWriteRoles: UserRole[] = ['LZ_ADMIN', 'LZ_CRC', 'STUDY_CRC', 'STUDY_CONFIG_ADMIN'];
+const dataManagerWriteRoles: UserRole[] = ['LZ_ADMIN', 'LZ_DATA_MANAGER', 'STUDY_CONFIG_ADMIN', 'STUDY_DATA_MANAGER'];
+const fallbackPermissionMatrixRows: PermissionRow[] = [
+  { action: 'Study Configuration / Read Study configuration', values: permissionValues(...allVisiblePermissionRoles) },
+  { action: 'Study Configuration / Update current Study configuration', values: permissionValues('LZ_ADMIN', 'STUDY_CONFIG_ADMIN') },
+  { action: 'LZ System Management / Create, update, terminate, or delete Studies', values: permissionValues('LZ_ADMIN') },
+  { action: 'Account and Study Members / Read users and Study members', values: permissionValues('LZ_ADMIN', 'LZ_CRC', 'LZ_DATA_MANAGER', 'LZ_AUDITOR', 'STUDY_PI', 'STUDY_CRC', 'STUDY_CONFIG_ADMIN', 'STUDY_DATA_MANAGER') },
+  { action: 'Account and Study Members / Create or update users and Study members', values: permissionValues('LZ_ADMIN', 'STUDY_CONFIG_ADMIN') },
+  { action: 'Patient Cohort / Read patient records', values: permissionValues(...allVisiblePermissionRoles) },
+  { action: 'Patient Cohort / Create or update patient records', values: permissionValues(...crcWriteRoles) },
+  { action: 'Clinical Data Capture / Read CRF and visits', values: permissionValues(...allVisiblePermissionRoles) },
+  { action: 'Clinical Data Capture / Write CRF entries', values: permissionValues(...crcWriteRoles) },
+  { action: 'Clinical Data Capture / Write follow-up records', values: permissionValues(...crcWriteRoles) },
+  { action: 'System Management / Configure CRF versions, fields, visit plans, and sites', values: permissionValues('LZ_ADMIN', 'STUDY_CONFIG_ADMIN') },
+  { action: 'Informed Consent / Read consent records', values: permissionValues(...allVisiblePermissionRoles) },
+  { action: 'Informed Consent / Update consent records and request withdrawal or re-sign', values: permissionValues(...crcWriteRoles) },
+  { action: 'Samples and Testing / Write samples', values: permissionValues(...crcWriteRoles) },
+  { action: 'Samples and Testing / Write omics records', values: permissionValues(...crcWriteRoles) },
+  { action: 'Files / Upload, download, and archive files', values: permissionValues(...crcWriteRoles) },
+  { action: 'Data Management / Run quality checks and create Query', values: permissionValues(...dataManagerWriteRoles, 'LZ_CRC') },
+  { action: 'Data Management / Export and download data', values: permissionValues(...dataManagerWriteRoles) },
+  { action: 'Approval Center / Create, approve, reject, cancel, and complete approvals', values: permissionValues(...dataManagerWriteRoles) }
+];
+
 const roleTone: Record<UserRole, string> = {
   LZ_ADMIN: 'admin',
   LZ_CRC: 'success',
@@ -4016,10 +4199,11 @@ const roleTone: Record<UserRole, string> = {
   STUDY_DATA_MANAGER: 'info'
 };
 
-const systemStatusTone: Record<SystemAccount['status'], 'success' | 'warning' | 'danger'> = {
+const systemStatusTone: Record<SystemAccount['status'], 'success' | 'warning' | 'danger' | 'info'> = {
   Active: 'success',
   Pending: 'warning',
-  Disabled: 'danger'
+  Disabled: 'danger',
+  Deleted: 'info'
 };
 const creatableStudyRoles: StudyRole[] = ['STUDY_CRC', 'STUDY_PI', 'STUDY_CONFIG_ADMIN', 'STUDY_DATA_MANAGER'];
 const creatableGlobalRoles: UserRole[] = ['LZ_ADMIN', 'LZ_CRC', 'LZ_DATA_MANAGER', ...creatableStudyRoles];
@@ -4109,6 +4293,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   }, [allSystemStudyIds, currentUser, lockedStudyId]);
   const [selectedSystemStudyId, setSelectedSystemStudyId] = useState(lockedStudyId ?? availableSystemStudies[0] ?? '');
   const scopedStudyId = availableSystemStudies.includes(selectedSystemStudyId) ? selectedSystemStudyId : availableSystemStudies[0] ?? '';
+  const consentTemplateUploadInputRef = useRef<globalThis.HTMLInputElement>(null);
   const [systemQuery] = useState('');
   const [accountPage, setAccountPage] = useState(1);
   const [fieldPage, setFieldPage] = useState(1);
@@ -4131,7 +4316,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [accountCreateDraft, setAccountCreateDraft] = useState<AccountCreateDraft | null>(null);
   const [accountEditDraft, setAccountEditDraft] = useState<AccountEditDraft | null>(null);
   const [accountPasswordDraft, setAccountPasswordDraft] = useState<AccountPasswordDraft | null>(null);
-  const [permissionMatrixRows, setPermissionMatrixRows] = useState<PermissionRow[]>([]);
+  const [permissionMatrixRows, setPermissionMatrixRows] = useState<PermissionRow[]>(fallbackPermissionMatrixRows);
   const [systemActionStatus, setSystemActionStatus] = useState('等待系统管理操作');
   const [globalDiseaseTypesDraft, setGlobalDiseaseTypesDraft] = useState(() => getGlobalDiseaseTypes().join(', '));
   const [globalSampleTypesDraft, setGlobalSampleTypesDraft] = useState(() => getGlobalSampleTypes().join(', '));
@@ -4139,6 +4324,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [globalQuantityUnitsDraft, setGlobalQuantityUnitsDraft] = useState(() => getGlobalQuantityUnits().join(', '));
   const [studyConfigurationRows, setStudyConfigurationRows] = useState<ApiStudyConfiguration[]>([]);
   const [consentTemplateDraft, setConsentTemplateDraft] = useState('');
+  const [consentTemplateFileRows, setConsentTemplateFileRows] = useState<ApiFileMetadata[]>([]);
   const normalizedQuery = systemQuery.trim().toLowerCase();
   const isStudyCreateReady = Boolean(
     studyCreateDraft?.id.trim() &&
@@ -4242,30 +4428,33 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       closed: scopedQueries.filter((query) => query.status === 'closed').length
     };
   }, [queryRows, scopedStudyId]);
+  const operationLogStudyId = scopedStudyId || undefined;
+  const scopedOperationLogRows = useMemo(
+    () => (operationLogStudyId ? operationLogRows.filter((log) => log.study_id === operationLogStudyId) : operationLogRows),
+    [operationLogRows, operationLogStudyId]
+  );
   const operationLogActionOptions = useMemo(
-    () => Array.from(new Set(operationLogRows.map((log) => log.action))).sort(),
-    [operationLogRows]
+    () => Array.from(new Set(scopedOperationLogRows.map((log) => log.action))).sort(),
+    [scopedOperationLogRows]
   );
   const operationLogEntityOptions = useMemo(
-    () => Array.from(new Set(operationLogRows.map((log) => log.entity_type))).sort(),
-    [operationLogRows]
+    () => Array.from(new Set(scopedOperationLogRows.map((log) => log.entity_type))).sort(),
+    [scopedOperationLogRows]
   );
   const visibleOperationLogs = useMemo(() => {
-    const scopedLogs = scopedStudyId ? operationLogRows.filter((log) => !log.study_id || log.study_id === scopedStudyId) : operationLogRows;
-    return scopedLogs
+    return scopedOperationLogRows
       .filter((log) => operationLogActionFilter === 'all' || log.action === operationLogActionFilter)
       .filter((log) => operationLogEntityFilter === 'all' || log.entity_type === operationLogEntityFilter)
       .slice(0, 8);
-  }, [operationLogActionFilter, operationLogEntityFilter, operationLogRows, scopedStudyId]);
+  }, [operationLogActionFilter, operationLogEntityFilter, scopedOperationLogRows]);
   const operationLogCounts = useMemo(() => {
-    const scopedLogs = scopedStudyId ? operationLogRows.filter((log) => !log.study_id || log.study_id === scopedStudyId) : operationLogRows;
     return {
-      total: scopedLogs.length,
-      creates: scopedLogs.filter((log) => log.action === 'CREATE').length,
-      updates: scopedLogs.filter((log) => log.action === 'UPDATE' || log.action === 'UPSERT').length,
-      deletes: scopedLogs.filter((log) => log.action === 'DELETE').length
+      total: scopedOperationLogRows.length,
+      creates: scopedOperationLogRows.filter((log) => log.action === 'CREATE').length,
+      updates: scopedOperationLogRows.filter((log) => log.action === 'UPDATE' || log.action === 'UPSERT').length,
+      deletes: scopedOperationLogRows.filter((log) => log.action === 'DELETE').length
     };
-  }, [operationLogRows, scopedStudyId]);
+  }, [scopedOperationLogRows]);
   const scopedStudyConfiguration = useMemo(
     () => studyConfigurationRows.find((configuration) => configuration.study_id === scopedStudyId),
     [scopedStudyId, studyConfigurationRows]
@@ -4274,6 +4463,44 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     () => studyRows.find((study) => study.id === scopedStudyId),
     [scopedStudyId, studyRows]
   );
+  const scopedStudyDiseaseArea = scopedStudyConfiguration?.disease_area || scopedStudySummary?.indication || '';
+  const explicitConsentTemplate = scopedStudyConfiguration?.consent_template?.trim() ?? '';
+  const effectiveConsentTemplateId = inferConsentTemplateId(
+    scopedStudyId,
+    scopedStudyConfiguration,
+    scopedStudySummary?.indication,
+    scopedStudySummary?.name
+  );
+  const effectiveConsentTemplate = consentTemplateCatalogItem(effectiveConsentTemplateId);
+  const effectiveConsentTitle = effectiveConsentTemplate?.title
+    ?? getConsentStudyTitle(scopedStudyId, scopedStudyConfiguration, scopedStudySummary?.indication, scopedStudySummary?.name);
+  const consentTemplateSourceLabel = explicitConsentTemplate
+    ? 'Study 显式配置'
+    : effectiveConsentTemplateId
+      ? '疾病领域自动匹配'
+      : '系统默认兜底';
+  const consentTemplateStatusLabel = explicitConsentTemplate
+    ? '当前 Study 生效中'
+    : effectiveConsentTemplateId
+      ? '尚未保存为 Study 显式配置'
+      : '需要配置模板';
+  const selectedConsentTemplateCatalogItem = consentTemplateCatalogItem(consentTemplateDraft);
+  const selectedConsentPreviewSections = selectedConsentTemplateCatalogItem?.sections
+    ?? configuredConsentContent(scopedStudyId, { ...scopedStudyConfiguration, consent_template: consentTemplateDraft } as ApiStudyConfiguration, scopedStudySummary?.indication, scopedStudySummary?.name);
+  const selectedConsentPreviewTitle = selectedConsentTemplateCatalogItem?.title
+    ?? (consentTemplateDraft.trim() || effectiveConsentTitle);
+  const hasConsentTemplateDraftChanges = consentTemplateDraft.trim() !== explicitConsentTemplate;
+  const currentConsentTemplateFile = useMemo(() => {
+    if (!scopedStudyId) return undefined;
+    return consentTemplateFileRows
+      .filter((file) =>
+        file.study_id === scopedStudyId &&
+        file.category === 'consent' &&
+        !file.patient_id &&
+        !file.consent_id
+      )
+      .sort((a, b) => b.uploaded_at.localeCompare(a.uploaded_at))[0];
+  }, [consentTemplateFileRows, scopedStudyId]);
   const visiblePermissionColumns = isGlobalManagement ? permissionColumns : studyPermissionColumns;
   const visiblePermissionMatrixRows = useMemo(() => {
     if (isGlobalManagement) return permissionMatrixRows;
@@ -4365,17 +4592,22 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     };
   }, []);
 
-  useEffect(() => {
-    let ignore = false;
-    void fetchPermissionMatrix()
-      .then((rows) => {
-        if (!ignore) setPermissionMatrixRows(permissionRowsFromMatrix(rows));
-      })
-      .catch(() => undefined);
-    return () => {
-      ignore = true;
-    };
-  }, []);
+	  useEffect(() => {
+	    let ignore = false;
+	    void fetchPermissionMatrix()
+	      .then((rows) => {
+	        if (!ignore) {
+	          const nextRows = permissionRowsFromMatrix(rows);
+	          setPermissionMatrixRows(nextRows.length ? nextRows : fallbackPermissionMatrixRows);
+	        }
+	      })
+	      .catch(() => {
+	        if (!ignore) setPermissionMatrixRows(fallbackPermissionMatrixRows);
+	      });
+	    return () => {
+	      ignore = true;
+	    };
+	  }, [currentUser?.id]);
 
   useEffect(() => {
     if (!isGlobalManagement && !scopedStudyId) return;
@@ -4413,8 +4645,8 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   }, [scopedStudyId]);
 
   useEffect(() => {
-    setConsentTemplateDraft(scopedStudyConfiguration?.consent_template ?? '');
-  }, [scopedStudyConfiguration?.consent_template, scopedStudyId]);
+    setConsentTemplateDraft(explicitConsentTemplate || effectiveConsentTemplateId);
+  }, [effectiveConsentTemplateId, explicitConsentTemplate, scopedStudyId]);
 
   const accountTotalPages = Math.max(1, Math.ceil(visibleAccounts.length / systemAccountPageSize));
   const safeAccountPage = Math.min(accountPage, accountTotalPages);
@@ -4454,9 +4686,10 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       fetchStudyCrfMigrations(scopedStudyId),
       fetchApprovalRequests(scopedStudyId),
       fetchStudySites(scopedStudyId),
-      fetchDataQueries(scopedStudyId)
+      fetchDataQueries(scopedStudyId),
+      fetchStudyFileMetadata(scopedStudyId)
     ])
-      .then(([visitPlanResult, memberResult, crfFieldResult, crfVersionResult, crfMigrationResult, approvalResult, siteResult, queryResult]) => {
+      .then(([visitPlanResult, memberResult, crfFieldResult, crfVersionResult, crfMigrationResult, approvalResult, siteResult, queryResult, fileResult]) => {
         if (ignore) return;
         if (visitPlanResult.status === 'fulfilled') {
           setVisitPlanRows((rows) => [
@@ -4504,6 +4737,12 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
             ...queryResult.value
           ]);
         }
+        if (fileResult.status === 'fulfilled') {
+          setConsentTemplateFileRows((rows) => [
+            ...rows.filter((file) => file.study_id !== scopedStudyId),
+            ...fileResult.value.filter((file) => file.category === 'consent' && !file.patient_id && !file.consent_id)
+          ]);
+        }
       })
       .catch(() => undefined);
 
@@ -4513,9 +4752,9 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   }, [isGlobalManagement, scopedStudyId]);
 
   useEffect(() => {
-    if (!isGlobalManagement && !scopedStudyId) return;
+    if (!isGlobalManagement && !operationLogStudyId) return;
     let ignore = false;
-    void fetchOperationLogs(isGlobalManagement ? undefined : scopedStudyId, { limit: 100 })
+    void fetchOperationLogs(operationLogStudyId, { limit: 100 })
       .then((logs) => {
         if (!ignore) setOperationLogRows(logs);
       })
@@ -4523,7 +4762,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     return () => {
       ignore = true;
     };
-  }, [isGlobalManagement, scopedStudyId]);
+  }, [isGlobalManagement, operationLogStudyId]);
 
   function openSystemAccountCreate() {
     const studyScope = scopedStudyId;
@@ -4922,6 +5161,10 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   }
 
   async function toggleSystemAccount(account: SystemAccount) {
+    if (account.status === 'Deleted') {
+      setSystemActionStatus(`账户 ${account.email} 已归档，不能再启用或停用`);
+      return;
+    }
     const nextStatus: SystemAccount['status'] = account.status === 'Disabled' ? 'Active' : 'Disabled';
     const userId = account.userId ?? userIdForEmail(account.email);
     if (!userId) {
@@ -4957,6 +5200,36 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       setSystemActionStatus(`账户状态已同步后端：${savedAccount.email}`);
     } catch {
       setSystemActionStatus(`保存失败：账户 ${account.email} 状态未写入后端`);
+    }
+  }
+
+  async function deleteSystemAccount(account: SystemAccount) {
+    const userId = account.userId ?? userIdForEmail(account.email);
+    if (!userId || currentUser?.role !== 'LZ_ADMIN') {
+      setSystemActionStatus('只有 LZ_ADMIN 可以归档账户');
+      return;
+    }
+    if (userId === currentUser.id) {
+      setSystemActionStatus('不能归档当前登录账户');
+      return;
+    }
+    if (account.status === 'Deleted') {
+      setSystemActionStatus(`账户 ${account.email} 已经归档`);
+      return;
+    }
+    if (!window.confirm(`确认归档账户 ${account.email}？归档后账户不能登录，但历史审计记录会保留。`)) {
+      return;
+    }
+    setSystemActionStatus(`账户 ${account.email} 正在归档...`);
+    try {
+      const updatedUser = await deleteUserAccount(userId);
+      const savedAccounts = accountRowsFromApiUser(updatedUser, scopedStudyId ?? account.studyScope);
+      setAccountRows((rows) => replaceAccountRowsForUser(rows, account.email, savedAccounts));
+      setAccountEditDraft((draft) => (draft?.userId === userId ? null : draft));
+      setAccountPasswordDraft((draft) => (draft?.userId === userId ? null : draft));
+      setSystemActionStatus(`账户已归档：${account.email}`);
+    } catch {
+      setSystemActionStatus(`归档失败：账户 ${account.email} 未写入后端`);
     }
   }
 
@@ -5366,7 +5639,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   async function refreshOperationLogs() {
     setSystemActionStatus('操作日志正在从后端刷新...');
     try {
-      const logs = await fetchOperationLogs(isGlobalManagement ? undefined : scopedStudyId, {
+      const logs = await fetchOperationLogs(operationLogStudyId, {
         action: operationLogActionFilter === 'all' ? undefined : operationLogActionFilter,
         entityType: operationLogEntityFilter === 'all' ? undefined : operationLogEntityFilter,
         limit: 100
@@ -5381,7 +5654,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   async function exportOperationLogs() {
     setSystemActionStatus('操作日志 CSV 正在生成...');
     try {
-      await downloadOperationLogsCsv(isGlobalManagement ? undefined : scopedStudyId, {
+      await downloadOperationLogsCsv(operationLogStudyId, {
         action: operationLogActionFilter === 'all' ? undefined : operationLogActionFilter,
         entityType: operationLogEntityFilter === 'all' ? undefined : operationLogEntityFilter,
         limit: 500
@@ -5472,7 +5745,54 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     }
   }
 
+  async function uploadStudyConsentTemplateFile(file: globalThis.File | undefined) {
+    if (!file) return;
+    if (!scopedStudyId) {
+      setSystemActionStatus('请先选择 Study，再上传知情同意模板 PDF');
+      return;
+    }
+    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
+      setSystemActionStatus('知情同意模板只支持上传已审批 PDF 文件');
+      if (consentTemplateUploadInputRef.current) consentTemplateUploadInputRef.current.value = '';
+      return;
+    }
+    setSystemActionStatus(`正在上传 ${scopedStudyId} 的知情同意模板 PDF：${file.name}`);
+    try {
+      const uploaded = await uploadFileToBackend(file, {
+        category: 'consent',
+        studyId: scopedStudyId,
+        isDeidentified: false
+      });
+      setConsentTemplateFileRows((rows) => [uploaded, ...rows.filter((row) => row.id !== uploaded.id)]);
+      setSystemActionStatus(`已上传 ${scopedStudyId} 的知情同意模板 PDF：${uploaded.original_filename}`);
+    } catch {
+      setSystemActionStatus('知情同意模板 PDF 上传失败；请确认后端连接、当前 Study 权限和文件扫描状态');
+    } finally {
+      if (consentTemplateUploadInputRef.current) consentTemplateUploadInputRef.current.value = '';
+    }
+  }
+
+  async function openStudyConsentTemplateFile() {
+    if (!currentConsentTemplateFile) {
+      setSystemActionStatus('当前 Study 尚未上传已审批知情同意模板 PDF');
+      return;
+    }
+    setSystemActionStatus(`正在打开知情同意模板 PDF：${currentConsentTemplateFile.original_filename}`);
+    try {
+      await openFileFromBackend(currentConsentTemplateFile);
+      setSystemActionStatus(`已打开知情同意模板 PDF：${currentConsentTemplateFile.original_filename}`);
+    } catch {
+      setSystemActionStatus('知情同意模板 PDF 打开失败；请确认文件权限、扫描状态和后端连接');
+    }
+  }
+
   function renderStudyConsentConfiguration(compact = false) {
+    const selectedTemplateControlValue = selectedConsentTemplateCatalogItem ? selectedConsentTemplateCatalogItem.id : customConsentTemplateOption;
+    const sourceDetail = explicitConsentTemplate
+      ? `${t('模板编号')}: ${explicitConsentTemplate}`
+      : effectiveConsentTemplateId
+        ? `${t('疾病领域')}: ${scopedStudyDiseaseArea || '-'} · ${t('建议保存为当前 Study 配置')}`
+        : t('当前 Study 尚未匹配到可用模板，请选择或填写自定义模板。');
     return (
       <div className={`system-create-form system-consent-config${compact ? ' system-consent-config--compact' : ''}`}>
         {compact ? (
@@ -5481,6 +5801,15 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
             <span>{t('作为当前 Study 的 CRF 与字段配置项保存，不能影响其他 Study。')}</span>
           </div>
         ) : null}
+        <div className="system-consent-config__effective">
+          <span>{t('当前生效模板')}</span>
+          <strong>{t(effectiveConsentTitle)}</strong>
+          <small>{t('模板编号')}: {effectiveConsentTemplateId || '-'}</small>
+          <small>{t('来源')}: {t(consentTemplateSourceLabel)} · {sourceDetail}</small>
+          <span className={`status-pill status-pill--${explicitConsentTemplate ? 'success' : effectiveConsentTemplateId ? 'warning' : 'danger'}`}>
+            {t(consentTemplateStatusLabel)}
+          </span>
+        </div>
         <div className="system-consent-config__summary">
           <span>{t('当前 Study')}</span>
           <strong>{scopedStudyId || '-'}</strong>
@@ -5488,7 +5817,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
         </div>
         <div className="system-consent-config__summary">
           <span>{t('疾病领域')}</span>
-          <strong>{scopedStudyConfiguration?.disease_area || scopedStudySummary?.indication || '-'}</strong>
+          <strong>{scopedStudyDiseaseArea || '-'}</strong>
           <small>{t('仅保存当前 Study 的配置，不影响其他 Study')}</small>
         </div>
         <div className="system-consent-config__summary">
@@ -5496,23 +5825,90 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
           <strong>{scopedStudyConfiguration?.active_crf_version_id || '-'}</strong>
           <small>{t('知情同意与当前 Study 配置总表关联')}</small>
         </div>
-        <label className="system-consent-config__template">
-          <span>{t('知情同意模板')}</span>
-          <textarea
-            value={consentTemplateDraft}
-            disabled={!scopedStudyId}
-            onChange={(event) => setConsentTemplateDraft(event.target.value)}
-            placeholder={t('请输入当前 Study 的知情同意模板编号或说明')}
-          />
-        </label>
+        <div className="system-consent-config__binding">
+          <label>
+            <span>{t('模板选择')}</span>
+            <select
+              value={selectedTemplateControlValue}
+              disabled={!scopedStudyId}
+              onChange={(event) => {
+                const value = event.target.value;
+                setConsentTemplateDraft(value === customConsentTemplateOption ? '' : value);
+              }}
+            >
+              {consentTemplateCatalog.map((template) => (
+                <option value={template.id} key={template.id}>{t(template.label)}</option>
+              ))}
+              <option value={customConsentTemplateOption}>{t('自定义模板编号 / 说明')}</option>
+            </select>
+          </label>
+          <label>
+            <span>{t('模板编号或说明')}</span>
+            <textarea
+              value={consentTemplateDraft}
+              disabled={!scopedStudyId}
+              onChange={(event) => setConsentTemplateDraft(event.target.value)}
+              placeholder={t('请输入当前 Study 的知情同意模板编号或说明')}
+            />
+          </label>
+        </div>
+        <div className="system-consent-config__preview" aria-label={t('知情同意模板预览')}>
+          <span>{t('预览摘要')}</span>
+          <strong>{t(selectedConsentPreviewTitle)}</strong>
+          <small>{t(selectedConsentTemplateCatalogItem?.description ?? '自定义模板将按当前编号或说明在知情同意页展示。')}</small>
+          <div>
+            {selectedConsentPreviewSections.slice(0, 4).map((section) => (
+              <span key={`${selectedConsentPreviewTitle}-${section.title}`}>{t(section.title)}</span>
+            ))}
+          </div>
+        </div>
+        <div className="system-consent-config__preview" aria-label={t('已审批 PDF 模板')}>
+          <span>{t('已审批 PDF 模板')}</span>
+          <strong>{currentConsentTemplateFile?.original_filename ?? t('尚未上传')}</strong>
+          <small>
+            {currentConsentTemplateFile
+              ? `${t('上传时间')}: ${currentConsentTemplateFile.uploaded_at.slice(0, 16).replace('T', ' ')} · ${currentConsentTemplateFile.scan_status ?? '-'}`
+              : t('上传伦理或项目组已审批的 PDF 知情同意模板，患者页仍按患者上传已签署文件归档。')}
+          </small>
+          <div>
+            <span>{scopedStudyId || '-'}</span>
+            <span>{t('仅绑定当前 Study')}</span>
+          </div>
+        </div>
+        <input
+          ref={consentTemplateUploadInputRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          hidden
+          onChange={(event) => void uploadStudyConsentTemplateFile(event.target.files?.[0])}
+        />
         <div className="system-create-form__actions system-consent-config__actions">
           <button
             className="module-link-button"
             type="button"
             disabled={!scopedStudyId}
-            onClick={() => setConsentTemplateDraft(scopedStudyConfiguration?.consent_template ?? '')}
+            onClick={() => setConsentTemplateDraft(explicitConsentTemplate || effectiveConsentTemplateId)}
           >
             {t('恢复当前配置')}
+          </button>
+          <a className="module-link-button" href="?module=知情同意&locale=zh-CN#informed-consent">
+            {t('打开知情同意页预览')}
+          </a>
+          <button
+            className="module-link-button"
+            type="button"
+            disabled={!scopedStudyId}
+            onClick={() => consentTemplateUploadInputRef.current?.click()}
+          >
+            {t('上传已审批 PDF')}
+          </button>
+          <button
+            className="module-link-button"
+            type="button"
+            disabled={!currentConsentTemplateFile}
+            onClick={() => void openStudyConsentTemplateFile()}
+          >
+            {t('查看已审批 PDF')}
           </button>
           <button
             className="module-primary-button"
@@ -5520,7 +5916,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
             disabled={!scopedStudyId || !consentTemplateDraft.trim()}
             onClick={() => void saveStudyConsentTemplate()}
           >
-            {t('保存知情同意配置')}
+            {t(hasConsentTemplateDraftChanges ? '保存为当前 Study 配置' : '保存知情同意配置')}
           </button>
         </div>
       </div>
@@ -5996,12 +6392,20 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                   </tr>
                 </thead>
                 <tbody>
-                  {pagedAccounts.map((account) => {
-                    const canToggleAccount = Boolean(
-                      (account.userId ?? userIdForEmail(account.email)) &&
-                        (currentUser?.role === 'LZ_ADMIN' || (scopedStudyId && account.role.startsWith('STUDY_')))
-                    );
-                    return (
+	                  {pagedAccounts.map((account) => {
+	                    const isDeletedAccount = account.status === 'Deleted';
+	                    const canToggleAccount = Boolean(
+	                      (account.userId ?? userIdForEmail(account.email)) &&
+	                        !isDeletedAccount &&
+	                        (currentUser?.role === 'LZ_ADMIN' || (scopedStudyId && account.role.startsWith('STUDY_')))
+	                    );
+	                    const canDeleteAccount = Boolean(
+	                      currentUser?.role === 'LZ_ADMIN' &&
+	                        !isDeletedAccount &&
+	                        (account.userId ?? userIdForEmail(account.email)) &&
+	                        (account.userId ?? userIdForEmail(account.email)) !== currentUser.id
+	                    );
+	                    return (
                     <tr key={`${account.userId ?? account.email}-${account.name}`}>
 	                      <td>{t(account.name)}</td>
 	                      <td>{account.email}</td>
@@ -6023,12 +6427,12 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                       </td>
                       <td><span className={`status-pill status-pill--${systemStatusTone[account.status]}`}>{t(account.status)}</span></td>
                       <td>{account.lastLogin}</td>
-	                      <td>
-	                        <div className="module-table-actions">
-	                          <button className="module-link-button" type="button" onClick={() => openSystemAccountEdit(account)}>{t('Edit')}</button>
-	                          <button className="module-link-button module-link-button--primary" type="button" onClick={() => openSystemAccountPasswordReset(account)}>{t('修改密码')}</button>
-		                          <button
-		                            className="module-link-button module-link-button--danger"
+		                      <td>
+		                        <div className="module-table-actions">
+		                          <button className="module-link-button" type="button" disabled={isDeletedAccount} onClick={() => openSystemAccountEdit(account)}>{t('Edit')}</button>
+		                          <button className="module-link-button module-link-button--primary" type="button" disabled={isDeletedAccount} onClick={() => openSystemAccountPasswordReset(account)}>{t('修改密码')}</button>
+			                          <button
+			                            className="module-link-button module-link-button--danger"
 	                            type="button"
 	                            disabled={!canToggleAccount}
 	                            title={canToggleAccount ? undefined : t('当前角色没有用户状态写入权限')}
@@ -6036,28 +6440,37 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
 	                          >
 	                            {account.status === 'Disabled' ? t('Enable') : t('Disable')}
 	                          </button>
-	                          <button
-	                            className="module-link-button"
-	                            type="button"
-	                            disabled={!scopedStudyId || !(account.userId ?? userIdForEmail(account.email))}
-	                            title={t('设置为当前 Study 的系统管理员')}
-	                            onClick={() => void makeStudySystemAdmin(account)}
+		                          <button
+		                            className="module-link-button"
+		                            type="button"
+		                            disabled={isDeletedAccount || !scopedStudyId || !(account.userId ?? userIdForEmail(account.email))}
+		                            title={t('设置为当前 Study 的系统管理员')}
+		                            onClick={() => void makeStudySystemAdmin(account)}
 	                          >
 	                            {t('Set Admin')}
 	                          </button>
 	                          {isGlobalManagement ? (
-	                            <button
-	                              className="module-link-button"
-	                              type="button"
-	                              disabled={currentUser?.role !== 'LZ_ADMIN' || !account.role.startsWith('LZ_') || account.role === 'LZ_ADMIN'}
-	                              title={t('授予或移除当前 Study 的平台角色授权')}
-	                              onClick={() => void togglePlatformStudyScope(account)}
-	                            >
-	                              {t('Scope')}
-	                            </button>
-	                          ) : null}
-                        </div>
-                      </td>
+		                            <button
+		                              className="module-link-button"
+		                              type="button"
+		                              disabled={isDeletedAccount || currentUser?.role !== 'LZ_ADMIN' || !account.role.startsWith('LZ_') || account.role === 'LZ_ADMIN'}
+		                              title={t('授予或移除当前 Study 的平台角色授权')}
+		                              onClick={() => void togglePlatformStudyScope(account)}
+		                            >
+		                              {t('Scope')}
+		                            </button>
+		                          ) : null}
+		                          <button
+		                            className="module-link-button module-link-button--danger"
+		                            type="button"
+		                            disabled={!canDeleteAccount}
+		                            title={canDeleteAccount ? t('软删除账号并保留审计记录') : t('当前账户不能删除或当前角色无权限')}
+		                            onClick={() => void deleteSystemAccount(account)}
+		                          >
+		                            {t('Delete')}
+		                          </button>
+	                        </div>
+	                      </td>
                     </tr>
                     );
                   })}
@@ -6447,7 +6860,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                   {operationLogEntityOptions.map((entity) => <option value={entity} key={entity}>{entity}</option>)}
                 </select>
               </label>
-              <small>{t(isGlobalManagement ? 'LZ Admin 可查看全局日志；Study 用户只能查看所属 Study 日志。' : '当前仅显示本 Study scope 内的操作日志。')}</small>
+              <small>{t(operationLogStudyId ? '当前仅显示本 Study scope 内的操作日志。' : 'LZ Admin 可查看全局日志；Study 用户只能查看所属 Study 日志。')}</small>
             </div>
             <div className="module-table-wrap">
               <table className="module-table system-operation-log-table">
@@ -6716,23 +7129,27 @@ export function ReportsPage({ currentUser }: { currentUser?: AuthenticatedUser |
     }
   }, [exportStudyOptions, selectedStudyId]);
 
-  useEffect(() => {
+  const refreshQualityIssueRows = useCallback(async () => {
     if (!selectedStudyId) {
       setQualityIssues([]);
-      return undefined;
+      return;
     }
-    let ignore = false;
-    void fetchQualityIssues(selectedStudyId)
-      .then((issues) => {
-        if (!ignore) setQualityIssues(issues);
-      })
-      .catch(() => {
-        if (!ignore) setQualityIssues([]);
-      });
-    return () => {
-      ignore = true;
-    };
+    try {
+      setQualityIssues(await fetchQualityIssues(selectedStudyId));
+    } catch {
+      setQualityIssues([]);
+    }
   }, [selectedStudyId]);
+
+  useEffect(() => {
+    void refreshQualityIssueRows();
+  }, [refreshQualityIssueRows]);
+
+  useEffect(() => {
+    const refresh = () => void refreshQualityIssueRows();
+    window.addEventListener(workspaceDataChangedEvent, refresh);
+    return () => window.removeEventListener(workspaceDataChangedEvent, refresh);
+  }, [refreshQualityIssueRows]);
 
   async function handleCreateExport(record: ReportRecord) {
     if (!exportEnabled) {

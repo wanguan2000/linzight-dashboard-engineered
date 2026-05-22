@@ -163,7 +163,7 @@ class SampleBase(BaseModel):
 
 
 class SampleCreate(SampleBase):
-    id: str | None = None
+    id: str
 
 
 class SampleUpdate(BaseModel):

@@ -17,6 +17,8 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 - Platform users now remain in the LZ global state by default and use backend `/analytics/summary` aggregation plus Study-scoped business reads instead of silently entering a single Study.
 - New patient creation now creates only the patient master record and pending consent; visits, CRF drafts, and Patient Journey events must come from explicit Study data.
+- Patient consent now follows the current pilot offline workflow: print the Study template, upload the signed paper file, view the uploaded archive, and mark withdrawal directly from the patient consent list; re-sign requests and the eConsent approval queue are not shown on the patient consent page in this iteration.
+- Study consent template configuration now supports uploading and opening an approved PDF template file bound explicitly to the current Study.
 - Release notes, UAT package, and readiness documents now state the `v1.0.3` scope as internal pilot for real-world workflow validation, not unrestricted real-patient production use.
 
 ### Fixed

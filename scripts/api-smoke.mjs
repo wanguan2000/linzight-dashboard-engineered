@@ -346,7 +346,9 @@ async function runSmoke() {
   assert(lglPatient?.id, 'seeded admin view should include an LGL-1111 patient');
   const dataManagerPatients = await request('/studies/LZXK-01/patients', { token: dataManager.access_token });
   assert(dataManagerPatients.data.length > 0, 'data manager should see scoped patients');
-  assert(dataManagerPatients.data[0].name.includes('**'), 'data manager patient name should be masked');
+  assert(!dataManagerPatients.data[0].patient_name || dataManagerPatients.data[0].patient_name === dataManagerPatients.data[0].patient_name_initials, 'data manager patient name should be initials-masked when recorded');
+  assert(!dataManagerPatients.data[0].name.includes('**'), 'data manager patient number compatibility field should stay visible');
+  assert(dataManagerPatients.data[0].patient_number === dataManagerPatients.data[0].name, 'data manager patient number should stay visible');
   assert(dataManagerPatients.data[0].hospital_no.includes('****'), 'data manager hospital number should be masked in API view');
 
   const patient = patients.data[0];
@@ -660,6 +662,7 @@ async function runSmoke() {
     method: 'POST',
     token: crc.access_token,
     body: {
+      id: `SPL-SMOKE-${Date.now()}`,
       patient_id: patient.id,
       patient_name: patient.name,
       hospital_no: patient.hospital_no,
@@ -681,6 +684,7 @@ async function runSmoke() {
     method: 'POST',
     token: crc.access_token,
     body: {
+      id: `SPL-SMOKE-LGL-${Date.now()}`,
       patient_id: lglPatient.id,
       patient_name: lglPatient.name,
       hospital_no: lglPatient.hospital_no,
@@ -864,16 +868,28 @@ async function runSmoke() {
   const [exportedHeaderLine, exportedFirstRowLine] = exportedCsv.trim().split('\n');
   const exportedHeader = exportedHeaderLine.split(',');
   const exportedFirstDataRow = exportedFirstRowLine.split(',');
-  for (const column of ['patient_name', 'name', 'hospital_no']) {
+  for (const column of ['patient_name', 'hospital_no']) {
     const columnIndex = exportedHeader.indexOf(column);
     assert(columnIndex >= 0, `patient export should include ${column} column`);
     assert(exportedFirstDataRow[columnIndex] === '', `data manager export should remove ${column}`);
   }
+  for (const column of ['patient_number', 'name']) {
+    const columnIndex = exportedHeader.indexOf(column);
+    assert(columnIndex >= 0, `patient export should include ${column} column`);
+    assert(exportedFirstDataRow[columnIndex] !== '', `data manager export should keep ${column} visible`);
+  }
   const fieldPermissions = await request('/field-permissions?resource=patients', { token: dataManager.access_token });
   assert(fieldPermissions.data.every((item) => item.role === 'STUDY_DATA_MANAGER'), 'non-admin field permissions response should be role-scoped');
-  assert(fieldPermissions.data.some((item) => item.field_name === 'name' && item.mask_rule === 'name'), 'field permissions should expose patient name masking rule');
+  assert(fieldPermissions.data.some((item) => item.field_name === 'patient_name' && item.mask_rule === 'pinyin_initials'), 'field permissions should expose patient name masking rule');
+  assert(fieldPermissions.data.every((item) => item.field_name !== 'name' || item.mask_rule === 'none'), 'patient number compatibility field should remain unmasked');
+  const dataManagerMembers = await request('/studies/LZXK-01/members', { token: dataManager.access_token });
+  assert(dataManagerMembers.data.some((member) => member.study_role === 'STUDY_DATA_MANAGER'), 'Study data manager should read current Study members');
+  const dataManagerUsers = await request('/users?study_id=LZXK-01', { token: dataManager.access_token });
+  assert(dataManagerUsers.data.some((user) => user.study_memberships?.some((member) => member.study_id === 'LZXK-01')), 'Study data manager should read current Study user list');
   const permissionMatrix = await request('/permissions/matrix', { token: lzAdmin.access_token });
   const matrixByOperation = new Map(permissionMatrix.data.map((row) => [row.operation, row]));
+  assert(matrixByOperation.get('Read users and Study members')?.allowed_roles.includes('STUDY_DATA_MANAGER'), 'permission matrix should allow Study data manager to read Study members');
+  assert(matrixByOperation.get('Read users and Study members')?.allowed_roles.includes('STUDY_PI'), 'permission matrix should allow Study PI to read Study members');
   assert(matrixByOperation.get('Create or update patient records')?.allowed_roles.includes('STUDY_CRC'), 'permission matrix should allow STUDY_CRC patient writes');
   assert(matrixByOperation.get('Create or update patient records')?.allowed_roles.includes('STUDY_CONFIG_ADMIN'), 'permission matrix should allow Study Admin patient writes in its Study');
   assert(!matrixByOperation.get('Create or update patient records')?.allowed_roles.includes('STUDY_PI'), 'permission matrix should block STUDY_PI patient writes');

@@ -33,6 +33,7 @@ def user_role(user: dict[str, Any]) -> str:
 ROLE_ACTIONS: dict[str, set[tuple[str, str]]] = {
     "LZ_CRC": {
         ("studies", "read"),
+        ("study_members", "read"),
         ("patients", "read"),
         ("patients", "write"),
         ("consents", "read"),
@@ -62,6 +63,7 @@ ROLE_ACTIONS: dict[str, set[tuple[str, str]]] = {
     },
     "LZ_DATA_MANAGER": {
         ("studies", "read"),
+        ("study_members", "read"),
         ("patients", "read"),
         ("consents", "read"),
         ("crf", "read"),
@@ -77,6 +79,7 @@ ROLE_ACTIONS: dict[str, set[tuple[str, str]]] = {
     },
     "LZ_AUDITOR": {
         ("studies", "read"),
+        ("study_members", "read"),
         ("patients", "read"),
         ("consents", "read"),
         ("crf", "read"),
@@ -90,6 +93,7 @@ ROLE_ACTIONS: dict[str, set[tuple[str, str]]] = {
     },
     "STUDY_PI": {
         ("studies", "read"),
+        ("study_members", "read"),
         ("patients", "read"),
         ("consents", "read"),
         ("crf", "read"),
@@ -103,6 +107,7 @@ ROLE_ACTIONS: dict[str, set[tuple[str, str]]] = {
     },
     "STUDY_CRC": {
         ("studies", "read"),
+        ("study_members", "read"),
         ("patients", "read"),
         ("patients", "write"),
         ("consents", "read"),
@@ -149,6 +154,7 @@ ROLE_ACTIONS: dict[str, set[tuple[str, str]]] = {
     },
     "STUDY_DATA_MANAGER": {
         ("studies", "read"),
+        ("study_members", "read"),
         ("patients", "read"),
         ("consents", "read"),
         ("crf", "read"),
@@ -185,6 +191,13 @@ PERMISSION_MATRIX: list[dict[str, Any]] = [
         "resource": "study_lifecycle",
         "action": "write",
         "endpoints": ["POST /studies", "PATCH /studies/{study_id}", "DELETE /studies/{study_id}"],
+    },
+    {
+        "module": "Account and Study Members",
+        "operation": "Read users and Study members",
+        "resource": "study_members",
+        "action": "read",
+        "endpoints": ["GET /users", "GET /users?study_id={study_id}", "GET /studies/{study_id}/members"],
     },
     {
         "module": "Account and Study Members",

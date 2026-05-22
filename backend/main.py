@@ -679,6 +679,42 @@ def normalize_omics_sample_ids(conn: Any, patient_id: str, primary_sample_id: st
     return ids
 
 
+def omics_record_ids_for_sample(conn: Any, sample_id: str) -> list[str]:
+    rows = conn.execute("SELECT id, sample_id, sample_ids_json FROM omics_records").fetchall()
+    record_ids: list[str] = []
+    for row in rows:
+        sample_ids = decode_json(row["sample_ids_json"], [])
+        if row["sample_id"] == sample_id or sample_id in sample_ids:
+            record_ids.append(row["id"])
+    return record_ids
+
+
+def cascade_patient_study_id(conn: Any, patient_id: str, target_study_id: str) -> None:
+    related_tables = (
+        "consents",
+        "visits",
+        "follow_up_records",
+        "crf_entries",
+        "samples",
+        "omics_records",
+        "data_queries",
+        "data_quality_issues",
+    )
+    for table in related_tables:
+        conn.execute(f"UPDATE {table} SET study_id = ? WHERE patient_id = ?", (target_study_id, patient_id))
+    conn.execute(
+        """
+        UPDATE uploaded_files
+        SET study_id = ?
+        WHERE patient_id = ?
+           OR sample_id IN (SELECT id FROM samples WHERE patient_id = ?)
+           OR omics_id IN (SELECT id FROM omics_records WHERE patient_id = ?)
+           OR consent_id IN (SELECT id FROM consents WHERE patient_id = ?)
+        """,
+        (target_study_id, patient_id, patient_id, patient_id, patient_id),
+    )
+
+
 def visit_patient_scope(conn: Any, visit_id: str) -> dict[str, Any]:
     row = fetch_one(conn, "SELECT study_id, patient_id FROM visits WHERE id = ?", (visit_id,))
     return {"study_id": row["study_id"], "patient_id": row["patient_id"]}
@@ -1304,6 +1340,30 @@ def update_user_status(user_id: str, payload: UserStatusUpdate, authorization: s
         after = row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,)))
         after["study_scope"] = get_user_study_scope(conn, after)
         log_operation(conn, actor, "STATUS_CHANGE", "users", user_id, before=before, after=after)
+        return after
+
+
+@app.delete("/users/{user_id}")
+def archive_user(user_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with connect() as conn:
+        actor = authorize(authorization, "studies", "write", conn=conn)
+        if user_role(actor) != "LZ_ADMIN":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can archive users")
+        if actor["id"] == user_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="current user cannot archive their own account")
+        before = enrich_user_record(conn, row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,))))
+        if before["role"] == "LZ_ADMIN" and before["status"] == "active":
+            active_admin_count = conn.execute(
+                "SELECT COUNT(*) AS count FROM users WHERE role_code = 'LZ_ADMIN' AND status = 'active'"
+            ).fetchone()["count"]
+            if active_admin_count <= 1:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="cannot archive the last active LZ_ADMIN")
+        if before["status"] != "deleted":
+            now = utc_now()
+            conn.execute("UPDATE users SET status = 'deleted', updated_at = ? WHERE id = ?", (now, user_id))
+            conn.execute("UPDATE study_members SET status = 'disabled', updated_at = ? WHERE user_id = ?", (now, user_id))
+        after = enrich_user_record(conn, row_to_user(fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,))))
+        log_operation(conn, actor, "DELETE", "users", user_id, before=before, after=after, request_context={"soft_delete": True})
         return after
 
 
@@ -2362,8 +2422,12 @@ def update_patient(patient_id: str, payload: PatientUpdate, authorization: str |
     with connect() as conn:
         before = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
         user = authorize(authorization, "patients", "write", study_id=before["study_id"], conn=conn)
-        if data.get("study_id") and data["study_id"] != before["study_id"] and user_role(user) != "LZ_ADMIN":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can move patients between studies")
+        target_study_id = data.get("study_id")
+        is_study_move = bool(target_study_id and target_study_id != before["study_id"])
+        if is_study_move:
+            if user_role(user) != "LZ_ADMIN":
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can move patients between studies")
+            authorize(authorization, "patients", "write", study_id=target_study_id, conn=conn)
         columns: list[str] = []
         values: list[Any] = []
         for key, value in data.items():
@@ -2384,6 +2448,8 @@ def update_patient(patient_id: str, payload: PatientUpdate, authorization: str |
         result = conn.execute(f"UPDATE patients SET {', '.join(columns)} WHERE id = ?", values)
         if result.rowcount == 0:
             raise not_found()
+        if is_study_move:
+            cascade_patient_study_id(conn, patient_id, target_study_id)
         after = row_to_patient(fetch_one(conn, "SELECT * FROM patients WHERE id = ?", (patient_id,)))
         log_operation(conn, user, "UPDATE", "patients", patient_id, study_id=after["study_id"], before=before, after=after)
         return apply_field_permissions_to_record(conn, user, after)
@@ -2433,7 +2499,9 @@ def list_samples(
 @app.post("/samples", status_code=status.HTTP_201_CREATED)
 def create_sample(payload: SampleCreate, path_study_id: str | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     data = dump_model(payload)
-    sample_id = data.pop("id") or f"SPL-{uuid4().hex[:10].upper()}"
+    sample_id = data.pop("id").strip()
+    if not sample_id:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="sample id is required")
     now = utc_now()
     with connect() as conn:
         study_id = patient_study_id(conn, data["patient_id"])
@@ -2489,8 +2557,18 @@ def get_sample(sample_id: str, authorization: str | None = Header(default=None))
 def update_sample(sample_id: str, payload: SampleUpdate, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     data = dump_model(payload, exclude_unset=True)
     with connect() as conn:
-        before = row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
+        try:
+            before = row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
+        except KeyError as exc:
+            raise not_found() from exc
         user = authorize(authorization, "samples", "write", study_id=before["study_id"], conn=conn)
+        requested_study_id = data.get("study_id")
+        requested_patient_id = data.get("patient_id")
+        if requested_study_id:
+            target_patient_id = requested_patient_id or before["patient_id"]
+            target_study_id = patient_study_id(conn, target_patient_id)
+            if requested_study_id != target_study_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="study_id does not match sample patient")
         columns: list[str] = []
         values: list[Any] = []
         for key, value in data.items():
@@ -2498,8 +2576,17 @@ def update_sample(sample_id: str, payload: SampleUpdate, authorization: str | No
                 continue
             if key == "patient_id" and value:
                 new_study_id = patient_study_id(conn, value)
+                if value != before["patient_id"]:
+                    linked_omics_ids = omics_record_ids_for_sample(conn, sample_id)
+                    if linked_omics_ids:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"sample has linked omics records and cannot move patients: {', '.join(linked_omics_ids)}",
+                        )
                 if new_study_id != before["study_id"] and user_role(user) != "LZ_ADMIN":
                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="only LZ_ADMIN can move samples between studies")
+                if new_study_id != before["study_id"]:
+                    authorize(authorization, "samples", "write", study_id=new_study_id, conn=conn)
                 columns.append("study_id = ?")
                 values.append(new_study_id)
             column = "linked_omics_json" if key == "linked_omics" else key
@@ -2513,6 +2600,8 @@ def update_sample(sample_id: str, payload: SampleUpdate, authorization: str | No
         if result.rowcount == 0:
             raise not_found()
         after = row_to_sample(fetch_one(conn, "SELECT * FROM samples WHERE id = ?", (sample_id,)))
+        if after["study_id"] != before["study_id"]:
+            conn.execute("UPDATE uploaded_files SET study_id = ? WHERE sample_id = ?", (after["study_id"], sample_id))
         log_operation(conn, user, "UPDATE", "samples", sample_id, study_id=after["study_id"], before=before, after=after)
         return after
 
@@ -3244,6 +3333,7 @@ async def upload_file(
     sample_id: str | None = Form(default=None),
     omics_id: str | None = Form(default=None),
     consent_id: str | None = Form(default=None),
+    study_id: str | None = Form(default=None),
     uploaded_by: str | None = Form(default=None),
     is_deidentified: bool = Form(default=False),
     authorization: str | None = Header(default=None),
@@ -3276,6 +3366,9 @@ async def upload_file(
         if consent_id:
             consent_row = fetch_one(conn, "SELECT study_id FROM consents WHERE id = ?", (consent_id,))
             linked_study_ids.append(consent_row["study_id"])
+        if study_id:
+            fetch_one(conn, "SELECT id FROM studies WHERE id = ?", (study_id,))
+            linked_study_ids.append(study_id)
         unique_linked_studies = set(linked_study_ids)
         if len(unique_linked_studies) > 1:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="linked file entities must belong to the same study")

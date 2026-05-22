@@ -262,7 +262,7 @@ def translate_jsonb_column_definitions(sql: str) -> str:
         definition = postgres_jsonb_column_definition(column)
         if definition is None:
             return match.group(0)
-        return f"{prefix}{column} {definition}{rest}"
+        return f"{prefix}{column} {definition}"
 
     return re.sub(
         r"(?i)\b(ADD\s+COLUMN(?:\s+IF\s+NOT\s+EXISTS)?\s+)([A-Za-z_][A-Za-z0-9_]*)\s+(TEXT|BLOB)\b([^,;]*)",
@@ -856,7 +856,6 @@ def initialize_schema() -> None:
 def seed_default_field_permissions(conn: sqlite3.Connection) -> None:
     now = utc_now()
     sensitive_fields = [
-        ("patients", "name", "name"),
         ("patients", "patient_name", "name"),
         ("patients", "hospital_no", "hospital_no"),
         ("patients", "病历号", "hospital_no"),
@@ -883,6 +882,14 @@ def seed_default_field_permissions(conn: sqlite3.Connection) -> None:
         rows,
     )
     for role in ROLE_VALUES:
+        conn.execute(
+            """
+            UPDATE field_permissions
+            SET can_view = 1, can_export = 1, mask_rule = 'none', updated_at = ?
+            WHERE role = ? AND resource = 'patients' AND field_name IN ('name', 'patient_number')
+            """,
+            (now, role),
+        )
         should_mask = role not in patient_name_full_access_roles
         conn.execute(
             """

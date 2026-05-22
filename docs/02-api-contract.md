@@ -22,10 +22,11 @@
 | 登录 | `POST` | `/auth/login` | 用户登录，返回 token 与用户角色 |
 | 登录 | `GET` | `/auth/me` | 当前用户信息 |
 | 登录 | `POST` | `/auth/logout` | 返回登出状态 |
-| 用户 | `GET` | `/users` | 查询当前授权范围内用户；`LZ_ADMIN` 可查全部，`study_id` 可限定单 Study |
+| 用户 | `GET` | `/users` | 查询当前授权范围内用户；`LZ_ADMIN` 可查全部，`study_id` 可限定单 Study；单 Study 成员列表对 Study PI/CRC/Admin/DM 默认只读可见 |
 | 用户 | `POST` | `/users` | 创建平台或研究级用户；研究级用户可同步加入指定 Study |
 | 用户 | `PATCH` | `/users/{user_id}` | 修改用户显示名、密码；`LZ_ADMIN` 可修改角色和全局登录状态，Study 管理员仅限本 Study 成员基础资料 |
 | 用户 | `PATCH` | `/users/{user_id}/status` | `LZ_ADMIN` 启用或禁用账号；禁用账号不能登录 |
+| 用户 | `DELETE` | `/users/{user_id}` | `LZ_ADMIN` 软删除/归档账号，将用户状态置为 `deleted` 并禁用 Study membership，保留历史审计链 |
 | 用户 | `PATCH` | `/users/{user_id}/study-scope` | `LZ_ADMIN` 管理非 `LZ_ADMIN` 平台角色的授权 Study 范围 |
 | 字段权限 | `GET` | `/field-permissions` | 当前角色或管理员可见的字段级可见、可导出和脱敏规则 |
 | 权限矩阵 | `GET` | `/permissions/matrix` | 导出平台角色、Study 角色、模块、操作、资源动作和 endpoint 的正式权限矩阵 |
@@ -58,6 +59,7 @@
 | 患者列表 | `GET` | `/studies/{study_id}/patients` | 搜索、筛选单个 Study 患者 |
 | 患者创建 | `POST` | `/studies/{study_id}/patients` | 在单个 Study Workspace 内创建患者 |
 | 患者详情 | `GET` | `/patients/{patient_id}` | 患者主档 |
+| 患者详情 | `PUT` | `/patients/{patient_id}` | 更新患者主档；`LZ_ADMIN` 可通过 `study_id` 更正所属 Study，并级联迁移该患者关联业务记录的 `study_id` |
 | 患者详情 | `GET` | `/patients/{patient_id}/panorama` | 患者全景数据 |
 | 随访记录 | `GET` | `/studies/{study_id}/follow-up-records` | 查询单个 Study 的患者随访记录 |
 | 随访记录 | `POST` | `/studies/{study_id}/follow-up-records` | 新增随访记录 |
@@ -67,7 +69,7 @@
 | CRF 录入 | `PUT` | `/crf/{entry_id}` | 更新 CRF 草稿、提交或锁定 |
 | 访视 | `PUT` | `/visits/{visit_id}` | 更新实际访视日期、访视类型、临床指标、完整度和状态 |
 | 样本登记 | `GET` | `/studies/{study_id}/samples` | 查询单个 Study 样本台账 |
-| 样本登记 | `POST` | `/studies/{study_id}/samples` | 新增样本 |
+| 样本登记 | `POST` | `/studies/{study_id}/samples` | 新增样本；`id` 为人工填写的条码/样本编号，必填，后端不自动生成 |
 | 多组学检测 | `GET` | `/studies/{study_id}/omics` | 查询单个 Study 检测记录 |
 | 多组学检测 | `POST` | `/studies/{study_id}/omics` | 新增检测记录 |
 | 文件上传 | `POST` | `/files` | 上传知情、临床、样本、组学结果或导出文件 |
@@ -97,6 +99,7 @@
 Query 创建会校验 `study_id / patient_id / visit_id` 一致性，且 `field_name` 必须属于该 Study 当前 CRF 字段字典；例如 `LZXK-01` 肺癌 CRF 不允许创建 `SLEDAI评分` 字段 Query。
 Study 配置总表使用 `study_configurations` 作为发布收口源，绑定 `study_id -> disease_area -> active_crf_version_id -> visit_plan -> consent_template -> testing_profile -> follow_up_schema`。新建患者和自动 CRF 草稿必须使用当前 Study 的 published CRF；如果目标 Study 没有 published CRF，后端返回错误，不允许静默回退到 LGL。
 `PUT /studies/{study_id}/configuration` 只更新路径中的单个 Study 配置，并由后端按当前用户 Study scope 与 `studies:write` 权限校验；Study Workspace 内不能通过请求体切换到其他 Study。当前前端先开放 `consent_template` 写入，用于 Study 知情同意配置。
+知情同意页面读取当前 Study 的配置总表后，应使用 `consent_template`、`disease_area`、患者 `disease_type`，并在配置行缺失时结合 Study 主数据 `indication/name`，决定知情同意内容、模板编号和纸质预览；肺癌类 Study 不应回落到免疫神经默认知情内容，未知模板则至少展示当前绑定的模板编号或说明。
 `Study 系统管理` 的 `Global Configuration | 全局配置` 通过 `/global-configuration` 读取和保存疾病类型、样本类型、检测类型和单位类型字典，后端持久化到 `global_configurations` 表。患者、样本和检测 API 现在按字符串接收 `disease_type`、`sample_type`、`quantity_unit` 和 `omics_records.assay`，以便承载 LZ 全局字典扩展；正式落库仍由 `study_id`、角色权限和 Study 生命周期校验控制。
 
 ## 全局配置
@@ -114,8 +117,10 @@ Study 配置总表使用 `study_configurations` 作为发布收口源，绑定 `
 | 患者基本信息 | `patients.patient_number`, `patient_name`, `study_id`, `hospital_no`, `sex`, `age`, `disease_type`, `note` | `patient_number` 是业务患者编号；`patient_name` 是患者姓名，默认显示拼音首字母；`id` 是系统主键；`name` 暂兼容既有页面展示，默认与 `patient_number` 同步。 |
 | 患者 CRF 信息 | `crf_entries.payload` + `study_crf_versions.schema_json` | 每个 Study 独立配置 CRF；默认包含病程记录、住院、治疗方案、检查等 section，payload 以 JSON 保存。 |
 | 患者随访 | `follow_up_records.payload` + `study_configurations.follow_up_schema` | 每个 Study 独立配置随访 JSON；默认覆盖访视、日期、类型、疗效评估、记录，同时保留日期、类型、疗效、记录等固定列用于筛选和列表。 |
-| 样本信息 | `samples.patient_id`, `id`, `sample_type`, `collected_at`, `storage`, `initial_quantity`, `remaining_quantity`, `quantity_unit`, `note`, `linked_omics` | 一个患者可有多个样本；`storage` 保存存储位置；初始量、剩余量和单位按字符串保存，单位由全局单位类型单选；`remaining_quantity` 由人工维护，不由检测记录自动扣减；`linked_omics` 记录该样本已做或计划做的检测。 |
+| 样本信息 | `samples.patient_id`, `id`, `sample_type`, `collected_at`, `storage`, `initial_quantity`, `remaining_quantity`, `quantity_unit`, `note`, `linked_omics` | 一个患者可有多个样本；`id` 是人工填写的条码/样本编号，必填且后端不自动生成；`storage` 保存存储位置；初始量、剩余量和单位按字符串保存，单位由全局单位类型单选；`remaining_quantity` 由人工维护，不自动计算、不默认等于初始量，也不由检测记录自动扣减；`linked_omics` 记录该样本已做或计划做的检测。 |
 | 多组学检测 | `omics_records.sample_id`, `sample_ids`, `sample_usage`, `testing_project_id`, `assay`, `vendor`, `platform`, `status`, `sent_at`, `completed_at`, `qc`, `result_file_id` | `sample_id` 是兼容旧逻辑的主样本；`sample_ids` 支持人工选择一个或多个样本；`sample_usage` 记录每个样本的人工填写使用量、单位和用途；`vendor` 保存检测供应商；`result_file_id` 指向 `uploaded_files.id` 的结果文件记录。 |
+
+样本更新时，`study_id` 跟随 `patient_id` 所属 Study。已有 `omics_records` 引用的样本不能直接更换患者；如需更正，应先处理关联检测记录，避免检测记录中的 `sample_ids` 出现跨患者或跨 Study 组合。
 
 Patient Journey 页面的多轨临床事件轴、事件明细流和关键指标趋势只能从当前患者的 `patients`、`crf_entries`、`visits`、`follow_up_records`、`samples`、`omics_records` 和 `uploaded_files` 聚合生成，不允许使用前端静态旅程数据或合成日期、合成诊断/住院/治疗事件冒充正式状态。关键指标没有真实访视或 CRF 值时必须为空或显示 0，不允许按序号生成趋势。
 `/studies/{study_id}/analytics/summary` 返回 `export_count` 和 `ready_export_count`，Dashboard 的“导出归档”必须使用 `export_jobs` 统计，不允许复用组学归档数。
@@ -155,7 +160,7 @@ GA 版本已移除 standalone audit log 模块，不再提供 `/audit-logs` 或 
 
 ## 核心请求示例
 
-用户创建使用 `POST /users`。请求字段包括 `username`、`display_name`、`role`、`password`、`status`、可选 `study_id` 和 `member_status`。当 `study_id` 存在且 `role` 为 `STUDY_*` 时，后端会同时创建 `study_members` 行。`STUDY_CONFIG_ADMIN` 只能在自己可管理的 Study 内创建研究级账号；平台级 `LZ_*` 账号仅允许 `LZ_ADMIN` 创建。用户基础资料修改使用 `PATCH /users/{user_id}`；Study 管理员只能在 `study_id` 范围内修改本 Study 成员的显示名或密码，平台角色、登录状态和跨 Study 授权范围仍由 `LZ_ADMIN` 管理。用户响应包含 `last_login_at`，成功登录时由后端更新，不由前端伪造。
+用户创建使用 `POST /users`。请求字段包括 `username`、`display_name`、`role`、`password`、`status`、可选 `study_id` 和 `member_status`。当 `study_id` 存在且 `role` 为 `STUDY_*` 时，后端会同时创建 `study_members` 行。单 Study 的用户与成员列表对 Study PI、Study CRC、Study Admin 和 Study DM 默认只读可见；创建、更新和启停 Study 成员仍只允许 `STUDY_CONFIG_ADMIN` 或 `LZ_ADMIN`。`STUDY_CONFIG_ADMIN` 只能在自己可管理的 Study 内创建研究级账号；平台级 `LZ_*` 账号仅允许 `LZ_ADMIN` 创建。用户基础资料修改使用 `PATCH /users/{user_id}`；Study 管理员只能在 `study_id` 范围内修改本 Study 成员的显示名或密码，平台角色、登录状态和跨 Study 授权范围仍由 `LZ_ADMIN` 管理。`DELETE /users/{user_id}` 是软删除/归档接口，不物理删除 `users` 行；后端会把用户状态置为 `deleted`、禁用其 Study membership、拒绝当前用户自删、拒绝删除最后一个 active `LZ_ADMIN`，并写入 `operation_logs`。用户响应包含 `last_login_at`，成功登录时由后端更新，不由前端伪造。
 
 Study 生命周期使用 `POST /studies`、`PATCH /studies/{study_id}` 和 `DELETE /studies/{study_id}`。Study 主数据字段包括 `id`、`code`、`name`、`indication`、`phase`、`status`、`owner_org`、`leading_pi_info` 和 `system_admin`。`DELETE` 为软删除，将状态改为 `deleted` 并保留历史数据。`terminated` 或 `deleted` Study 会拒绝患者、CRF、访视、随访、样本、组学、文件、质控、导出等业务写入。
 

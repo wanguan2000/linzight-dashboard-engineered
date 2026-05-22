@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   calculateClinicalCompleteness,
   type DiseaseType,
@@ -9,7 +9,7 @@ import type { OmicsRecord, SampleRecord } from '../data/operations';
 import { getGlobalDetectionTypes, getGlobalDiseaseTypes, getGlobalSampleTypes, globalConfigChangedEvent } from '../data/globalConfig';
 import { Icon } from './Icon';
 import { studyOptions as defaultStudyOptions, type AuthenticatedUser } from '../data/auth';
-import { createPatientRecord, deletePatientRecord, fetchGlobalConfiguration, fetchStudies, fetchWorkspaceDataset, getCurrentScopedStudyId, isPermissionError, updatePatientRecord } from '../services/api';
+import { createPatientRecord, deletePatientRecord, fetchGlobalConfiguration, fetchStudies, fetchWorkspaceDataset, getCurrentScopedStudyId, isPermissionError, updatePatientRecord, workspaceDataChangedEvent } from '../services/api';
 import { useI18n } from '../i18n/I18nProvider';
 import type { IconName } from '../types';
 import { SampleTestingPage } from './ModulePages';
@@ -73,12 +73,11 @@ function currentStudyDefaultDisease(studyId?: string): DiseaseType {
 }
 
 function makeDraftPatient(studyId?: string): PatientRecord {
-  const today = new Date().toISOString().slice(2, 10).replace(/-/g, '');
   return {
 	    studyId: studyId ?? '',
-	    patientNumber: `NEW-${today}`,
+	    patientNumber: '',
 	    patientName: '',
-	    name: `NEW-${today}`,
+	    name: '',
     hospitalNo: '',
     sex: '女',
     age: 45,
@@ -427,7 +426,7 @@ function PatientTable({
             const studyName = studyNameForPatient(patient, studyNameById);
               return (
               <tr className={patient.name === activePatientName ? 'is-active' : undefined} key={`${patient.studyId}-${patient.name}`}>
-                <td data-label={t('患者编号')}>{patient.name}</td>
+                <td data-label={t('患者编号')}>{patient.patientNumber || patient.name || patient.id || '-'}</td>
                 <td data-label={t('患者姓名')}>
                   <div className="patient-actions">
                     <span>{showFullPatientName ? patient.patientName : patientNameInitials}</span>
@@ -844,34 +843,35 @@ export function PatientCohortPage({
     };
   }, [currentUser]);
 
-  useEffect(() => {
-    let ignore = false;
-
-    setPatientLoadStatus('loading');
-    void fetchWorkspaceDataset()
-      .then((dataset) => {
-        if (!ignore) {
-          setPatients(dataset.patients);
-          setSampleRows(dataset.samples);
-          setOmicsRows(dataset.omics);
-          setPatientLoadStatus('ready');
-          setSaveStatus(dataset.patients.length ? `已读取 ${dataset.patients.length} 名患者` : '当前授权范围暂无患者');
-        }
-      })
-      .catch((error) => {
-        if (!ignore) {
-          setPatients([]);
-          setSampleRows([]);
-          setOmicsRows([]);
-          setPatientLoadStatus('error');
-          setSaveStatus(isPermissionError(error) ? '后端登录已失效，请重新登录后查看患者' : '患者数据读取失败：请检查后端 API');
-        }
-      });
-
-    return () => {
-      ignore = true;
-    };
+  const refreshWorkspaceData = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) {
+      setPatientLoadStatus('loading');
+    }
+    try {
+      const dataset = await fetchWorkspaceDataset();
+      setPatients(dataset.patients);
+      setSampleRows(dataset.samples);
+      setOmicsRows(dataset.omics);
+      setPatientLoadStatus('ready');
+      setSaveStatus(dataset.patients.length ? `已读取 ${dataset.patients.length} 名患者` : '当前授权范围暂无患者');
+    } catch (error) {
+      setPatients([]);
+      setSampleRows([]);
+      setOmicsRows([]);
+      setPatientLoadStatus('error');
+      setSaveStatus(isPermissionError(error) ? '后端登录已失效，请重新登录后查看患者' : '患者数据读取失败：请检查后端 API');
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshWorkspaceData();
+  }, [refreshWorkspaceData]);
+
+  useEffect(() => {
+    const refresh = () => void refreshWorkspaceData({ silent: true });
+    window.addEventListener(workspaceDataChangedEvent, refresh);
+    return () => window.removeEventListener(workspaceDataChangedEvent, refresh);
+  }, [refreshWorkspaceData]);
 
   const filteredPatients = useMemo(() => {
     return studyScopedPatients
@@ -1296,6 +1296,7 @@ export function PatientCohortPage({
       <div className="patient-sample-section" ref={sampleSectionRef}>
         <SampleTestingPage
           selectedPatient={sampleFocusPatient}
+          availablePatients={studyScopedPatients}
           embedded
           createSampleRequest={sampleCreateRequest}
           createOmicsRequest={omicsCreateRequest}

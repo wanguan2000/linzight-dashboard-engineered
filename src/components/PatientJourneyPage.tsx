@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ElementRef, type PointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ElementRef, type PointerEvent } from 'react';
 import {
   journeyCategoryConfig,
   journeyEnd,
@@ -17,7 +17,7 @@ import {
 } from '../data/operations';
 import { type PatientRecord } from '../data/patientCohort';
 import { useI18n } from '../i18n/I18nProvider';
-import { fetchPatientPanorama, fetchWorkspaceDataset, getCurrentScopedStudyId, recordBelongsToCurrentStudyScope } from '../services/api';
+import { fetchPatientPanorama, fetchWorkspaceDataset, getCurrentScopedStudyId, recordBelongsToCurrentStudyScope, workspaceDataChangedEvent } from '../services/api';
 import type { IconName } from '../types';
 import { Icon } from './Icon';
 
@@ -616,45 +616,45 @@ export function PatientJourneyPage({
   const currentStudyId = getCurrentScopedStudyId();
   const patient = activePatient;
 
-  useEffect(() => {
-    let ignore = false;
-
-    void fetchWorkspaceDataset()
-      .then((dataset) => {
-        if (ignore) return;
-        setPatients(dataset.patients);
-        setJourneySource({
-          visits: dataset.visits,
-          followUps: dataset.followUps,
-          samples: dataset.samples,
-          omics: dataset.omics
-        });
-        if (!dataset.patients.length) {
-          setActivePatient(null);
-          setSelectedEventId(null);
-          return;
-        }
-        setActivePatient((current) => {
-          if (scopedSelectedPatient) {
-            return dataset.patients.find((item) => item.id === scopedSelectedPatient.id || item.name === scopedSelectedPatient.name) ?? dataset.patients[0];
-          }
-          if (current) return dataset.patients.find((item) => item.id === current.id || item.name === current.name) ?? dataset.patients[0];
-          return dataset.patients[0];
-        });
-      })
-      .catch(() => {
-        if (!ignore) {
-          setPatients([]);
-          setJourneySource(emptyJourneySource);
-          setActivePatient(null);
-          setSelectedEventId(null);
-        }
+  const refreshJourneyWorkspaceData = useCallback(async () => {
+    try {
+      const dataset = await fetchWorkspaceDataset();
+      setPatients(dataset.patients);
+      setJourneySource({
+        visits: dataset.visits,
+        followUps: dataset.followUps,
+        samples: dataset.samples,
+        omics: dataset.omics
       });
-
-    return () => {
-      ignore = true;
-    };
+      if (!dataset.patients.length) {
+        setActivePatient(null);
+        setSelectedEventId(null);
+        return;
+      }
+      setActivePatient((current) => {
+        if (scopedSelectedPatient) {
+          return dataset.patients.find((item) => item.id === scopedSelectedPatient.id || item.name === scopedSelectedPatient.name) ?? dataset.patients[0];
+        }
+        if (current) return dataset.patients.find((item) => item.id === current.id || item.name === current.name) ?? dataset.patients[0];
+        return dataset.patients[0];
+      });
+    } catch {
+      setPatients([]);
+      setJourneySource(emptyJourneySource);
+      setActivePatient(null);
+      setSelectedEventId(null);
+    }
   }, [scopedSelectedPatient]);
+
+  useEffect(() => {
+    void refreshJourneyWorkspaceData();
+  }, [refreshJourneyWorkspaceData]);
+
+  useEffect(() => {
+    const refresh = () => void refreshJourneyWorkspaceData();
+    window.addEventListener(workspaceDataChangedEvent, refresh);
+    return () => window.removeEventListener(workspaceDataChangedEvent, refresh);
+  }, [refreshJourneyWorkspaceData]);
 
   useEffect(() => {
     if (selectedPatient && recordBelongsToCurrentStudyScope(selectedPatient)) {

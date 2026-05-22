@@ -195,6 +195,7 @@ const exactEnglish: Record<string, string> = {
   '返回登录': 'Back to sign in',
   '重置邮件正在发送...': 'Sending reset email...',
   '如果账号存在，系统会发送密码重置邮件。': 'If the account exists, the system will send a password reset email.',
+  '邮件服务尚未配置，请联系 LZ 系统管理员。': 'Email service is not configured; contact the LZ system administrator.',
   '邮件服务暂不可用，请联系 LZ 系统管理员。': 'Email service is temporarily unavailable; contact the LZ system administrator.',
   '缺少密码重置 token。': 'Missing password reset token.',
   '密码正在更新...': 'Updating password...',
@@ -518,6 +519,10 @@ const exactEnglish: Record<string, string> = {
   'Edit': 'Edit',
   'Enable': 'Enable',
   'Disable': 'Disable',
+  'Delete': 'Delete',
+  'Deleted': 'Deleted',
+  '软删除账号并保留审计记录': 'Archive account and retain audit trail',
+  '当前账户不能删除或当前角色无权限': 'This account cannot be deleted or the current role has no permission',
   '文件': 'File',
   '打印知情': 'Print consent',
   '上传知情': 'Upload consent',
@@ -712,9 +717,64 @@ const exactEnglish: Record<string, string> = {
   '仅保存当前 Study 的配置，不影响其他 Study': 'Only saves the current Study configuration and does not affect other Studies',
   '知情同意与当前 Study 配置总表关联': 'Consent is linked to the current Study configuration table',
   '知情同意模板': 'Consent Template',
+  '知情同意模板配置': 'Consent Template Configuration',
+  '当前 Study 配置总表': 'Current Study Configuration Table',
+  '当前 Study 知情同意模板': 'Current Study Consent Template',
+  '模板': 'Template',
+  '当前生效模板': 'Current Effective Template',
+  '模板编号': 'Template ID',
+  '来源': 'Source',
+  'Study 显式配置': 'Explicit Study configuration',
+  '疾病领域自动匹配': 'Matched by disease area',
+  '系统默认兜底': 'System default fallback',
+  '当前 Study 生效中': 'Effective for the current Study',
+  '尚未保存为 Study 显式配置': 'Not yet saved as explicit Study configuration',
+  '需要配置模板': 'Template configuration required',
+  '建议保存为当前 Study 配置': 'Recommended to save as current Study configuration',
+  '当前 Study 尚未匹配到可用模板，请选择或填写自定义模板。':
+    'No usable template was matched for the current Study. Select a template or enter a custom template.',
+  '模板选择': 'Template Selection',
+  '模板编号或说明': 'Template ID or Description',
+  '自定义模板编号 / 说明': 'Custom template ID / description',
+  '知情同意模板预览': 'Consent Template Preview',
+  '预览摘要': 'Preview Summary',
+  '自定义模板将按当前编号或说明在知情同意页展示。':
+    'The custom template will be shown on the consent page using the current ID or description.',
+  '已审批 PDF 模板': 'Approved PDF Template',
+  '尚未上传': 'Not uploaded',
+  '上传时间': 'Uploaded at',
+  '上传伦理或项目组已审批的 PDF 知情同意模板，患者页仍按患者上传已签署文件归档。':
+    'Upload the IRB- or project-approved PDF consent template; the patient page still archives patient-specific signed uploads.',
+  '仅绑定当前 Study': 'Bound to current Study only',
+  '上传已审批 PDF': 'Upload Approved PDF',
+  '查看已审批 PDF': 'View Approved PDF',
+  '保存为当前 Study 配置': 'Save as Current Study Configuration',
+  '打开知情同意页预览': 'Open Consent Page Preview',
+  '真实世界肺癌耐药研究知情同意 v1.0': 'Real-world Lung Cancer Resistance Study Informed Consent v1.0',
+  '免疫相关性神经系统疾病知情同意 v20260423': 'Immune-related Neurological Disease Informed Consent v20260423',
+  '适用于肺癌、NSCLC、靶向/免疫治疗及耐药真实世界研究。':
+    'For lung cancer, NSCLC, targeted/immunotherapy, and resistance real-world studies.',
+  '适用于 NPSLE、MS、NMOSD 等免疫相关性神经系统疾病多组学研究。':
+    'For multi-omics studies of immune-related neurological diseases such as NPSLE, MS, and NMOSD.',
+  '已打开当前 Study 知情同意模板预览；如需纸质归档，请在预览页打印':
+    'Opened the current Study consent template preview; print from the preview page for paper archiving.',
+  '浏览器阻止了知情同意预览弹窗，请允许弹窗后重试':
+    'The browser blocked the consent preview pop-up. Allow pop-ups and try again.',
+  '请在 Study 系统管理中维护当前 Study 的知情同意模板编号或说明；知情同意页会按该配置展示模板信息，并与患者签署记录保持同一 Study 范围。':
+    'Maintain the current Study consent template ID or description in Study System Management; the consent page displays that configuration in the same Study scope as patient signing records.',
   '请输入当前 Study 的知情同意模板编号或说明': 'Enter the current Study consent template ID or description',
   '恢复当前配置': 'Restore Current Configuration',
   '保存知情同意配置': 'Save Consent Configuration',
+  '知情同意模板不能为空': 'Consent template cannot be empty',
+  '后端不可用，或当前角色无本 Study 知情同意配置权限':
+    'Backend unavailable, or current role cannot configure consent for this Study',
+  '请先选择 Study，再上传知情同意模板 PDF': 'Select a Study before uploading a consent template PDF',
+  '知情同意模板只支持上传已审批 PDF 文件': 'Consent templates only support approved PDF files',
+  '知情同意模板 PDF 上传失败；请确认后端连接、当前 Study 权限和文件扫描状态':
+    'Consent template PDF upload failed; check backend connection, current Study permission, and file scan status',
+  '当前 Study 尚未上传已审批知情同意模板 PDF': 'The current Study has no uploaded approved consent template PDF',
+  '知情同意模板 PDF 打开失败；请确认文件权限、扫描状态和后端连接':
+    'Failed to open the consent template PDF; check file permission, scan status, and backend connection',
   '新增字段': 'Add field',
   'Edit CRF Field': 'Edit CRF Field',
   'Field Name': 'Field Name',
@@ -799,6 +859,7 @@ const exactEnglish: Record<string, string> = {
   '权限校验 / Permission Checks': 'Permission Checks',
   'active': 'Active',
   'disabled': 'Disabled',
+  'deleted': 'Deleted',
   'open': 'Open',
   'answered': 'Answered',
   'closed': 'Closed',
@@ -890,6 +951,8 @@ const exactEnglish: Record<string, string> = {
   '样本编辑表单': 'Sample edit form',
   '检测编辑表单': 'Test edit form',
   '样本表单缺少必填字段': 'Sample form is missing required fields',
+  '样本表单缺少必填字段：条码 / 样本编号、患者、样本类型和采集日期为必填项': 'Sample form is missing required fields: barcode / sample ID, patient, sample type, and collection date are required.',
+  '待填写样本编号': 'Sample ID required',
   '检测表单缺少必填字段': 'Test form is missing required fields',
   '未选择': 'Not selected',
   '维护患者疾病类型、样本类型、检测类型和单位类型字典，供患者队列与样本及检测下拉框使用。':
@@ -909,6 +972,7 @@ const exactEnglish: Record<string, string> = {
   '当前版本': 'Current version',
   '当前模板': 'Current template',
   '当前患者': 'Current patient',
+  '已上传文件': 'Uploaded file',
   '伦理批准': 'IRB approved',
   '知情同意书章节': 'Consent form sections',
   '知情同意内容': 'Consent content',
@@ -919,12 +983,23 @@ const exactEnglish: Record<string, string> = {
   '确认理解': 'Confirm understanding',
   '确认已充分理解': 'Confirm adequate understanding',
   '完成签署流程': 'Complete signature workflow',
+  '线下签署': 'Offline signature',
+  '打印后完成纸质签署': 'Print and complete paper signature',
   '归档': 'Archive',
   '电子归档与留痕': 'Electronic archive and audit trail',
+  '上传归档': 'Upload archive',
+  '上传已签署文件并归档留痕': 'Upload signed file and retain archive trail',
   '患者知情同意列表': 'Patient consent list',
   '搜索患者编号或住院号': 'Search patient ID or hospital No.',
   '签署日期': 'Signed date',
   '版本': 'Version',
+  '打印模板': 'Print template',
+  '上传已签署文件': 'Upload signed file',
+  '查看已上传文件': 'View uploaded file',
+  '标记撤回': 'Mark withdrawn',
+  '暂无已上传知情文件': 'No uploaded consent file',
+  '该状态来自历史审批流程，本版患者知情同意页不处理审批。':
+    'This status comes from the earlier approval flow; this patient consent page does not process approvals in this version.',
   '免疫相关性神经系统疾病多组学解析及机制探索': 'Multi-omics Analysis and Mechanistic Study of Immune-related Neurological Diseases',
   '研究详情入口当前为展示状态': 'Study detail entry is display-only in this demo',
   '研究项目概述': 'Study overview',
@@ -1085,6 +1160,8 @@ const exactEnglish: Record<string, string> = {
   '已撤回知情同意，正在同步后端中...': 'Consent withdrawn; syncing backend...',
   '已撤回知情同意，已同步后端': 'Consent withdrawn; backend synced',
   '已撤回知情同意，后端不可用，已保存在本页': 'Consent withdrawn; backend unavailable, saved on this page',
+  '已标记知情同意撤回，正在同步后端中...': 'Consent withdrawal marked; syncing backend...',
+  '已标记知情同意撤回，已同步后端': 'Consent withdrawal marked; backend synced',
   '已发起重签，正在同步后端中...': 'Re-sign started; syncing backend...',
   '已发起重签，已同步后端': 'Re-sign started; backend synced',
   '已发起重签，后端不可用，已保存在本页': 'Re-sign started; backend unavailable, saved on this page',
@@ -1694,8 +1771,48 @@ const dynamicRules: DynamicRule[] = [
     format: (filename) => `Consent file ${filename} uploaded and signed; backend unavailable, saved on this page`
   },
   {
+    pattern: /^知情文件 (.+) 已上传并归档，正在同步后端中\.\.\.$/,
+    format: (filename) => `Consent file ${filename} uploaded and archived; syncing backend...`
+  },
+  {
+    pattern: /^知情文件 (.+) 已上传并归档，已同步后端$/,
+    format: (filename) => `Consent file ${filename} uploaded and archived; backend synced`
+  },
+  {
     pattern: /^知情文件 (.+) 上传失败；请确认后端连接和文件权限$/,
     format: (filename) => `Consent file ${filename} upload failed; check backend connectivity and file permission`
+  },
+  {
+    pattern: /^患者 (.+) 暂无已上传知情文件$/,
+    format: (patient) => `No uploaded consent file for ${patient}`
+  },
+  {
+    pattern: /^正在打开 (.+) 的已上传知情文件：(.+)$/,
+    format: (patient, filename) => `Opening uploaded consent file for ${patient}: ${filename}`
+  },
+  {
+    pattern: /^已打开 (.+) 的已上传知情文件：(.+)$/,
+    format: (patient, filename) => `Opened uploaded consent file for ${patient}: ${filename}`
+  },
+  {
+    pattern: /^已上传知情文件打开失败；请确认后端连接、文件权限和扫描状态$/,
+    format: () => 'Failed to open uploaded consent file; check backend connection, file permission, and scan status'
+  },
+  {
+    pattern: /^正在上传 (.+) 的知情同意模板 PDF：(.+)$/,
+    format: (study, filename) => `Uploading consent template PDF for ${study}: ${filename}`
+  },
+  {
+    pattern: /^已上传 (.+) 的知情同意模板 PDF：(.+)$/,
+    format: (study, filename) => `Uploaded consent template PDF for ${study}: ${filename}`
+  },
+  {
+    pattern: /^正在打开知情同意模板 PDF：(.+)$/,
+    format: (filename) => `Opening consent template PDF: ${filename}`
+  },
+  {
+    pattern: /^已打开知情同意模板 PDF：(.+)$/,
+    format: (filename) => `Opened consent template PDF: ${filename}`
   },
   {
     pattern: /^(.+)失败：后端未接受知情同意变更$/,
