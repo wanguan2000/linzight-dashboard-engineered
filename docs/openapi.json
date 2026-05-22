@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "LinZight RWS EDC API",
-    "version": "1.0.3"
+    "version": "1.0.4"
   },
   "paths": {
     "/health": {
@@ -9063,6 +9063,17 @@
             ],
             "title": "Consent Id"
           },
+          "study_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Study Id"
+          },
           "uploaded_by": {
             "anyOf": [
               {
@@ -10335,7 +10346,8 @@
           },
           "name": {
             "type": "string",
-            "title": "Name"
+            "title": "Name",
+            "default": ""
           },
           "hospital_no": {
             "type": "string",
@@ -10390,7 +10402,6 @@
         },
         "type": "object",
         "required": [
-          "name",
           "hospital_no",
           "sex",
           "age",
@@ -10615,7 +10626,14 @@
             "title": "Linked Omics"
           },
           "id": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Id"
           }
         },
@@ -10628,8 +10646,7 @@
           "visit",
           "collected_at",
           "storage",
-          "status",
-          "id"
+          "status"
         ],
         "title": "SampleCreate"
       },
@@ -10950,7 +10967,14 @@
             "title": "Id"
           },
           "code": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Code"
           },
           "name": {
@@ -10996,7 +11020,6 @@
         "type": "object",
         "required": [
           "id",
-          "code",
           "name",
           "indication"
         ],

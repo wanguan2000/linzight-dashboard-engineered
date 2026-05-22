@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-05-22
+
 ### Added
 
 - Study Registry and patient list now display a backend-normalized two-digit Study Code.
@@ -17,6 +19,7 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 - Patient numbers are backend-generated, globally unique, read-only identifiers from `H00010` to `H99999`.
 - Sample IDs are backend-generated and read-only using `S` + Study Code + patient-number suffix + per-patient sequence, such as `S0508001`.
 - Sample remaining quantity is now calculated from initial quantity, sent quantity, and returned quantity.
+- Login page desktop layout now matches the internal-pilot dashboard composition while mobile layout removes horizontal overflow so account fields remain reachable.
 
 ## [1.0.3] - 2026-05-21
 

@@ -102,7 +102,7 @@ except ImportError:  # Allows `cd backend && uvicorn main:app`.
     from schemas import ApprovalActionCreate, ApprovalRequestCreate, ConsentUpdate, CrfEntryCreate, CrfEntryUpdate, DataQueryCreate, DataQueryUpdate, ExportJobCreate, FollowUpRecordCreate, FollowUpRecordUpdate, GlobalConfigurationUpdate, GlobalRoleStudyScopeUpdate, LoginRequest, LoginResponse, OmicsCreate, OmicsUpdate, PasswordResetConfirm, PasswordResetRequest, PatientCreate, PatientUpdate, SampleCreate, SampleUpdate, SiteCreate, SiteUserAssign, StudyConfigurationUpdate, StudyCreate, StudyCrfFieldCreate, StudyCrfFieldUpdate, StudyCrfMigrationApprovalAction, StudyCrfMigrationApprovalCreate, StudyCrfMigrationPreviewRequest, StudyCrfVersionCreate, StudyCrfVersionUpdate, StudyMemberCreate, StudyUpdate, StudyVisitPlanCreate, StudyVisitPlanUpdate, UserCreate, UserPublic, UserStatusUpdate, UserUpdate, VisitUpdate
     from seed import seed_database
 
-app = FastAPI(title="LinZight RWS EDC API", version="1.0.3")
+app = FastAPI(title="LinZight RWS EDC API", version="1.0.4")
 PASSWORD_RESET_TTL_SECONDS = int(os.getenv("LINZIGHT_PASSWORD_RESET_TTL_SECONDS", str(30 * 60)))
 
 LEGACY_ROLE_BY_ROLE_CODE = {

@@ -2,7 +2,7 @@
 
 ## 发布包内容
 
-- `RELEASE_NOTES.md` / `docs/release-notes-v1.0.3.md`
+- `RELEASE_NOTES.md` / `docs/release-notes-v1.0.4.md`
 - `docs/demo-readiness-checklist.md`
 - `docs/07-production-release-candidate-workflows.md`
 - `docs/08-permission-matrix.md`
@@ -36,7 +36,7 @@
 - 导出任务记录 Study、操作者、生成时间和下载行为。
 - 390px 视口可跑患者、CRF、样本、Query、审批主链路；operation logs 由 API smoke 和数据库检查验证。
 - 中英文切换无明显硬编码阻断。
-- Release notes 明确：`v1.0.3` 是内部试点与真实业务场景验证版本，不可直接承载未经合规审批的真实患者生产数据。
+- Release notes 明确：`v1.0.4` 是内部试点与真实业务场景验证版本，不可直接承载未经合规审批的真实患者生产数据。
 
 ## 回滚步骤
 
@@ -48,4 +48,4 @@
 
 ## 发布限制声明
 
-当前 `v1.0.3` 内部试点包用于客户在受控环境中验证真实业务流程、角色权限、Study 配置和数据闭环；正式 Docker 启动为空库，仅保留首个 LZ 系统管理员。正式运行数据库固定为 PostgreSQL，SQLite 只允许隔离 smoke/旧迁移工具显式开启。真实患者生产上线前，必须完成生产 PostgreSQL runtime、集中身份源、真实对象存储、真实病毒扫描、安全审计、备份恢复演练、UAT 签字和合规评估。
+当前 `v1.0.4` 内部试点包用于客户在受控环境中验证真实业务流程、角色权限、Study 配置和数据闭环；正式 Docker 启动为空库，仅保留首个 LZ 系统管理员。正式运行数据库固定为 PostgreSQL，SQLite 只允许隔离 smoke/旧迁移工具显式开启。真实患者生产上线前，必须完成生产 PostgreSQL runtime、集中身份源、真实对象存储、真实病毒扫描、安全审计、备份恢复演练、UAT 签字和合规评估。

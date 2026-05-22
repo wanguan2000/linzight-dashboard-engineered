@@ -2,16 +2,17 @@
 
 ## 当前版本
 
-`v1.0.3`
+`v1.0.4`
 
 ## 当前状态
 
-项目处于 `v1.0.3` 内部试点发布阶段。前端为 Vite + React + TypeScript dashboard，后端为 FastAPI API，正式运行数据库固定为 PostgreSQL；本地试点运行目标切到 Homebrew PostgreSQL 17.10 的 `linzight_dashboard_engineered`，Docker Compose 后端默认连接宿主机 `host.docker.internal:5432` 的同一库。临时 smoke、旧 SQLite 备份恢复和迁移导出脚本必须显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 才可使用 SQLite URL。正式启动只创建首个 LZ 系统管理员，不再自动 seed Study、患者或检测数据；`npm run export:html` 可生成八个可直接打开的交互式 HTML 页面。本版本用于客户在受控内部试点环境中验证真实业务场景、真实角色分工和真实 Study 配置；PostgreSQL RLS 已按当前试点范围移入后续生产强化项，未经合规审批、备份恢复演练和安全签字前，不应直接承载真实患者生产数据。
+项目处于 `v1.0.4` 内部试点发布阶段。前端为 Vite + React + TypeScript dashboard，后端为 FastAPI API，正式运行数据库固定为 PostgreSQL；本地试点运行目标切到 Homebrew PostgreSQL 17.10 的 `linzight_dashboard_engineered`，Docker Compose 后端默认连接宿主机 `host.docker.internal:5432` 的同一库。临时 smoke、旧 SQLite 备份恢复和迁移导出脚本必须显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 才可使用 SQLite URL。正式启动只创建首个 LZ 系统管理员，不再自动 seed Study、患者或检测数据；`npm run export:html` 可生成八个可直接打开的交互式 HTML 页面。本版本用于客户在受控内部试点环境中验证真实业务场景、真实角色分工和真实 Study 配置；PostgreSQL RLS 已按当前试点范围移入后续生产强化项，未经合规审批、备份恢复演练和安全签字前，不应直接承载真实患者生产数据。
 
 ## 已实现功能
 
 - 登录页使用后端账号认证，不再展示 Demo 账号认证回退；登录页支持 `Study 研究入口` 和 `LZ 系统管理`。Study 入口先认证账号，账号只授权一个 Study 时直接进入该 Study Workspace，授权多个 Study 时再选择工作区；LZ 平台角色可在 LZ 系统管理态跨授权 Study 管理业务数据，但读写仍使用 `/studies/{study_id}/...`。
 - 首页工作台、患者队列管理、知情同意、临床数据采集、样本及检测、患者旅程、数据分析、系统管理。
+- 登录首页桌面端恢复工作台介绍与账号卡片的双栏排版，移动端改为单列自适应，避免全局最小宽度导致手机无法触达账号和密码输入框。
 - 患者队列搜索、筛选、列表和进入患者旅程/临床数据采集的联动。
 - 临床数据采集 CRF 和随访录入；样本采集台账已移动到患者队列管理页面下方。
 - 知情同意列表、状态管理、版本信息和同意书预览；当前患者知情同意页按内部试点的线下流程收敛为打印 Study 模板、上传已签署纸质文件、查看上传归档和直接标记撤回，重签申请与 eConsent 审批队列摘要暂不在患者知情同意页展示。Study 系统管理中的知情同意模板配置支持上传和查看当前 Study 绑定的已审批 PDF 模板文件。
