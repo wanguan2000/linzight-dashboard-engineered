@@ -1827,6 +1827,73 @@
   gap: 8px;
 }
 
+.sample-testing-card-header {
+  align-items: flex-start;
+}
+
+.sample-testing-card-header > div:first-child {
+  flex: 0 0 auto;
+}
+
+.sample-testing-card-header .module-header-actions {
+  flex: 1 1 720px;
+  min-width: 0;
+}
+
+.sample-testing-title-filters {
+  display: flex;
+  flex: 1 1 640px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.sample-testing-title-filters input,
+.sample-testing-title-filters select {
+  height: 34px;
+  min-width: 94px;
+  max-width: 180px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: color-mix(in srgb, var(--text-secondary) 72%, var(--text-primary));
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  font-weight: 800;
+  outline: none;
+}
+
+.sample-testing-title-filters input:focus,
+.sample-testing-title-filters select:focus {
+  border-color: rgba(58, 123, 213, 0.58);
+  box-shadow: 0 0 0 3px rgba(58, 123, 213, 0.11);
+}
+
+.sample-testing-title-filters > input {
+  flex: 1 1 220px;
+  min-width: 210px;
+  max-width: 300px;
+}
+
+.sample-testing-title-filters--omics > input {
+  min-width: 190px;
+  max-width: 260px;
+}
+
+.sample-testing-date-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.sample-testing-date-range input {
+  width: 128px;
+  min-width: 118px;
+}
+
 .module-action-hint {
   color: var(--text-secondary);
   font-size: 12px;
@@ -5154,6 +5221,44 @@
 
 .patient-table tbody tr:last-child td {
   border-bottom: 0;
+}
+
+.patient-study-pill {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-width: 112px;
+  max-width: 174px;
+  min-height: 39px;
+  padding: 5px 10px;
+  border-radius: 12px;
+  color: var(--blue);
+  background: rgba(58, 123, 213, 0.1);
+  line-height: 1.12;
+  vertical-align: middle;
+}
+
+.patient-study-pill strong,
+.patient-study-pill span {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.patient-study-pill strong {
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.patient-study-pill span {
+  color: color-mix(in srgb, var(--blue) 72%, var(--text-secondary));
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .disease-pill,

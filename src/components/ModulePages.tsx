@@ -645,12 +645,14 @@ function normalizeSampleStatus(status: string): '已采集' | '检测中' | '检
 type OmicsDisplayStatus = '待检测' | '检测中' | '检测完成' | '已归档';
 type OmicsDisplayQc = '待检' | '未通过' | '已通过';
 type OmicsFilterStatus = '全部' | OmicsDisplayStatus;
+type DateSortDirection = 'desc' | 'asc';
 
 type SampleDetectionRow = {
   id: string;
   omicsId?: string;
   studyId?: string;
   patientName: string;
+  hospitalNo: string;
   sampleId: string;
   sampleIds: string[];
   sampleType: string;
@@ -800,7 +802,7 @@ function buildSampleDetectionRows(sampleRows: SampleRecord[], omicsRows: OmicsRe
       .map((sampleId) => sampleRows.find((item) => item.id === sampleId))
       .filter(Boolean) as SampleRecord[];
     const sample = linkedSamples[0] ?? sampleRows.find((item) => item.id === record.sampleId);
-    const sampleIds = linkedSamples.length ? linkedSamples.map((item) => formatSampleLedgerId(item, sampleRows)) : [record.sampleId];
+    const sampleIds = linkedSamples.length ? linkedSamples.map(formatSampleLedgerId) : [record.sampleId];
     const sampleId = sampleIds.join(' / ');
     const status = normalizeOmicsDisplayStatus(record.status, sample?.status);
     const resultFile = resultFileDisplay(record, filesById);
@@ -810,6 +812,7 @@ function buildSampleDetectionRows(sampleRows: SampleRecord[], omicsRows: OmicsRe
       omicsId: record.id,
       studyId: record.studyId ?? sample?.studyId,
       patientName: record.patientName,
+      hospitalNo: Array.from(new Set(linkedSamples.map((item) => item.hospitalNo).filter(Boolean))).join(' / ') || sample?.hospitalNo || '-',
       sampleId,
       sampleIds,
       sampleType: linkedSamples.length > 1 ? linkedSamples.map((item) => item.sampleType).join(' / ') : sample?.sampleType ?? record.sampleType,
@@ -833,13 +836,14 @@ function buildSampleDetectionRows(sampleRows: SampleRecord[], omicsRows: OmicsRe
       });
       const assays = unmatchedLinkedOmics.length ? unmatchedLinkedOmics : representedSampleIds.has(sample.id) ? [] : ['待指定'];
       const status = normalizeOmicsDisplayStatus(undefined, sample.status);
-      const sampleId = formatSampleLedgerId(sample, sampleRows);
+      const sampleId = formatSampleLedgerId(sample);
 
       return assays.map((assay, index) => ({
         id: `${sample.id}-${index}`,
         omicsId: undefined,
         studyId: sample.studyId,
         patientName: sample.patientName,
+        hospitalNo: sample.hospitalNo || '-',
         sampleId,
         sampleIds: [sampleId],
         sampleType: sample.sampleType,
@@ -858,18 +862,8 @@ function buildSampleDetectionRows(sampleRows: SampleRecord[], omicsRows: OmicsRe
   return [...rowsFromOmics, ...rowsFromSamples].sort((a, b) => b.collectedAt.localeCompare(a.collectedAt));
 }
 
-function formatSampleLedgerId(sample: SampleRecord, sampleRows: SampleRecord[]) {
-  const baseId = formatSampleLibraryId(sample);
-  const siblingSamples = sampleRows.filter(
-    (item) =>
-      (sample.patientId ? item.patientId === sample.patientId : item.patientName === sample.patientName) &&
-      item.sampleType === sample.sampleType &&
-      item.studyId === sample.studyId
-  );
-  if (siblingSamples.length <= 1) return baseId;
-
-  const siblingIndex = siblingSamples.findIndex((item) => item.id === sample.id);
-  return `${baseId}-${String(siblingIndex + 1).padStart(2, '0')}`;
+function formatSampleLedgerId(sample: SampleRecord) {
+  return sample.id;
 }
 
 function buildSampleLedgerRows(sampleRows: SampleRecord[]): SampleLedgerRow[] {
@@ -879,7 +873,7 @@ function buildSampleLedgerRows(sampleRows: SampleRecord[]): SampleLedgerRow[] {
       studyId: sample.studyId,
       patientName: sample.patientName,
       hospitalNo: sample.hospitalNo,
-      sampleId: formatSampleLedgerId(sample, sampleRows),
+      sampleId: formatSampleLedgerId(sample),
       sampleType: sample.sampleType,
       collectedAt: formatDateOnly(sample.collectedAt),
 	      storage: sample.storage,
@@ -905,7 +899,7 @@ const lungClinicalDataGroups = [
 
 const lungClinicalFieldAllowList = new Set(lungClinicalDataGroups.flatMap((group) => group.fields));
 
-function formatClinicalValue(value: string | number | undefined) {
+function formatClinicalValue(value: string | number | null | undefined) {
   if (value === undefined || value === null || value === '') return '-';
   return String(value);
 }
@@ -1616,8 +1610,8 @@ function OmicsTable({
               {sampleRowSpans[index] > 0 && <td rowSpan={sampleRowSpans[index]}>{record.sampleId}</td>}
               <td>{t(record.sampleType)}</td>
               <td>{t(record.assay)}</td>
-              <td>{record.vendor || '-'}</td>
-              <td>{record.usageSummary}</td>
+              <td>{t(record.vendor || '-')}</td>
+              <td>{t(record.usageSummary)}</td>
               <td><StatusPill value={record.status} /></td>
               <td>{formatDateOnly(record.sentAt)}</td>
               <td><StatusPill value={record.qc} /></td>
@@ -1694,9 +1688,9 @@ function SampleLedgerTable({
               <td>{row.sampleId}</td>
               <td>{t(row.sampleType)}</td>
               <td>{row.collectedAt}</td>
-              <td>{row.storage}</td>
-              <td>{row.remainingQuantity}</td>
-              <td>{row.linkedOmics}</td>
+              <td>{t(row.storage)}</td>
+              <td>{t(row.remainingQuantity)}</td>
+              <td>{t(row.linkedOmics)}</td>
               <td>{t(row.note)}</td>
               <td>
                 <div className="module-table-actions">
@@ -2520,7 +2514,7 @@ export function OmicsTestingPage() {
               <tbody>
                 {records.map((record) => (
                   <tr key={record.id} onClick={() => setSelected(record)}>
-                    <td>{record.id}</td><td>{record.sampleId}</td><td>{record.patientName}</td><td>{record.sampleType}</td><td>{record.assay}</td><td>{record.vendor || '-'}</td><td>{record.platform}</td>
+                    <td>{record.id}</td><td>{record.sampleId}</td><td>{record.patientName}</td><td>{t(record.sampleType)}</td><td>{t(record.assay)}</td><td>{t(record.vendor || '-')}</td><td>{t(record.platform)}</td>
                     <td><StatusPill value={record.status} /></td><td><StatusPill value={record.qc} /></td><td><button className="module-link-button" type="button" disabled title={t('文件下载需等待结果文件上传')}>{t('文件')}</button></td>
                   </tr>
                 ))}
@@ -2603,21 +2597,22 @@ export function SampleTestingPage({
   const [records, setRecords] = useState<OmicsRecord[]>([]);
   const [fileRows, setFileRows] = useState<ApiFileMetadata[]>([]);
   const [studyFilter, setStudyFilter] = useState('全部 Study');
-  const [samplePatientQuery, setSamplePatientQuery] = useState('');
-  const [sampleIdQuery, setSampleIdQuery] = useState('');
+  const [sampleSearchQuery, setSampleSearchQuery] = useState('');
   const [sampleTypeFilter, setSampleTypeFilter] = useState('全部');
+  const [sampleLinkedOmicsFilter, setSampleLinkedOmicsFilter] = useState('全部');
   const [sampleDateFrom, setSampleDateFrom] = useState('');
   const [sampleDateTo, setSampleDateTo] = useState('');
+  const [sampleDateSort, setSampleDateSort] = useState<DateSortDirection>('desc');
   const [sampleLedgerPage, setSampleLedgerPage] = useState(1);
   const [omicsStatusFilter, setOmicsStatusFilter] = useState<OmicsFilterStatus>('全部');
   const [omicsAssayFilter, setOmicsAssayFilter] = useState('全部');
   const [omicsSampleTypeFilter, setOmicsSampleTypeFilter] = useState('全部');
   const [omicsVendorFilter, setOmicsVendorFilter] = useState('全部');
-  const [omicsUsageFilter, setOmicsUsageFilter] = useState('全部');
-  const [omicsSentAtFilter, setOmicsSentAtFilter] = useState('全部');
+  const [omicsSentAtFrom, setOmicsSentAtFrom] = useState('');
+  const [omicsSentAtTo, setOmicsSentAtTo] = useState('');
+  const [omicsSentAtSort, setOmicsSentAtSort] = useState<DateSortDirection>('desc');
   const [omicsQcFilter, setOmicsQcFilter] = useState('全部');
-  const [omicsPatientQuery, setOmicsPatientQuery] = useState('');
-  const [omicsSampleQuery, setOmicsSampleQuery] = useState('');
+  const [omicsSearchQuery, setOmicsSearchQuery] = useState('');
   const [omicsPage, setOmicsPage] = useState(1);
   const [uploadStatus, setUploadStatus] = useState('未上传文件');
   const [sampleTestingEditor, setSampleTestingEditor] = useState<SampleTestingEditor | null>(null);
@@ -2661,19 +2656,30 @@ export function SampleTestingPage({
     () => ['全部', ...Array.from(new Set([...configuredSampleTypes, ...sampleLedgerRows.map((row) => row.sampleType)]))],
     [configuredSampleTypes, sampleLedgerRows]
   );
+  const sampleLinkedOmicsOptions = useMemo(
+    () => ['全部', ...Array.from(new Set(sampleLedgerRows.map((row) => row.linkedOmics || '待指定检测')))],
+    [sampleLedgerRows]
+  );
   const filteredSampleLedgerRows = useMemo(() => {
-    const patientQuery = samplePatientQuery.trim().toLowerCase();
-    const idQuery = sampleIdQuery.trim().toLowerCase();
+    const query = sampleSearchQuery.trim().toLowerCase();
 
-    return sampleLedgerRows.filter((row) => {
-      if (patientQuery && !row.patientName.toLowerCase().includes(patientQuery) && !row.studyId?.toLowerCase().includes(patientQuery)) return false;
-      if (idQuery && !row.sampleId.toLowerCase().includes(idQuery)) return false;
+    return sampleLedgerRows
+      .filter((row) => {
+      if (
+        query &&
+        !row.patientName.toLowerCase().includes(query) &&
+        !row.hospitalNo.toLowerCase().includes(query) &&
+        !row.sampleId.toLowerCase().includes(query) &&
+        !row.studyId?.toLowerCase().includes(query)
+      ) return false;
       if (sampleTypeFilter !== '全部' && row.sampleType !== sampleTypeFilter) return false;
+      if (sampleLinkedOmicsFilter !== '全部' && row.linkedOmics !== sampleLinkedOmicsFilter) return false;
       if (sampleDateFrom && row.collectedAt < sampleDateFrom) return false;
       if (sampleDateTo && row.collectedAt > sampleDateTo) return false;
       return true;
-    });
-  }, [sampleDateFrom, sampleDateTo, sampleIdQuery, sampleLedgerRows, samplePatientQuery, sampleTypeFilter]);
+    })
+      .sort((a, b) => sampleDateSort === 'asc' ? a.collectedAt.localeCompare(b.collectedAt) : b.collectedAt.localeCompare(a.collectedAt));
+  }, [sampleDateFrom, sampleDateSort, sampleDateTo, sampleLedgerRows, sampleLinkedOmicsFilter, sampleSearchQuery, sampleTypeFilter]);
   const sampleLedgerTotalPages = Math.max(1, Math.ceil(filteredSampleLedgerRows.length / sampleLedgerPageSize));
   const safeSampleLedgerPage = Math.min(sampleLedgerPage, sampleLedgerTotalPages);
   const pagedSampleLedgerRows = filteredSampleLedgerRows.slice(
@@ -2696,35 +2702,34 @@ export function SampleTestingPage({
     () => ['全部', ...Array.from(new Set(sortedDetectionRows.map((row) => row.vendor || '-')))],
     [sortedDetectionRows]
   );
-  const omicsUsageFilterOptions = useMemo(
-    () => ['全部', ...Array.from(new Set(sortedDetectionRows.map((row) => row.usageSummary || '-')))],
-    [sortedDetectionRows]
-  );
-  const omicsSentAtFilterOptions = useMemo(
-    () => ['全部', ...Array.from(new Set(sortedDetectionRows.map((row) => formatDateOnly(row.sentAt)).filter((item) => item && item !== '-'))).sort().reverse()],
-    [sortedDetectionRows]
-  );
   const omicsQcFilterOptions = useMemo(
     () => ['全部', ...Array.from(new Set(sortedDetectionRows.map((row) => row.qc)))],
     [sortedDetectionRows]
   );
   const filteredDetectionRows = useMemo(() => {
-    const patientQuery = omicsPatientQuery.trim().toLowerCase();
-    const sampleQuery = omicsSampleQuery.trim().toLowerCase();
+    const query = omicsSearchQuery.trim().toLowerCase();
 
-    return sortedDetectionRows.filter((row) => {
+    return sortedDetectionRows
+      .filter((row) => {
+      const sentAt = formatDateOnly(row.sentAt);
       if (omicsSampleTypeFilter !== '全部' && row.sampleType !== omicsSampleTypeFilter) return false;
       if (omicsStatusFilter !== '全部' && row.status !== omicsStatusFilter) return false;
       if (omicsAssayFilter !== '全部' && row.assay !== omicsAssayFilter) return false;
       if (omicsVendorFilter !== '全部' && (row.vendor || '-') !== omicsVendorFilter) return false;
-      if (omicsUsageFilter !== '全部' && (row.usageSummary || '-') !== omicsUsageFilter) return false;
-      if (omicsSentAtFilter !== '全部' && formatDateOnly(row.sentAt) !== omicsSentAtFilter) return false;
+      if (omicsSentAtFrom && sentAt < omicsSentAtFrom) return false;
+      if (omicsSentAtTo && sentAt > omicsSentAtTo) return false;
       if (omicsQcFilter !== '全部' && row.qc !== omicsQcFilter) return false;
-      if (patientQuery && !row.patientName.toLowerCase().includes(patientQuery) && !row.studyId?.toLowerCase().includes(patientQuery)) return false;
-      if (sampleQuery && !row.sampleId.toLowerCase().includes(sampleQuery)) return false;
+      if (
+        query &&
+        !row.patientName.toLowerCase().includes(query) &&
+        !row.hospitalNo.toLowerCase().includes(query) &&
+        !row.sampleId.toLowerCase().includes(query) &&
+        !row.studyId?.toLowerCase().includes(query)
+      ) return false;
       return true;
-    });
-  }, [omicsAssayFilter, omicsPatientQuery, omicsQcFilter, omicsSampleQuery, omicsSampleTypeFilter, omicsSentAtFilter, omicsStatusFilter, omicsUsageFilter, omicsVendorFilter, sortedDetectionRows]);
+    })
+      .sort((a, b) => omicsSentAtSort === 'asc' ? formatDateOnly(a.sentAt).localeCompare(formatDateOnly(b.sentAt)) : formatDateOnly(b.sentAt).localeCompare(formatDateOnly(a.sentAt)));
+  }, [omicsAssayFilter, omicsQcFilter, omicsSampleTypeFilter, omicsSearchQuery, omicsSentAtFrom, omicsSentAtSort, omicsSentAtTo, omicsStatusFilter, omicsVendorFilter, sortedDetectionRows]);
   const omicsTotalPages = Math.max(1, Math.ceil(filteredDetectionRows.length / omicsTestingPageSize));
   const safeOmicsPage = Math.min(omicsPage, omicsTotalPages);
   const pagedDetectionRows = filteredDetectionRows.slice(
@@ -2805,8 +2810,6 @@ export function SampleTestingPage({
   const sampleDataLoadErrorMessage = '无法读取后端患者数据；请重新登录或检查后端 API';
   const noPatientInScopeMessage = '当前授权范围暂无患者；请先在患者队列创建患者';
   const omicsAddUnavailableMessage = '暂无样本上下文，无法新增检测；请先新增样本';
-  const hideSampleLedgerFilters = embedded;
-  const hideOmicsFilters = embedded;
   const sampleSectionStatus =
     sampleDataLoadStatus === 'loading'
       ? sampleDataLoadingMessage
@@ -2918,29 +2921,30 @@ export function SampleTestingPage({
   useEffect(() => {
     if (!selectedPatient) return;
     if (selectedPatient.studyId && studyOptions.includes(selectedPatient.studyId)) setStudyFilter(selectedPatient.studyId);
-    setSamplePatientQuery(selectedPatient.name);
-    setSampleIdQuery('');
+    setSampleSearchQuery(selectedPatient.name);
     setSampleTypeFilter('全部');
+    setSampleLinkedOmicsFilter('全部');
     setSampleDateFrom('');
     setSampleDateTo('');
-    setOmicsPatientQuery(selectedPatient.name);
-    setOmicsSampleQuery('');
+    setSampleDateSort('desc');
+    setOmicsSearchQuery(selectedPatient.name);
     setOmicsStatusFilter('全部');
     setOmicsAssayFilter('全部');
     setOmicsSampleTypeFilter('全部');
     setOmicsVendorFilter('全部');
-    setOmicsUsageFilter('全部');
-    setOmicsSentAtFilter('全部');
+    setOmicsSentAtFrom('');
+    setOmicsSentAtTo('');
+    setOmicsSentAtSort('desc');
     setOmicsQcFilter('全部');
   }, [selectedPatient, studyOptions]);
 
   useEffect(() => {
     setSampleLedgerPage(1);
-  }, [sampleDateFrom, sampleDateTo, sampleIdQuery, samplePatientQuery, sampleTypeFilter, studyFilter]);
+  }, [sampleDateFrom, sampleDateSort, sampleDateTo, sampleLinkedOmicsFilter, sampleSearchQuery, sampleTypeFilter, studyFilter]);
 
   useEffect(() => {
     setOmicsPage(1);
-  }, [omicsAssayFilter, omicsPatientQuery, omicsQcFilter, omicsSampleQuery, omicsSampleTypeFilter, omicsSentAtFilter, omicsStatusFilter, omicsUsageFilter, omicsVendorFilter, studyFilter]);
+  }, [omicsAssayFilter, omicsQcFilter, omicsSampleTypeFilter, omicsSearchQuery, omicsSentAtFrom, omicsSentAtSort, omicsSentAtTo, omicsStatusFilter, omicsVendorFilter, studyFilter]);
 
   useEffect(() => {
     if (studyFilter !== '全部 Study' && !studyOptions.includes(studyFilter)) {
@@ -3083,7 +3087,7 @@ export function SampleTestingPage({
   }
 
   function handleViewSample(row: SampleLedgerRow) {
-    setSampleIdQuery(row.sampleId);
+    setSampleSearchQuery(row.sampleId);
     setUploadStatus(`已定位样本 ${row.sampleId}`);
   }
 
@@ -3173,7 +3177,7 @@ export function SampleTestingPage({
 
     const sample = sampleRows.find((item) =>
       item.studyId === row.studyId &&
-      (formatSampleLedgerId(item, sampleRows) === row.sampleId || item.id === row.sampleId)
+      (formatSampleLedgerId(item) === row.sampleId || item.id === row.sampleId)
     );
     if (!sample) return;
     const nextRecord: OmicsRecord = {
@@ -3203,7 +3207,7 @@ export function SampleTestingPage({
   }
 
   function handleViewOmics(row: SampleDetectionRow) {
-    setOmicsSampleQuery(row.sampleId);
+    setOmicsSearchQuery(row.sampleId);
     const target = row.omicsId ? records.find((record) => record.id === row.omicsId) : undefined;
     setSelectedUploadOmicsId(target?.id ?? null);
     setUploadStatus(target ? `已定位检测 ${target.id}，上传结果将关联该检测` : `已定位样本 ${row.sampleId}，请先创建检测后上传结果`);
@@ -3441,12 +3445,40 @@ export function SampleTestingPage({
       )}
 
       <section className="module-card module-card--wide">
-        <header className="module-card__header">
+        <header className="module-card__header sample-testing-card-header">
           <div>
             <h2>{t('样本台账')}</h2>
             <span>{t('按患者、样本和采集日期维护样本登记')}</span>
           </div>
           <div className="module-header-actions">
+            <div className="sample-testing-title-filters">
+              {showStudyId ? (
+                <select aria-label={t('Study ID')} value={studyFilter} onChange={(event) => setStudyFilter(event.target.value)}>
+                  <option value="全部 Study">{t('全部 Study')}</option>
+                  {studyOptions.map((studyId) => <option value={studyId} key={studyId}>{studyId}</option>)}
+                </select>
+              ) : null}
+              <input
+                aria-label={t('患者编号 / 住院号 / 样本编号')}
+                value={sampleSearchQuery}
+                onChange={(event) => setSampleSearchQuery(event.target.value)}
+                placeholder={t('患者编号 / 住院号 / 样本编号')}
+              />
+              <select aria-label={t('样本类型')} value={sampleTypeFilter} onChange={(event) => setSampleTypeFilter(event.target.value)}>
+                {sampleTypeOptions.map((item) => <option key={item} value={item}>{t(item)}</option>)}
+              </select>
+              <select aria-label={t('已做检测')} value={sampleLinkedOmicsFilter} onChange={(event) => setSampleLinkedOmicsFilter(event.target.value)}>
+                {sampleLinkedOmicsOptions.map((item) => <option key={item} value={item}>{t(item)}</option>)}
+              </select>
+              <div className="sample-testing-date-range" aria-label={t('采集日期范围')}>
+                <input type="date" title={t('采集开始')} value={sampleDateFrom} onChange={(event) => setSampleDateFrom(event.target.value)} />
+                <input type="date" title={t('采集结束')} value={sampleDateTo} onChange={(event) => setSampleDateTo(event.target.value)} />
+              </div>
+              <select aria-label={t('采集日期排序')} value={sampleDateSort} onChange={(event) => setSampleDateSort(event.target.value as DateSortDirection)}>
+                <option value="desc">{t('新到旧')}</option>
+                <option value="asc">{t('旧到新')}</option>
+              </select>
+            </div>
             {!canAddSample ? <span className="module-action-hint">{t(sampleSectionStatus)}</span> : null}
             <button
               className="module-primary-button"
@@ -3590,52 +3622,55 @@ export function SampleTestingPage({
           </section>
         ) : null}
         <SampleTestingStatTiles items={sampleStatItems} />
-        {!hideSampleLedgerFilters ? (
-          <div className="sample-testing-filter-bar">
-            {showStudyId ? (
-              <label>
-                <span>{t('Study ID')}</span>
-                <select value={studyFilter} onChange={(event) => setStudyFilter(event.target.value)}>
-                  <option value="全部 Study">{t('全部 Study')}</option>
-                  {studyOptions.map((studyId) => <option value={studyId} key={studyId}>{studyId}</option>)}
-                </select>
-              </label>
-            ) : null}
-            <label>
-              <span>{t('患者编号')}</span>
-              <input value={samplePatientQuery} onChange={(event) => setSamplePatientQuery(event.target.value)} placeholder={t('搜索患者编号')} />
-            </label>
-            <label>
-              <span>{t('样本编号')}</span>
-              <input value={sampleIdQuery} onChange={(event) => setSampleIdQuery(event.target.value)} placeholder={t('搜索样本编号')} />
-            </label>
-            <label>
-              <span>{t('样本类型')}</span>
-              <select value={sampleTypeFilter} onChange={(event) => setSampleTypeFilter(event.target.value)}>
-                {sampleTypeOptions.map((item) => <option key={item} value={item}>{t(item)}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>{t('采集开始')}</span>
-              <input type="date" value={sampleDateFrom} onChange={(event) => setSampleDateFrom(event.target.value)} />
-            </label>
-            <label>
-              <span>{t('采集结束')}</span>
-              <input type="date" value={sampleDateTo} onChange={(event) => setSampleDateTo(event.target.value)} />
-            </label>
-          </div>
-        ) : null}
         <SampleLedgerTable rows={pagedSampleLedgerRows} onView={handleViewSample} onEdit={(row) => void handleEditSample(row)} showStudyId={showStudyId} />
         <ModuleTableFooter page={safeSampleLedgerPage} total={filteredSampleLedgerRows.length} pageSize={sampleLedgerPageSize} onPageChange={setSampleLedgerPage} />
       </section>
 
       <section className="module-card module-card--wide">
-        <header className="module-card__header">
+        <header className="module-card__header sample-testing-card-header">
           <div>
             <h2>{t('多组学检测列表')}</h2>
             <span>{t('按检测项目追踪平台、批次、QC 和结果归档')}</span>
           </div>
           <div className="module-header-actions">
+            <div className="sample-testing-title-filters sample-testing-title-filters--omics">
+              {showStudyId ? (
+                <select aria-label={t('Study ID')} value={studyFilter} onChange={(event) => setStudyFilter(event.target.value)}>
+                  <option value="全部 Study">{t('全部 Study')}</option>
+                  {studyOptions.map((studyId) => <option value={studyId} key={studyId}>{studyId}</option>)}
+                </select>
+              ) : null}
+              <input
+                aria-label={t('患者编号 / 住院号 / 样本编号')}
+                value={omicsSearchQuery}
+                onChange={(event) => setOmicsSearchQuery(event.target.value)}
+                placeholder={t('患者编号 / 住院号 / 样本编号')}
+              />
+              <select aria-label={t('样本类型')} value={omicsSampleTypeFilter} onChange={(event) => setOmicsSampleTypeFilter(event.target.value)}>
+                {omicsSampleTypeFilterOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
+              </select>
+              <select aria-label={t('检测项目')} value={omicsAssayFilter} onChange={(event) => setOmicsAssayFilter(event.target.value)}>
+                <option value="全部">{t('全部')}</option>
+                {omicsAssayOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
+              </select>
+              <select aria-label={t('供应商')} value={omicsVendorFilter} onChange={(event) => setOmicsVendorFilter(event.target.value)}>
+                {omicsVendorFilterOptions.map((item) => <option value={item} key={item}>{item === '全部' ? t(item) : item}</option>)}
+              </select>
+              <select aria-label={t('当前状态')} value={omicsStatusFilter} onChange={(event) => setOmicsStatusFilter(event.target.value as OmicsFilterStatus)}>
+                {omicsStatusOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
+              </select>
+              <select aria-label="QC" value={omicsQcFilter} onChange={(event) => setOmicsQcFilter(event.target.value)}>
+                {omicsQcFilterOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
+              </select>
+              <div className="sample-testing-date-range" aria-label={t('送检日期范围')}>
+                <input type="date" title={t('送检开始')} value={omicsSentAtFrom} onChange={(event) => setOmicsSentAtFrom(event.target.value)} />
+                <input type="date" title={t('送检结束')} value={omicsSentAtTo} onChange={(event) => setOmicsSentAtTo(event.target.value)} />
+              </div>
+              <select aria-label={t('送检测时间排序')} value={omicsSentAtSort} onChange={(event) => setOmicsSentAtSort(event.target.value as DateSortDirection)}>
+                <option value="desc">{t('新到旧')}</option>
+                <option value="asc">{t('旧到新')}</option>
+              </select>
+            </div>
             <input
               ref={resultUploadInputRef}
               className="module-hidden-file-input"
@@ -3725,7 +3760,7 @@ export function SampleTestingPage({
                   <label className="sample-testing-sample-select-row" key={sample.id}>
                     <input type="checkbox" checked={flowSelectedSampleIds.includes(sample.id)} onChange={(event) => toggleFlowSample(sample.id, event.target.checked)} />
                     <span>
-                      <strong>{formatSampleLedgerId(sample, sampleRows)}</strong>
+                      <strong>{formatSampleLedgerId(sample)}</strong>
                       <small>{t(sample.sampleType)} · {formatDateOnly(sample.collectedAt)} · {sample.storage}</small>
                     </span>
                     <span>
@@ -3802,7 +3837,7 @@ export function SampleTestingPage({
                               setOmicsDraftSampleIds(nextIds);
                             }}
                           />
-                          <span>{formatSampleLedgerId(sample, sampleRows)} · {t(sample.sampleType)} · {t('剩余量')} {sampleQuantityLabel(sample)} · {sample.storage}</span>
+                          <span>{formatSampleLedgerId(sample)} · {t(sample.sampleType)} · {t('剩余量')} {sampleQuantityLabel(sample)} · {sample.storage}</span>
                         </label>
                         {isChecked ? (
                           <div className="sample-testing-sample-picker__usage">
@@ -3874,98 +3909,6 @@ export function SampleTestingPage({
           </section>
         ) : null}
         <SampleTestingStatTiles items={omicsStatItems} />
-        {!hideOmicsFilters ? (
-          <div className="sample-testing-filter-bar sample-testing-filter-bar--omics">
-            {showStudyId ? (
-              <label>
-                <span>{t('Study ID')}</span>
-                <select value={studyFilter} onChange={(event) => setStudyFilter(event.target.value)}>
-                  <option value="全部 Study">{t('全部 Study')}</option>
-                  {studyOptions.map((studyId) => <option value={studyId} key={studyId}>{studyId}</option>)}
-                </select>
-              </label>
-            ) : null}
-            <label>
-              <span>{t('患者编号')}</span>
-              <input value={omicsPatientQuery} onChange={(event) => setOmicsPatientQuery(event.target.value)} placeholder={t('搜索患者编号')} />
-            </label>
-            <label>
-              <span>{t('样本编号')}</span>
-              <input value={omicsSampleQuery} onChange={(event) => setOmicsSampleQuery(event.target.value)} placeholder={t('搜索样本编号')} />
-            </label>
-            <label>
-              <span>{t('样本类型')}</span>
-              <select value={omicsSampleTypeFilter} onChange={(event) => setOmicsSampleTypeFilter(event.target.value)}>
-                {omicsSampleTypeFilterOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>{t('检测项目')}</span>
-              <select value={omicsAssayFilter} onChange={(event) => setOmicsAssayFilter(event.target.value)}>
-                <option value="全部">{t('全部')}</option>
-                {omicsAssayOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>{t('供应商')}</span>
-              <select value={omicsVendorFilter} onChange={(event) => setOmicsVendorFilter(event.target.value)}>
-                {omicsVendorFilterOptions.map((item) => <option value={item} key={item}>{item === '全部' ? t(item) : item}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>{t('使用量')}</span>
-              <select value={omicsUsageFilter} onChange={(event) => setOmicsUsageFilter(event.target.value)}>
-                {omicsUsageFilterOptions.map((item) => <option value={item} key={item}>{item === '全部' ? t(item) : item}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>{t('当前状态')}</span>
-              <select value={omicsStatusFilter} onChange={(event) => setOmicsStatusFilter(event.target.value as OmicsFilterStatus)}>
-                {omicsStatusOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>{t('送检测时间')}</span>
-              <select value={omicsSentAtFilter} onChange={(event) => setOmicsSentAtFilter(event.target.value)}>
-                {omicsSentAtFilterOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>QC</span>
-              <select value={omicsQcFilter} onChange={(event) => setOmicsQcFilter(event.target.value)}>
-                {omicsQcFilterOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
-              </select>
-            </label>
-            <div className="workspace-filter-row">
-              {omicsStatusOptions.map((item) => (
-                <button
-                  className={omicsStatusFilter === item && omicsAssayFilter === '全部' ? 'chip is-selected' : 'chip'}
-                  type="button"
-                  key={item}
-                  onClick={() => {
-                    setOmicsStatusFilter(item);
-                    setOmicsAssayFilter('全部');
-                  }}
-                >
-                  {t(item)}
-                </button>
-              ))}
-              {omicsAssayOptions.map((item) => (
-                <button
-                  className={omicsAssayFilter === item ? 'chip is-selected' : 'chip'}
-                  type="button"
-                  key={item}
-                  onClick={() => {
-                    setOmicsAssayFilter(item);
-                    setOmicsStatusFilter('全部');
-                  }}
-                >
-                  {t(item)}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
         <OmicsTable
           records={pagedDetectionRows}
           onView={handleViewOmics}
@@ -4018,6 +3961,8 @@ type StudyCreateDraft = {
   leading_pi_info: string;
   system_admin: string;
 };
+
+type StudyDraftMode = 'create' | 'edit';
 
 type AccountCreateDraft = {
   displayName: string;
@@ -4409,6 +4354,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [operationLogActionFilter, setOperationLogActionFilter] = useState('all');
   const [operationLogEntityFilter, setOperationLogEntityFilter] = useState('all');
   const [studyCreateDraft, setStudyCreateDraft] = useState<StudyCreateDraft | null>(null);
+  const [studyDraftMode, setStudyDraftMode] = useState<StudyDraftMode>('create');
   const [accountCreateDraft, setAccountCreateDraft] = useState<AccountCreateDraft | null>(null);
   const [accountEditDraft, setAccountEditDraft] = useState<AccountEditDraft | null>(null);
   const [accountPasswordDraft, setAccountPasswordDraft] = useState<AccountPasswordDraft | null>(null);
@@ -4423,6 +4369,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   const [consentTemplateFileRows, setConsentTemplateFileRows] = useState<ApiFileMetadata[]>([]);
   const normalizedQuery = systemQuery.trim().toLowerCase();
   const suggestedStudyCode = useMemo(() => nextStudyCode(studyRows), [studyRows]);
+  const isStudyDraftEdit = studyDraftMode === 'edit';
   const isStudyCreateReady = Boolean(
     studyCreateDraft?.id.trim() &&
       studyCreateDraft.name.trim() &&
@@ -4930,6 +4877,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       setSystemActionStatus('只有 LZ 系统管理员可以新建 Study');
       return;
     }
+    setStudyDraftMode('create');
     setStudyCreateDraft({
       id: '',
       code: suggestedStudyCode,
@@ -4944,6 +4892,37 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
     setSystemActionStatus('请先填写 Study ID、名称和适应症，再提交创建 Study');
   }
 
+  function openSystemStudyEdit(studyId: string) {
+    if (currentUser?.role !== 'LZ_ADMIN') {
+      setSystemActionStatus('只有 LZ 系统管理员可以编辑 Study');
+      return;
+    }
+    const study = studyRows.find((row) => row.id === studyId);
+    if (!study) {
+      setSystemActionStatus(`未找到 Study：${studyId}`);
+      return;
+    }
+    setStudyDraftMode('edit');
+    setSelectedSystemStudyId(study.id);
+    setStudyCreateDraft({
+      id: study.id,
+      code: study.code,
+      name: study.name,
+      indication: study.indication,
+      phase: study.phase,
+      status: study.status,
+      owner_org: study.owner_org,
+      leading_pi_info: study.leading_pi_info,
+      system_admin: study.system_admin
+    });
+    setSystemActionStatus(`正在编辑 Study：${study.id}`);
+  }
+
+  function closeSystemStudyDraft() {
+    setStudyCreateDraft(null);
+    setStudyDraftMode('create');
+  }
+
   async function submitSystemStudyCreate() {
     if (!studyCreateDraft) return;
     const id = studyCreateDraft.id.trim();
@@ -4954,26 +4933,35 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       setSystemActionStatus('请完整填写 Study ID、Study 名称和适应症');
       return;
     }
-    setSystemActionStatus(`Study ${id} 正在创建...`);
+    const payload = {
+      code,
+      name,
+      indication,
+      phase: studyCreateDraft.phase.trim() || 'RWD',
+      status: studyCreateDraft.status,
+      owner_org: studyCreateDraft.owner_org.trim() || 'LinZight',
+      leading_pi_info: studyCreateDraft.leading_pi_info.trim(),
+      system_admin: studyCreateDraft.system_admin.trim()
+    };
+    setSystemActionStatus(isStudyDraftEdit ? `Study ${id} 正在保存修改...` : `Study ${id} 正在创建...`);
     try {
-      const study = await createStudy({
-        id,
-        code,
-        name,
-        indication,
-	        phase: studyCreateDraft.phase.trim() || 'RWD',
-	        status: studyCreateDraft.status,
-	        owner_org: studyCreateDraft.owner_org.trim() || 'LinZight',
-	        leading_pi_info: studyCreateDraft.leading_pi_info.trim(),
-	        system_admin: studyCreateDraft.system_admin.trim()
-	      });
-      setStudyRows((rows) => [{ ...study, systemAdminCount: 0 }, ...rows.filter((row) => row.id !== study.id)]);
+      const study = isStudyDraftEdit
+        ? await updateStudy(id, payload)
+        : await createStudy({ id, ...payload });
+      setStudyRows((rows) => (
+        isStudyDraftEdit
+          ? rows.map((row) => (row.id === study.id ? { ...study, systemAdminCount: row.systemAdminCount } : row))
+          : [{ ...study, systemAdminCount: 0 }, ...rows.filter((row) => row.id !== study.id)]
+      ));
       setSelectedSystemStudyId(study.id);
-      setStudyCreateDraft(null);
+      closeSystemStudyDraft();
       notifyStudiesUpdated();
-      setSystemActionStatus(`Study 已创建为草稿：${study.id}。发布前需绑定 CRF、访视计划、知情模板和系统管理员。`);
+      setSystemActionStatus(isStudyDraftEdit
+        ? `Study 已更新：${study.id}`
+        : `Study 已创建为草稿：${study.id}。发布前需绑定 CRF、访视计划、知情模板和系统管理员。`
+      );
     } catch {
-      setSystemActionStatus('后端不可用或当前角色无 Study 新建权限');
+      setSystemActionStatus(isStudyDraftEdit ? '后端不可用或当前角色无 Study 编辑权限' : '后端不可用或当前角色无 Study 新建权限');
     }
   }
 
@@ -5192,6 +5180,9 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
   }
 
   async function deleteSystemStudy(studyId: string) {
+    if (!window.confirm(`${t('确认删除 Study')} ${studyId}？${t('删除后将归档并从 Study 选择列表中隐藏。')}`)) {
+      return;
+    }
     setSystemActionStatus(`Study ${studyId} 正在删除/归档...`);
     try {
       const study = await deleteStudy(studyId);
@@ -5313,7 +5304,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
       setSystemActionStatus(`账户 ${account.email} 已经归档`);
       return;
     }
-    if (!window.confirm(`确认归档账户 ${account.email}？归档后账户不能登录，但历史审计记录会保留。`)) {
+    if (!window.confirm(`${t('确认归档账户')} ${account.email}？${t('归档后账户不能登录，但历史审计记录会保留。')}`)) {
       return;
     }
     setSystemActionStatus(`账户 ${account.email} 正在归档...`);
@@ -6098,14 +6089,14 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
             </button>
           </header>
           {studyCreateDraft ? (
-            <div className="system-create-form" aria-label={t('新建 Study 表单')}>
+            <div className="system-create-form" aria-label={t(isStudyDraftEdit ? '编辑 Study 表单' : '新建 Study 表单')}>
               <label>
                 <span>Study ID</span>
-                <input required value={studyCreateDraft.id} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, id: event.target.value })} placeholder="LZ-RWS-001" />
+                <input required readOnly={isStudyDraftEdit} value={studyCreateDraft.id} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, id: event.target.value })} placeholder="LZ-RWS-001" />
               </label>
               <label>
                 <span>Study Code</span>
-                <input readOnly value={studyCreateDraft.code || suggestedStudyCode} placeholder="01" />
+                <input readOnly={!isStudyDraftEdit} value={studyCreateDraft.code || suggestedStudyCode} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, code: event.target.value })} placeholder="01" />
               </label>
 		              <label>
 		                <span>{t('Study 名称')}</span>
@@ -6128,6 +6119,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
                 <select value={studyCreateDraft.status} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, status: event.target.value as ApiStudy['status'] })}>
                   <option value="draft">draft</option>
                   <option value="active">active</option>
+                  {isStudyDraftEdit ? <option value="terminated">terminated</option> : null}
                 </select>
               </label>
 	              <label>
@@ -6139,8 +6131,8 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
 	                <input value={studyCreateDraft.system_admin} onChange={(event) => setStudyCreateDraft({ ...studyCreateDraft, system_admin: event.target.value })} placeholder={t('请输入系统管理员姓名或邮箱')} />
 		              </label>
 	              <div className="system-create-form__actions">
-	                <button className="module-primary-button" type="button" disabled={!isStudyCreateReady} title={isStudyCreateReady ? undefined : t('请先填写必填 Study 信息')} onClick={() => void submitSystemStudyCreate()}>{t('提交创建 Study')}</button>
-	                <button className="module-link-button" type="button" onClick={() => setStudyCreateDraft(null)}>{t('取消')}</button>
+	                <button className="module-primary-button" type="button" disabled={!isStudyCreateReady} title={isStudyCreateReady ? undefined : t('请先填写必填 Study 信息')} onClick={() => void submitSystemStudyCreate()}>{t(isStudyDraftEdit ? '提交修改 Study' : '提交创建 Study')}</button>
+	                <button className="module-link-button" type="button" onClick={closeSystemStudyDraft}>{t('取消')}</button>
 	              </div>
             </div>
           ) : null}
@@ -6173,6 +6165,7 @@ export function SystemManagementPage({ currentUser }: { currentUser?: Authentica
 		                    <td>{study.systemAdmin}</td>
 		                    <td>
 	                      <div className="module-table-actions">
+	                        <button className="module-link-button" type="button" disabled={study.status === 'deleted'} onClick={() => openSystemStudyEdit(study.studyId)}>{t('Edit')}</button>
 	                        <button className="module-link-button" type="button" onClick={() => setSelectedSystemStudyId(study.studyId)}>{t('Select')}</button>
 	                        <button className="module-link-button" type="button" disabled={study.status === 'terminated' || study.status === 'deleted'} onClick={() => void terminateSystemStudy(study.studyId)}>{t('Terminate')}</button>
 	                        <button className="module-link-button module-link-button--danger" type="button" disabled={study.status === 'deleted'} onClick={() => void deleteSystemStudy(study.studyId)}>{t('Delete')}</button>

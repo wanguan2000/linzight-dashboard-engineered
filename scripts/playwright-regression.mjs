@@ -125,9 +125,9 @@ async function run() {
     await page.locator('.sidebar .nav-item').filter({ hasText: /Patient Cohort|患者队列/i }).click();
     await page.getByText(/Patient Search|患者搜索/i).waitFor({ timeout: 10000 });
     await page.locator('.sidebar .nav-item').filter({ hasText: /System Admin|System Management|系统管理/i }).click();
-    await page.getByText(/Approval Center/i).waitFor({ timeout: 10000 });
-    await page.getByText(/Query Management/i).waitFor({ timeout: 10000 });
-    await page.getByText(/Site Configuration/i).waitFor({ timeout: 10000 });
+    await page.locator('strong').filter({ hasText: /^Approval Center$/ }).waitFor({ timeout: 10000 });
+    await page.waitForFunction("document.body.innerText.includes('Query Management')", null, { timeout: 10000 });
+    await page.waitForFunction("document.body.innerText.includes('Site Configuration')", null, { timeout: 10000 });
     await browser.close();
     writeReport('passed', { covered: ['login', 'module navigation', 'patient cohort page', 'approval center', 'query management panel', 'site configuration panel'] });
     console.log(`Playwright regression passed. Report: ${reportPath}`);

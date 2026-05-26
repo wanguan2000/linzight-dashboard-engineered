@@ -6,6 +6,24 @@ The format is based on Keep a Changelog, and this project uses Semantic Versioni
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-05-26
+
+### Changed
+
+- Patient age is now nullable with no default value, and patient sex supports the `unknown` default option across PostgreSQL schema, API validation, and patient forms.
+- Patient name and hospital number are optional during patient intake; blank hospital numbers are stored as `NULL`, while filled hospital numbers remain unique within a Study.
+- Patient birth date is persisted for age calculation and editing, while cohort tables continue to show only derived age for privacy.
+- Study Registry supports editing existing Study master data through the same guarded form flow used for Study creation.
+- Sample and multi-omics status summaries are recalculated from actual sample and testing records, including sample types added later through global configuration.
+- English UI translations now cover patient queue, sample ledger, multi-omics testing, Study/disease/sample labels, action buttons, vendors, storage, and sample-usage summaries.
+
+### Fixed
+
+- Switching the topbar Study Workspace now reloads the page immediately after updating the active Study, and the patient cohort view also receives the active Study from app state to prevent patient, sample ledger, and multi-omics lists from showing mixed Study state.
+- New patient disease type now defaults to blank and is required before saving.
+- Sample ledger and patient queue display backend sample IDs directly, preserving IDs such as `S0101801`.
+- Patient sample-collection status now reflects existing sample records instead of treating newly configured sample types as not collected.
+
 ## [1.0.4] - 2026-05-22
 
 ### Added

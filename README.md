@@ -1,6 +1,6 @@
 # linzight-dashboard-engineered
 
-当前版本：`v1.0.4`
+当前版本：`v1.0.5`
 
 `linzight-dashboard-engineered` 是 LinZight 真实世界研究数据采集与管理系统的内部试点版，用于让客户在受控环境中按真实业务场景验证 Study 配置、角色权限、患者队列、知情同意、临床数据采集、样本及检测、患者旅程、数据分析和系统管理闭环。正式运行数据库固定为 PostgreSQL；SQLite 仅允许在显式设置 `LINZIGHT_ALLOW_SQLITE_RUNTIME=1` 的隔离 smoke、旧数据备份或迁移导出工具中使用。登录和写入动作依赖后端认证与 API；正式 Docker 首次启动为空库，仅创建首个 LZ 系统管理员，Study、患者和检测数据由用户自行创建或导入。未经合规审批、备份恢复演练和安全签字前，不应直接承载真实患者生产数据。
 

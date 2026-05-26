@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 UserRole = Literal[
@@ -19,7 +19,7 @@ UserRole = Literal[
 StudyRole = Literal["STUDY_PI", "STUDY_CRC", "STUDY_CONFIG_ADMIN", "STUDY_DATA_MANAGER"]
 StudyScopeType = Literal["all_studies", "assigned_studies", "own_studies"]
 DiseaseType = str
-Sex = Literal["男", "女"]
+Sex = Literal["男", "女", "unknown"]
 SampleType = str
 SampleStatus = Literal["已采集", "已送检", "检测中", "结果回传", "待处理"]
 OmicsStatus = Literal["样本接收", "文库构建", "测序完成", "数据分析", "结果归档"]
@@ -118,13 +118,22 @@ class PatientBase(BaseModel):
     patient_number: str | None = None
     patient_name: str = ""
     name: str = ""
-    hospital_no: str
-    sex: Sex
-    age: int = Field(ge=0, le=120)
+    hospital_no: str | None = None
+    sex: Sex = "unknown"
+    age: int | None = Field(default=None, ge=0, le=120)
+    birth_date: str | None = None
     disease_type: DiseaseType
     organs: list[str] = Field(default_factory=list)
     note: str = ""
     clinical_data: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("disease_type")
+    @classmethod
+    def disease_type_required(cls, value: DiseaseType) -> DiseaseType:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("disease_type is required")
+        return normalized
 
 
 class PatientCreate(PatientBase):
@@ -139,10 +148,21 @@ class PatientUpdate(BaseModel):
     hospital_no: str | None = None
     sex: Sex | None = None
     age: int | None = Field(default=None, ge=0, le=120)
+    birth_date: str | None = None
     disease_type: DiseaseType | None = None
     organs: list[str] | None = None
     note: str | None = None
     clinical_data: dict[str, Any] | None = None
+
+    @field_validator("disease_type")
+    @classmethod
+    def disease_type_required(cls, value: DiseaseType | None) -> DiseaseType | None:
+        if value is None:
+            return value
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("disease_type is required")
+        return normalized
 
 
 class SampleBase(BaseModel):

@@ -1,7 +1,7 @@
 import type { ConsentRecord, FollowUpRecord, OmicsRecord, SampleRecord, StudyVisitPlanRecord, VisitRecord } from '../data/operations';
 import { activeStudyStorageKey, authStorageKey, normalizeAuthenticatedUser, roleLabels, userCanAccessStudy, type AuthenticatedUser } from '../data/auth';
 import { saveGlobalDetectionTypes, saveGlobalDiseaseTypes, saveGlobalQuantityUnits, saveGlobalSampleTypes } from '../data/globalConfig';
-import type { DiseaseType, OmicsStatus, PatientRecord, SampleCollection } from '../data/patientCohort';
+import { calculateAgeFromBirthDate, normalizeBirthDate, type DiseaseType, type OmicsStatus, type PatientRecord, type SampleCollection } from '../data/patientCohort';
 import type {
   ApiAnalysisSummary,
   ApiApprovalRequest,
@@ -1009,13 +1009,16 @@ export async function updatePatientClinicalData(patient: PatientRecord, clinical
 
 export async function createPatientRecord(patient: PatientRecord): Promise<PatientRecord> {
   const studyId = patient.studyId || getCurrentScopedStudyId();
+  const birthDate = normalizeBirthDate(patient.birthDate);
+  const age = calculateAgeFromBirthDate(birthDate) ?? patient.age;
   const response = await postJson<ApiPatient>(studyBusinessPath(studyId, 'patients'), {
     study_id: studyId,
     patient_name: patient.patientName ?? '',
     name: patient.name || patient.patientNumber || 'AUTO',
-    hospital_no: patient.hospitalNo,
+    hospital_no: patient.hospitalNo.trim() || null,
     sex: patient.sex,
-    age: patient.age,
+    age,
+    birth_date: birthDate || null,
     disease_type: patient.diseaseType,
     organs: patient.organs,
     note: patient.note,
@@ -1028,12 +1031,15 @@ export async function createPatientRecord(patient: PatientRecord): Promise<Patie
 
 export async function updatePatientRecord(patient: PatientRecord): Promise<PatientRecord> {
   if (!patient.id) throw new Error('patient id is required');
+  const birthDate = normalizeBirthDate(patient.birthDate);
+  const age = calculateAgeFromBirthDate(birthDate) ?? patient.age;
   const response = await putJson<ApiPatient>(`/patients/${patient.id}`, {
     study_id: patient.studyId,
     patient_name: patient.patientName ?? '',
-    hospital_no: patient.hospitalNo,
+    hospital_no: patient.hospitalNo.trim() || null,
     sex: patient.sex,
-    age: patient.age,
+    age,
+    birth_date: birthDate || null,
     disease_type: patient.diseaseType,
     organs: patient.organs,
     note: patient.note,
@@ -1183,7 +1189,6 @@ function toSamplesByType(records: ApiSample[]): SampleCollection[] {
   }, {});
 
   return Object.entries(counts)
-    .filter(([type]) => ['肿瘤FFPE', '肿瘤组织', 'CSF', '血液', '胸水'].includes(type))
     .map(([type, count]) => ({ type: type as SampleCollection['type'], count }));
 }
 
@@ -1201,6 +1206,8 @@ function toDateOnly(value?: string | null) {
 function toPatientRecord(patient: ApiPatient, allSamples: ApiSample[], allOmics: ApiOmics[]): PatientRecord {
   const patientSamples = allSamples.filter((sample) => sample.patient_id === patient.id);
   const patientOmics = allOmics.filter((record) => record.patient_id === patient.id);
+  const birthDate = normalizeBirthDate(patient.birth_date);
+  const age = calculateAgeFromBirthDate(birthDate) ?? patient.age;
 
   return {
     id: patient.id,
@@ -1209,9 +1216,10 @@ function toPatientRecord(patient: ApiPatient, allSamples: ApiSample[], allOmics:
     patientName: patient.patient_name ?? '',
     patientNameInitials: patient.patient_name_initials ?? patient.patient_name ?? '',
     name: patient.name,
-    hospitalNo: patient.hospital_no,
+    hospitalNo: patient.hospital_no ?? '',
     sex: patient.sex,
-    age: patient.age,
+    age,
+    birthDate,
     diseaseType: patient.disease_type,
     organs: patient.organs,
     samples: toSamplesByType(patientSamples),

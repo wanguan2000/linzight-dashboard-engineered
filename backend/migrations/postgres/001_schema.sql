@@ -102,9 +102,10 @@ CREATE TABLE IF NOT EXISTS patients (
   patient_number TEXT NOT NULL DEFAULT '',
   patient_name TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
-  hospital_no TEXT NOT NULL,
-  sex TEXT NOT NULL,
-  age INTEGER NOT NULL CHECK (age BETWEEN 0 AND 120),
+  hospital_no TEXT DEFAULT NULL,
+  sex TEXT NOT NULL DEFAULT 'unknown',
+  age INTEGER NULL DEFAULT NULL CHECK (age IS NULL OR age BETWEEN 0 AND 120),
+  birth_date DATE DEFAULT NULL,
   disease_type TEXT NOT NULL,
   organs_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   note TEXT NOT NULL DEFAULT '',
@@ -113,8 +114,7 @@ CREATE TABLE IF NOT EXISTS patients (
   clinical_data_version TEXT NOT NULL DEFAULT 'legacy',
   clinical_data_format TEXT NOT NULL DEFAULT 'jsonb',
   created_at TIMESTAMPTZ NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL,
-  UNIQUE (study_id, hospital_no)
+  updated_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS samples (

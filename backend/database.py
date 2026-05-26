@@ -370,9 +370,10 @@ def initialize_schema() -> None:
               patient_number TEXT NOT NULL DEFAULT '',
               patient_name TEXT NOT NULL DEFAULT '',
               name TEXT NOT NULL UNIQUE,
-              hospital_no TEXT NOT NULL UNIQUE,
-              sex TEXT NOT NULL,
-              age INTEGER NOT NULL,
+              hospital_no TEXT,
+              sex TEXT NOT NULL DEFAULT 'unknown',
+              age INTEGER NULL DEFAULT NULL,
+              birth_date TEXT DEFAULT NULL,
               disease_type TEXT NOT NULL,
               organs_json TEXT NOT NULL,
               note TEXT NOT NULL DEFAULT '',
@@ -1192,8 +1193,27 @@ def migrate_study_schema(conn: sqlite3.Connection) -> None:
         """
     )
 
-    ensure_columns(conn, "patients", [("patient_number", "TEXT NOT NULL DEFAULT ''"), ("patient_name", "TEXT NOT NULL DEFAULT ''")])
+    ensure_columns(
+        conn,
+        "patients",
+        [
+            ("patient_number", "TEXT NOT NULL DEFAULT ''"),
+            ("patient_name", "TEXT NOT NULL DEFAULT ''"),
+            ("sex", "TEXT NOT NULL DEFAULT 'unknown'"),
+            ("age", "INTEGER NULL DEFAULT NULL"),
+            ("birth_date", "TEXT DEFAULT NULL"),
+        ],
+    )
     conn.execute("UPDATE patients SET patient_number = name WHERE patient_number = '' OR patient_number IS NULL")
+    conn.execute("UPDATE patients SET sex = 'unknown' WHERE sex IS NULL OR sex = ''")
+    conn.execute(
+        """
+        UPDATE patients
+        SET birth_date = CAST((? - age) AS TEXT) || '-01-01'
+        WHERE (birth_date IS NULL OR birth_date = '') AND age IS NOT NULL
+        """,
+        (datetime.now(timezone.utc).year,),
+    )
     ensure_columns(
         conn,
         "samples",

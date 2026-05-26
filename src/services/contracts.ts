@@ -96,13 +96,14 @@ export type ApiPatient = {
   patient_name?: string;
   patient_name_initials?: string;
   name: string;
-  hospital_no: string;
-  sex: '男' | '女';
-  age: number;
+  hospital_no?: string | null;
+  sex: '男' | '女' | 'unknown';
+  age: number | null;
+  birth_date?: string | null;
   disease_type: DiseaseType;
   organs: string[];
   note: string;
-  clinical_data: Record<string, string | number>;
+  clinical_data: Record<string, string | number | null>;
   clinical_data_version?: string;
   clinical_data_format?: 'jsonb' | 'json' | 'legacy';
   created_at: string;

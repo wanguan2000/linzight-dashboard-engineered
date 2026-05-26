@@ -383,12 +383,21 @@ export default function App() {
     setActiveStudyId(studyId);
   }
 
-  function enterGlobalManagement() {
-    if (!currentUser || !isPlatformRole(currentUser)) return;
+  function reloadAfterWorkspaceSwitch() {
+    window.location.reload();
+  }
+
+  function selectStudyWorkspaceFromTopbar(studyId: string) {
+    if (!currentUser || !userCanAccessStudy(currentUser, studyId)) return;
+    if (activeStudyId === studyId) return;
+    window.localStorage.setItem(activeStudyStorageKey, studyId);
+    reloadAfterWorkspaceSwitch();
+  }
+
+  function selectGlobalManagementFromTopbar() {
+    if (!currentUser || !isPlatformRole(currentUser) || !activeStudyId) return;
     window.localStorage.removeItem(activeStudyStorageKey);
-    setActiveStudyId(undefined);
-    setSelectedPatient(null);
-    setActiveModule('系统管理');
+    reloadAfterWorkspaceSwitch();
   }
 
   function openPatientJourney(patient: PatientRecord) {
@@ -446,7 +455,14 @@ export default function App() {
 
   function renderActiveModule() {
     const renderPatientCohortWorkspace = () => (
-      <PatientCohortPage currentUser={currentUser} onCreatePatient={createPatient} onEditPatient={openClinicalData} onPatientChange={setSelectedPatient} onViewPatient={openPatientJourney} />
+      <PatientCohortPage
+        currentUser={currentUser}
+        activeStudyId={activeStudyId}
+        onCreatePatient={createPatient}
+        onEditPatient={openClinicalData}
+        onPatientChange={setSelectedPatient}
+        onViewPatient={openPatientJourney}
+      />
     );
 
     if (activeModule === '患者队列管理') return renderPatientCohortWorkspace();
@@ -491,8 +507,8 @@ export default function App() {
           activeStudyId={activeStudyId}
           activeStudy={activeStudyContext}
           studyOptions={topbarStudyOptions}
-          onStudyChange={enterStudyWorkspace}
-          onGlobalManagement={isPlatformRole(currentUser) ? enterGlobalManagement : undefined}
+          onStudyChange={selectStudyWorkspaceFromTopbar}
+          onGlobalManagement={isPlatformRole(currentUser) ? selectGlobalManagementFromTopbar : undefined}
           onLogout={handleLogout}
         />
         {renderActiveModule()}

@@ -234,14 +234,14 @@ async function runScenario(browser, role) {
     await clickNav(page, '知情同意');
     await expectVisible(page, '知情同意', 'consent page');
     if (role.lungChecks) {
-      await assertVisibleTextIncludes(page, ['真实世界肺癌耐药研究知情同意', 'ctDNA/NGS', 'eConsent 审批队列'], 'lung eConsent');
+      await assertVisibleTextIncludes(page, ['真实世界肺癌耐药研究知情同意', 'ctDNA/NGS', '患者知情同意列表'], 'lung consent');
       await assertVisibleTextExcludes(page, ['免疫相关性神经系统疾病多组学解析及机制探索'], 'lung consent');
     }
 
     await clickNav(page, '样本及检测');
     await assertVisibleTextIncludes(page, ['新增样本', '新增检测'], 'sample testing actions');
     if (role.lungChecks) {
-      await assertVisibleTextIncludes(page, ['LZXK-01', 'ctDNA'], 'lung sample testing');
+      await assertVisibleTextIncludes(page, ['LZXK-01', '样本台账', '多组学检测列表'], 'lung sample testing');
     }
 
     await clickNav(page, '患者旅程');

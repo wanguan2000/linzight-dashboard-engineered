@@ -6,6 +6,9 @@ CREATE INDEX IF NOT EXISTS idx_study_members_user_id ON study_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_study_crf_versions_study_status ON study_crf_versions(study_id, status);
 CREATE INDEX IF NOT EXISTS idx_study_configurations_active_crf ON study_configurations(active_crf_version_id);
 CREATE INDEX IF NOT EXISTS idx_patients_study_id ON patients(study_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_patients_study_hospital_no_present
+  ON patients(study_id, hospital_no)
+  WHERE hospital_no IS NOT NULL AND hospital_no <> '';
 CREATE INDEX IF NOT EXISTS idx_patients_disease_type ON patients(disease_type);
 CREATE INDEX IF NOT EXISTS idx_patients_clinical_data_gin ON patients USING GIN (clinical_data_json);
 CREATE INDEX IF NOT EXISTS idx_visit_plans_study_id ON study_visit_plans(study_id);

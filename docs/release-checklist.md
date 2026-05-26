@@ -2,7 +2,7 @@
 
 Use this checklist before publishing an internal-pilot branch, tag, or release artifact.
 
-Current candidate: `v1.0.4`.
+Current candidate: `v1.0.5`.
 
 ## Required Local Gates
 
@@ -37,7 +37,7 @@ git status --short --branch
 
 - Confirm `package.json` version matches the planned GA tag.
 - Update `CHANGELOG.md` before creating a tag or GitHub release.
-- Suggested internal-pilot tag format: `v1.0.4`.
+- Suggested internal-pilot tag format: `v1.0.5`.
 - Release notes should call out that this is an internal-pilot release for customer validation of real business workflows in a controlled environment, not an unrestricted real-patient production clinical deployment.
 - Rollback path for the static frontend is the previous `dist/` or `exports/html/` artifact; rollback path for the backend is the previous source tag plus a verified PostgreSQL backup and upload/object-storage backup.
 

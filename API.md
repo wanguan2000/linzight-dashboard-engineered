@@ -81,6 +81,7 @@ RWD EDC 主链路统一使用 `study_id`，不使用 `project_id`。样本检测
 - `GET /patients/{patient_id}/journey`
 
 `PUT /patients/{patient_id}` 可更新患者主档字段。`LZ_ADMIN` 可通过 payload 中的 `study_id` 更正患者所属 Study；后端会同时迁移该患者关联的 consent、visit、CRF、follow-up、sample、omics、file、Query 和 quality issue 的 `study_id`，避免患者主表与业务子表 Study 不一致。非 `LZ_ADMIN` 不能跨 Study 移动患者。
+患者 `patient_name` 和 `hospital_no` 可不填；空住院号以数据库 `NULL` 保存，填写住院号时仍按同一 Study 内唯一校验。患者 `birth_date` 是年龄展示、筛选和排序的权威来源；新增患者输入年龄时前端按“当前年 - 年龄，1 月 1 日”自动推断出生日期，之后可手工修改。患者 `age` 允许为空并以数据库 `NULL` 保存，仅保留兼容旧数据；新建患者不再默认填入 45。患者 `sex` 增加 `unknown` 选项，数据库默认值为 `unknown`。
 
 ### Samples
 

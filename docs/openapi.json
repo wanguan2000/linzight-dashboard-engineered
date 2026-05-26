@@ -10350,22 +10350,49 @@
             "default": ""
           },
           "hospital_no": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Hospital No"
           },
           "sex": {
             "type": "string",
             "enum": [
               "男",
-              "女"
+              "女",
+              "unknown"
             ],
-            "title": "Sex"
+            "title": "Sex",
+            "default": "unknown"
           },
           "age": {
-            "type": "integer",
-            "maximum": 120.0,
-            "minimum": 0.0,
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 120.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Age"
+          },
+          "birth_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
           },
           "disease_type": {
             "type": "string",
@@ -10402,9 +10429,6 @@
         },
         "type": "object",
         "required": [
-          "hospital_no",
-          "sex",
-          "age",
           "disease_type"
         ],
         "title": "PatientCreate"
@@ -10472,7 +10496,8 @@
                 "type": "string",
                 "enum": [
                   "男",
-                  "女"
+                  "女",
+                  "unknown"
                 ]
               },
               {
@@ -10493,6 +10518,17 @@
               }
             ],
             "title": "Age"
+          },
+          "birth_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
           },
           "disease_type": {
             "anyOf": [

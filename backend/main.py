@@ -2529,8 +2529,8 @@ def create_patient(payload: PatientCreate, path_study_id: str | None = None, aut
             conn.execute(
                 """
                 INSERT INTO patients
-                  (id, study_id, patient_number, patient_name, name, hospital_no, sex, age, disease_type, organs_json, note, clinical_data_json, clinical_data_jsonb, clinical_data_version, clinical_data_format, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  (id, study_id, patient_number, patient_name, name, hospital_no, sex, age, birth_date, disease_type, organs_json, note, clinical_data_json, clinical_data_jsonb, clinical_data_version, clinical_data_format, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     patient_id,
@@ -2538,9 +2538,10 @@ def create_patient(payload: PatientCreate, path_study_id: str | None = None, aut
                     patient_number,
                     patient_name,
                     patient_number,
-                    data["hospital_no"],
+                    data.get("hospital_no") or None,
                     data["sex"],
                     data["age"],
+                    data.get("birth_date") or None,
                     data["disease_type"],
                     encode_json(data["organs"]),
                     data["note"],
@@ -4172,7 +4173,7 @@ def create_export_job(payload: ExportJobCreate, path_study_id: str | None = None
         ]
         with export_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["study_id", "id", "patient_number", "patient_name", "name", "hospital_no", "sex", "age", "disease_type", "note"])
+            writer.writerow(["study_id", "id", "patient_number", "patient_name", "name", "hospital_no", "sex", "age", "birth_date", "disease_type", "note"])
             writer.writerows(
                 [
                     (
@@ -4184,6 +4185,7 @@ def create_export_job(payload: ExportJobCreate, path_study_id: str | None = None
                         row["hospital_no"],
                         row["sex"],
                         row["age"],
+                        row.get("birth_date"),
                         row["disease_type"],
                         row["note"],
                     )
@@ -4395,9 +4397,9 @@ async def import_patients(
 ) -> dict[str, Any]:
     content = (await file.read()).decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
-    required = {"hospital_no", "sex", "age", "disease_type"}
+    required = {"disease_type"}
     if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
-        raise HTTPException(status_code=400, detail="CSV must include hospital_no,sex,age,disease_type")
+        raise HTTPException(status_code=400, detail="CSV must include disease_type")
     now = utc_now()
     imported = 0
     with connect() as conn:
@@ -4408,14 +4410,24 @@ async def import_patients(
             before_row = conn.execute("SELECT * FROM patients WHERE id = ?", (patient_id,)).fetchone()
             before = row_to_patient(before_row) if before_row else {}
             patient_number = before.get("patient_number") or next_patient_number(conn)
+            disease_type = (row.get("disease_type") or "").strip()
+            if not disease_type:
+                raise HTTPException(status_code=400, detail="CSV disease_type must not be blank")
             organs = [item.strip() for item in (row.get("organs") or "").replace("/", "、").split("、") if item.strip()]
+            sex = (row.get("sex") or "unknown").strip() or "unknown"
+            age = int(row["age"]) if (row.get("age") or "").strip() else None
+            birth_date = (row.get("birth_date") or row.get("出生日期") or "").strip() or None
+            if not birth_date and age is not None:
+                birth_date = f"{datetime.now(timezone.utc).year - age}-01-01"
+            hospital_no = (row.get("hospital_no") or "").strip() or None
             clinical_data = {
                 "患者编号": patient_number,
                 "姓名": patient_name,
-                "住院号": row["hospital_no"],
-                "性别": row["sex"],
-                "年龄": int(row["age"]),
-                "疾病类型": row["disease_type"],
+                "住院号": hospital_no or "",
+                "性别": sex,
+                "年龄": age,
+                "出生日期": birth_date or "",
+                "疾病类型": disease_type,
                 "受累脏器": "、".join(organs),
                 "CRF版本": row.get("crf_version") or "V0.1",
                 "数据完整度": 70,
@@ -4424,8 +4436,8 @@ async def import_patients(
             conn.execute(
                 """
                 INSERT INTO patients
-                  (id, study_id, patient_number, patient_name, name, hospital_no, sex, age, disease_type, organs_json, note, clinical_data_json, clinical_data_jsonb, clinical_data_version, clinical_data_format, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  (id, study_id, patient_number, patient_name, name, hospital_no, sex, age, birth_date, disease_type, organs_json, note, clinical_data_json, clinical_data_jsonb, clinical_data_version, clinical_data_format, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   study_id = excluded.study_id,
                   patient_number = excluded.patient_number,
@@ -4434,6 +4446,7 @@ async def import_patients(
                   hospital_no = excluded.hospital_no,
                   sex = excluded.sex,
                   age = excluded.age,
+                  birth_date = excluded.birth_date,
                   disease_type = excluded.disease_type,
                   organs_json = excluded.organs_json,
                   note = excluded.note,
@@ -4449,10 +4462,11 @@ async def import_patients(
                     patient_number,
                     patient_name,
                     patient_number,
-                    row["hospital_no"],
-                    row["sex"],
-                    int(row["age"]),
-                    row["disease_type"],
+                    hospital_no,
+                    sex,
+                    age,
+                    birth_date,
+                    disease_type,
                     encode_json(organs),
                     row.get("note") or "CSV 导入",
                     encode_json(clinical_data),

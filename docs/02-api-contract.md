@@ -114,7 +114,7 @@ Study 配置总表使用 `study_configurations` 作为发布收口源，绑定 `
 
 | 数据域 | PostgreSQL/API 字段 | 关系与说明 |
 | --- | --- | --- |
-| 患者基本信息 | `patients.patient_number`, `patient_name`, `study_id`, `hospital_no`, `sex`, `age`, `disease_type`, `note` | `patient_number` 是后端自动生成的唯一业务患者编号，从 `H00010` 起递增到 `H99999`，创建和编辑时均不能手工修改；`patient_name` 是患者姓名，默认显示拼音首字母；`id` 是系统主键；`name` 暂兼容既有页面展示，默认与 `patient_number` 同步。 |
+| 患者基本信息 | `patients.patient_number`, `patient_name`, `study_id`, `hospital_no`, `sex`, `age`, `birth_date`, `disease_type`, `note` | `patient_number` 是后端自动生成的唯一业务患者编号，从 `H00010` 起递增到 `H99999`，创建和编辑时均不能手工修改；`patient_name` 和 `hospital_no` 可不填，未填写住院号以 `NULL` 保存；填写住院号时仍按同一 Study 内唯一约束校验；`sex` 支持 `男`、`女` 和 `unknown`，数据库默认 `unknown`；`birth_date` 是年龄展示和筛选的权威来源，前端新增患者时可按“当前年 - 年龄，1 月 1 日”自动推断，之后可手工修改；`age` 保留为兼容字段，可为空，数据库默认 `NULL`；`id` 是系统主键；`name` 暂兼容既有页面展示，默认与 `patient_number` 同步。 |
 | 患者 CRF 信息 | `crf_entries.payload` + `study_crf_versions.schema_json` | 每个 Study 独立配置 CRF；默认包含病程记录、住院、治疗方案、检查等 section，payload 以 JSON 保存。 |
 | 患者随访 | `follow_up_records.payload` + `study_configurations.follow_up_schema` | 每个 Study 独立配置随访 JSON；默认覆盖访视、日期、类型、疗效评估、记录，同时保留日期、类型、疗效、记录等固定列用于筛选和列表。 |
 | 样本信息 | `samples.patient_id`, `id`, `sample_type`, `collected_at`, `storage`, `initial_quantity`, `remaining_quantity`, `quantity_unit`, `note`, `linked_omics` | 一个患者可有多个样本；`id` 是后端自动生成且不可修改的样本编号，规则为 `S` + 两位 `Study Code` + 患者编号后三位数字 + 该患者样本序号 `01`-`99`，例如 `S0508001`；`storage` 保存存储位置；初始量、剩余量和单位按字符串保存，单位由全局单位类型单选；`remaining_quantity` 由后端按 `initial_quantity - sum(sample_usage.usedQuantity) + sum(sample_usage.returnedQuantity)` 自动计算，前端只读展示；`linked_omics` 记录该样本已做或计划做的检测。 |

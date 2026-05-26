@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  calculateAgeFromBirthDate,
   calculateClinicalCompleteness,
+  inferBirthDateFromAge,
+  normalizeBirthDate,
+  patientDerivedAge,
   type DiseaseType,
   type OmicsStatus,
-  type PatientRecord
+  type PatientRecord,
+  type SampleCollection
 } from '../data/patientCohort';
 import type { OmicsRecord, SampleRecord } from '../data/operations';
 import { getGlobalDetectionTypes, getGlobalDiseaseTypes, getGlobalSampleTypes, globalConfigChangedEvent } from '../data/globalConfig';
@@ -67,12 +72,6 @@ function canWritePatients(user?: AuthenticatedUser | null) {
   return Boolean(user && patientWriteRoles.has(user.role));
 }
 
-function currentStudyDefaultDisease(studyId?: string): DiseaseType {
-  const configuredDiseases = getGlobalDiseaseTypes();
-  if (studyId === 'LZXK-01' && configuredDiseases.includes('NSCLC')) return 'NSCLC';
-  return configuredDiseases[0] ?? 'NPSLE';
-}
-
 function makeDraftPatient(studyId?: string): PatientRecord {
   return {
 	    studyId: studyId ?? '',
@@ -80,9 +79,10 @@ function makeDraftPatient(studyId?: string): PatientRecord {
 	    patientName: '',
 	    name: '',
     hospitalNo: '',
-    sex: '女',
-    age: 45,
-    diseaseType: currentStudyDefaultDisease(studyId),
+    sex: 'unknown',
+    age: null,
+    birthDate: '',
+    diseaseType: '',
     organs: [],
     samples: [],
     omicsStatus: '未采集',
@@ -91,9 +91,82 @@ function makeDraftPatient(studyId?: string): PatientRecord {
   };
 }
 
+function patientAgeMatchesRange(age: number | null, ageRange: string) {
+  if (ageRange === '全部') return true;
+  if (age === null) return false;
+  if (ageRange === '18-35') return age >= 18 && age <= 35;
+  if (ageRange === '36-55') return age >= 36 && age <= 55;
+  return age > 55;
+}
+
+function comparePatientAgeAsc(a: PatientRecord, b: PatientRecord) {
+  const aAge = patientDerivedAge(a);
+  const bAge = patientDerivedAge(b);
+  if (aAge === null && bAge === null) return comparePatientsByCreatedAtDesc(a, b);
+  if (aAge === null) return 1;
+  if (bAge === null) return -1;
+  return aAge - bAge;
+}
+
+function formatPatientAge(patient: PatientRecord) {
+  const age = patientDerivedAge(patient);
+  return age === null ? '-' : String(age);
+}
+
 function sampleText(patient: PatientRecord) {
   if (!patient.samples.length) return '未采集';
   return patient.samples.map((sample) => `${sample.type}${sample.count > 1 ? ` x${sample.count}` : ''}`).join(' / ');
+}
+
+function normalizePatientSampleType(type: string) {
+  if (['肿瘤组织', '组织', '肺癌组织'].includes(type)) return '肿瘤组织';
+  if (['肿瘤FFPE', 'FFPE', 'FFPE组织', '肿瘤FFPE组织'].includes(type)) return '肿瘤FFPE';
+  if (['CSF', '脑脊液'].includes(type)) return 'CSF';
+  return type;
+}
+
+function patientKeySet(patient: PatientRecord) {
+  return new Set([patient.id, patient.name, patient.patientNumber].filter(Boolean));
+}
+
+function sampleBelongsToPatient(patient: PatientRecord, sample: SampleRecord) {
+  if (sample.studyId && patient.studyId && sample.studyId !== patient.studyId) return false;
+  if (patient.id && sample.patientId === patient.id) return true;
+  const keys = patientKeySet(patient);
+  return Boolean(sample.patientName && keys.has(sample.patientName)) || Boolean(patient.hospitalNo && sample.hospitalNo === patient.hospitalNo);
+}
+
+function omicsBelongsToPatient(patient: PatientRecord, record: OmicsRecord) {
+  if (record.studyId && patient.studyId && record.studyId !== patient.studyId) return false;
+  if (patient.id && record.patientId === patient.id) return true;
+  const keys = patientKeySet(patient);
+  return Boolean(record.patientName && keys.has(record.patientName));
+}
+
+function sampleCollectionsFromRows(samples: SampleRecord[]): SampleCollection[] {
+  const counts = samples.reduce<Record<string, number>>((acc, sample) => {
+    const type = normalizePatientSampleType(sample.sampleType);
+    acc[type] = (acc[type] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return Object.entries(counts).map(([type, count]) => ({ type, count }));
+}
+
+function patientOmicsStatusFromRows(samples: SampleRecord[], omicsRows: OmicsRecord[]): OmicsStatus {
+  if (!samples.length) return '未采集';
+  if (!omicsRows.length) return '样本采集';
+  return omicsRows.every((record) => record.status === '结果归档') ? '完成' : '进行中';
+}
+
+function patientWithOperationalState(patient: PatientRecord, samples: SampleRecord[], omicsRows: OmicsRecord[]): PatientRecord {
+  const patientSamples = samples.filter((sample) => sampleBelongsToPatient(patient, sample));
+  const patientOmics = omicsRows.filter((record) => omicsBelongsToPatient(patient, record));
+  return {
+    ...patient,
+    samples: sampleCollectionsFromRows(patientSamples),
+    omicsStatus: patientOmicsStatusFromRows(patientSamples, patientOmics)
+  };
 }
 
 function sampleSummaryIcon(label: string): IconName {
@@ -173,6 +246,15 @@ function formatStudyCode(value?: string | null) {
 
 function studyCodeForPatient(patient: PatientRecord, studyCodeById: StudyCodeLookup) {
   return formatStudyCode(studyCodeById[patient.studyId]);
+}
+
+function studyDisplayForPatient(patient: PatientRecord, studyNameById: StudyNameLookup) {
+  const studyId = patient.studyId || '-';
+  const studyName = studyNameForPatient(patient, studyNameById);
+  return {
+    id: studyId,
+    name: studyName || '-'
+  };
 }
 
 function patientSortTimestamp(patient: PatientRecord) {
@@ -397,7 +479,6 @@ interface PatientTableProps {
   emptyMessage?: string;
   showStudyId?: boolean;
   studyNameById?: StudyNameLookup;
-  studyCodeById?: StudyCodeLookup;
 }
 
 function PatientTable({
@@ -412,8 +493,7 @@ function PatientTable({
   canEdit = true,
   emptyMessage = '暂无匹配患者',
   showStudyId = false,
-  studyNameById = defaultStudyNameLookup(),
-  studyCodeById = {}
+  studyNameById = defaultStudyNameLookup()
 }: PatientTableProps) {
   const { t } = useI18n();
   const [revealedPatientIds, setRevealedPatientIds] = useState<Set<string>>(new Set());
@@ -425,9 +505,7 @@ function PatientTable({
           <tr>
             <th>{t('患者编号')}</th>
             <th>{t('患者姓名')}</th>
-            {showStudyId ? <th>{t('Study ID')}</th> : null}
-            {showStudyId ? <th>Study Code</th> : null}
-            {showStudyId ? <th>{t('Study 名称')}</th> : null}
+            {showStudyId ? <th>Study</th> : null}
             <th>{t('住院号')}</th>
             <th>{t('性别')}</th>
             <th>{t('年龄')}</th>
@@ -447,8 +525,7 @@ function PatientTable({
             const patientNameInitials = patient.patientNameInitials || patient.patientName || t('未录入姓名');
             const canRevealPatientName = hasPatientName && patient.patientName !== patientNameInitials;
             const showFullPatientName = revealedPatientIds.has(revealKey) && canRevealPatientName;
-            const studyName = studyNameForPatient(patient, studyNameById);
-            const studyCode = studyCodeForPatient(patient, studyCodeById);
+            const studyDisplay = studyDisplayForPatient(patient, studyNameById);
               return (
               <tr className={patient.name === activePatientName ? 'is-active' : undefined} key={`${patient.studyId}-${patient.name}`}>
                 <td data-label={t('患者编号')}>{patient.patientNumber || patient.name || patient.id || '-'}</td>
@@ -474,12 +551,17 @@ function PatientTable({
                     ) : null}
                   </div>
                 </td>
-                {showStudyId ? <td data-label={t('Study ID')}><span className="status-pill status-pill--info">{patient.studyId}</span></td> : null}
-                {showStudyId ? <td data-label="Study Code"><span className="status-pill status-pill--info">{studyCode}</span></td> : null}
-                {showStudyId ? <td data-label={t('Study 名称')}>{t(studyName)}</td> : null}
-                <td data-label={t('住院号')}>{patient.hospitalNo}</td>
+                {showStudyId ? (
+                  <td data-label="Study">
+                    <span className="patient-study-pill" title={`${studyDisplay.id} · ${studyDisplay.name}`}>
+                      <strong>{studyDisplay.id}</strong>
+                      <span>{t(studyDisplay.name)}</span>
+                    </span>
+                  </td>
+                ) : null}
+                <td data-label={t('住院号')}>{patient.hospitalNo || '-'}</td>
                 <td data-label={t('性别')}>{t(patient.sex)}</td>
-                <td data-label={t('年龄')}>{patient.age}</td>
+                <td data-label={t('年龄')}>{formatPatientAge(patient)}</td>
                 <td data-label={t('疾病类型')}><span className={`disease-pill disease-pill--${patient.diseaseType.toLowerCase().replace('-', '')}`}>{t(patient.diseaseType)}</span></td>
                 <td data-label={t('样本采集')}>{t(sampleText(patient))}</td>
                 <td data-label={t('多组学检测')}><span className={`omics-pill ${statusClass(patient.omicsStatus)}`}>{t(patient.omicsStatus)}</span></td>
@@ -528,7 +610,7 @@ function PatientTable({
           })}
           {!patients.length && (
             <tr>
-	              <td colSpan={showStudyId ? 14 : 11}>{t(emptyMessage)}</td>
+	              <td colSpan={showStudyId ? 12 : 11}>{t(emptyMessage)}</td>
             </tr>
           )}
         </tbody>
@@ -598,14 +680,11 @@ export function PatientListModule({
       .filter((patient) => sex === '全部' || patient.sex === sex)
       .filter((patient) => disease === '全部' || patient.diseaseType === disease)
       .filter((patient) => {
-        if (ageRange === '全部') return true;
-        if (ageRange === '18-35') return patient.age >= 18 && patient.age <= 35;
-        if (ageRange === '36-55') return patient.age >= 36 && patient.age <= 55;
-        return patient.age > 55;
+        return patientAgeMatchesRange(patientDerivedAge(patient), ageRange);
       })
       .sort((a, b) => {
         if (sort === '完整性优先') return calculateClinicalCompleteness(b.clinicalData) - calculateClinicalCompleteness(a.clinicalData);
-        if (sort === '年龄升序') return a.age - b.age;
+        if (sort === '年龄升序') return comparePatientAgeAsc(a, b);
         return comparePatientsByCreatedAtDesc(a, b);
       });
   }, [ageRange, disease, patients, search, sex, sort, studyCodeById, studyFilter, studyNameById]);
@@ -685,6 +764,7 @@ export function PatientListModule({
             <option value="全部">{t('全部')}</option>
             <option value="男">{t('男')}</option>
             <option value="女">{t('女')}</option>
+            <option value="unknown">{t('unknown')}</option>
           </select>
         </label>
 
@@ -720,7 +800,6 @@ export function PatientListModule({
         activePatientName={activePatientName}
         onEditPatient={onEditPatient}
         onViewPatient={onViewPatient}
-        studyCodeById={studyCodeById}
         studyNameById={studyNameById}
         showStudyId={showStudyId}
       />
@@ -764,6 +843,7 @@ export function PatientListModule({
 
 interface PatientCohortPageProps {
   currentUser?: AuthenticatedUser | null;
+  activeStudyId?: string;
   onCreatePatient?: () => void;
   onEditPatient?: (patient: PatientRecord) => void;
   onPatientChange?: (patient: PatientRecord) => void;
@@ -773,6 +853,7 @@ interface PatientCohortPageProps {
 
 export function PatientCohortPage({
   currentUser,
+  activeStudyId,
   onPatientChange = () => undefined,
   onViewPatient = () => undefined
 }: PatientCohortPageProps) {
@@ -802,7 +883,7 @@ export function PatientCohortPage({
   const [sampleCreateRequest, setSampleCreateRequest] = useState(0);
   const [omicsCreateRequest, setOmicsCreateRequest] = useState(0);
   const sampleSectionRef = useRef<HTMLDivElement>(null);
-  const currentStudyId = getCurrentScopedStudyId();
+  const currentStudyId = activeStudyId ?? getCurrentScopedStudyId();
   const availableStudyOptions = useMemo(
     () => currentStudyId
       ? [currentStudyId]
@@ -833,18 +914,21 @@ export function PatientCohortPage({
     () => omicsRows.filter((record) => studyFilter === '全部 Study' || record.studyId === studyFilter),
     [omicsRows, studyFilter]
   );
+  const operationalPatients = useMemo(
+    () => studyScopedPatients.map((patient) => patientWithOperationalState(patient, studyScopedSamples, studyScopedOmics)),
+    [studyScopedOmics, studyScopedPatients, studyScopedSamples]
+  );
   const diseaseOptions = useMemo<Array<'全部' | DiseaseType>>(
-    () => ['全部', ...Array.from(new Set([...configuredDiseaseTypes, ...studyScopedPatients.map((patient) => patient.diseaseType)]))],
-    [configuredDiseaseTypes, studyScopedPatients]
+    () => ['全部', ...Array.from(new Set([...configuredDiseaseTypes, ...operationalPatients.map((patient) => patient.diseaseType)]))],
+    [configuredDiseaseTypes, operationalPatients]
   );
   const editorDiseaseOptions = useMemo<DiseaseType[]>(() => {
     const options = Array.from(new Set([
       ...configuredDiseaseTypes,
-      ...studyScopedPatients.map((patient) => patient.diseaseType),
-      currentStudyDefaultDisease(currentStudyId)
-    ]));
-    return options.length ? options : [currentStudyDefaultDisease(currentStudyId)];
-  }, [configuredDiseaseTypes, currentStudyId, studyScopedPatients]);
+      ...operationalPatients.map((patient) => patient.diseaseType)
+    ].filter(Boolean)));
+    return options;
+  }, [configuredDiseaseTypes, operationalPatients]);
 
   useEffect(() => {
     const refresh = () => {
@@ -931,7 +1015,7 @@ export function PatientCohortPage({
   }, [refreshWorkspaceData]);
 
   const filteredPatients = useMemo(() => {
-    return studyScopedPatients
+    return operationalPatients
       .filter((patient) => {
         const query = search.trim().toLowerCase();
         if (!query) return true;
@@ -950,18 +1034,15 @@ export function PatientCohortPage({
       .filter((patient) => sex === '全部' || patient.sex === sex)
       .filter((patient) => disease === '全部' || patient.diseaseType === disease)
 	      .filter((patient) => {
-	        if (ageRange === '全部') return true;
-	        if (ageRange === '18-35') return patient.age >= 18 && patient.age <= 35;
-	        if (ageRange === '36-55') return patient.age >= 36 && patient.age <= 55;
-	        return patient.age > 55;
+	        return patientAgeMatchesRange(patientDerivedAge(patient), ageRange);
 	      })
 	      .filter((patient) => !sampleCollectedOnly || patient.samples.length > 0)
 	      .sort((a, b) => {
 	        if (sort === '完整性优先') return calculateClinicalCompleteness(b.clinicalData) - calculateClinicalCompleteness(a.clinicalData);
-	        if (sort === '年龄升序') return a.age - b.age;
-	        return comparePatientsByCreatedAtDesc(a, b);
-	      });
-	  }, [ageRange, disease, sampleCollectedOnly, search, sex, sort, studyCodeById, studyNameById, studyScopedPatients]);
+		        if (sort === '年龄升序') return comparePatientAgeAsc(a, b);
+		        return comparePatientsByCreatedAtDesc(a, b);
+		      });
+		  }, [ageRange, disease, operationalPatients, sampleCollectedOnly, search, sex, sort, studyCodeById, studyNameById]);
 
   const totalPages = Math.max(1, Math.ceil(filteredPatients.length / patientPageSize));
   const pageStart = (currentPage - 1) * patientPageSize;
@@ -1019,7 +1100,14 @@ export function PatientCohortPage({
       return;
     }
     setEditorMode('edit');
-    setDraftPatient({ ...patient, organs: [...patient.organs], clinicalData: { ...patient.clinicalData } });
+    const birthDate = normalizeBirthDate(patient.birthDate) || inferBirthDateFromAge(patientDerivedAge(patient));
+    setDraftPatient({
+      ...patient,
+      birthDate,
+      age: calculateAgeFromBirthDate(birthDate) ?? patient.age,
+      organs: [...patient.organs],
+      clinicalData: { ...patient.clinicalData }
+    });
     setSaveStatus(`正在编辑患者 ${patient.name}`);
   }
 
@@ -1040,11 +1128,10 @@ export function PatientCohortPage({
       setSaveStatus('请先选择一个 Study，再保存患者');
       return;
     }
-	    if (!draftPatient.patientName?.trim() || !draftPatient.hospitalNo.trim()) {
-	      setSaveStatus('患者姓名和住院号为必填项；患者编号由系统自动生成');
+    if (!draftPatient.diseaseType.trim()) {
+      setSaveStatus('请选择疾病类型后再保存患者');
       return;
     }
-
     const nextPatient = {
       ...draftPatient,
 	      studyId: targetStudyId,
@@ -1052,6 +1139,9 @@ export function PatientCohortPage({
 	      patientName: draftPatient.patientName?.trim() ?? '',
 	      name: draftPatient.name.trim() || draftPatient.patientNumber?.trim() || 'AUTO',
       hospitalNo: draftPatient.hospitalNo.trim(),
+      birthDate: normalizeBirthDate(draftPatient.birthDate),
+      age: calculateAgeFromBirthDate(draftPatient.birthDate) ?? draftPatient.age,
+      diseaseType: draftPatient.diseaseType.trim(),
       note: draftPatient.note.trim()
     };
 
@@ -1079,6 +1169,7 @@ export function PatientCohortPage({
       setSaveStatus('删除失败：缺少患者后端 ID');
       return;
     }
+    if (!window.confirm(t('确认删除该患者？删除后患者队列中将不再显示该记录。'))) return;
     setSaveStatus(`患者 ${patient.name} 正在从后端删除...`);
     try {
       await deletePatientRecord(patient.id);
@@ -1198,6 +1289,7 @@ export function PatientCohortPage({
                 <option value="全部">{t('全部')}</option>
                 <option value="男">{t('男')}</option>
                 <option value="女">{t('女')}</option>
+                <option value="unknown">{t('unknown')}</option>
               </select>
             </label>
 
@@ -1246,11 +1338,11 @@ export function PatientCohortPage({
                   {showStudyId ? (
                     <select
                       value={draftPatient.studyId || selectedPatientWriteStudyId || ''}
-                      onChange={(event) => patchDraftPatient({
-                        studyId: event.target.value,
-                        diseaseType: currentStudyDefaultDisease(event.target.value),
-                        organs: []
-                      })}
+	                      onChange={(event) => patchDraftPatient({
+	                        studyId: event.target.value,
+	                        diseaseType: '',
+	                        organs: []
+	                      })}
                     >
                       {availableStudyOptions.map((option) => <option value={option} key={option}>{option}</option>)}
                     </select>
@@ -1275,18 +1367,40 @@ export function PatientCohortPage({
                   <select value={draftPatient.sex} onChange={(event) => patchDraftPatient({ sex: event.target.value as PatientRecord['sex'] })}>
                     <option value="男">{t('男')}</option>
                     <option value="女">{t('女')}</option>
+                    <option value="unknown">{t('unknown')}</option>
                   </select>
                 </label>
                 <label>
                   <span>{t('年龄')}</span>
-                  <input type="number" min={0} max={120} value={draftPatient.age} onChange={(event) => patchDraftPatient({ age: Number(event.target.value) })} />
+                  <input
+                    type="number"
+                    min={0}
+                    max={120}
+                    value={patientDerivedAge(draftPatient) ?? ''}
+                    onChange={(event) => {
+                      const age = event.target.value === '' ? null : Number(event.target.value);
+                      patchDraftPatient({ age, birthDate: inferBirthDateFromAge(age) });
+                    }}
+                  />
                 </label>
                 <label>
-                  <span>{t('疾病类型')}</span>
-                  <select value={draftPatient.diseaseType} onChange={(event) => patchDraftPatient({ diseaseType: event.target.value as DiseaseType })}>
-                    {editorDiseaseOptions.map((option) => <option value={option} key={option}>{t(option)}</option>)}
-                  </select>
+                  <span>{t('出生日期')}</span>
+                  <input
+                    type="date"
+                    value={normalizeBirthDate(draftPatient.birthDate)}
+                    onChange={(event) => {
+                      const birthDate = event.target.value;
+                      patchDraftPatient({ birthDate, age: calculateAgeFromBirthDate(birthDate) });
+                    }}
+                  />
                 </label>
+                <label>
+	                  <span>{t('疾病类型')}</span>
+	                  <select value={draftPatient.diseaseType} onChange={(event) => patchDraftPatient({ diseaseType: event.target.value as DiseaseType })}>
+                      <option value="">{t('请选择疾病类型')}</option>
+	                    {editorDiseaseOptions.map((option) => <option value={option} key={option}>{t(option)}</option>)}
+	                  </select>
+	                </label>
                 <label className="patient-editor-note">
                   <span>{t('注释')}</span>
                   <input value={draftPatient.note} onChange={(event) => patchDraftPatient({ note: event.target.value })} />
@@ -1310,7 +1424,6 @@ export function PatientCohortPage({
             onAddSample={addPatientSample}
             onAddOmics={addPatientOmics}
             onDeletePatient={(patient) => void removePatient(patient)}
-            studyCodeById={studyCodeById}
             studyNameById={studyNameById}
             showStudyId={showStudyId}
           />

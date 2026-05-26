@@ -120,20 +120,24 @@ function numericClinicalValue(patient: PatientRecord, field: string, fallback: n
   return Number.isFinite(value) ? value : fallback;
 }
 
-function numberFromClinicalValue(value: string | number | undefined) {
+function numberFromClinicalValue(value: string | number | null | undefined) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : Number.NaN;
   const normalized = String(value ?? '').replace('%', '').trim();
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
-function scoreFromResponse(value: string | number | undefined) {
+function scoreFromResponse(value: string | number | null | undefined) {
   const normalized = String(value ?? '').trim().toUpperCase();
   if (normalized === 'CR') return 90;
   if (normalized === 'PR') return 65;
   if (normalized === 'SD') return 45;
   if (normalized === 'PD') return 20;
   return 0;
+}
+
+function patientAgeLabel(age: number | null) {
+  return age === null ? '年龄未录入' : `${age}岁`;
 }
 
 function styleFor(category: JourneyEventCategory) {
@@ -806,7 +810,7 @@ export function PatientJourneyPage({
             <h2>{t('临床 Patient Journey')}</h2>
             <p>
               {patient
-                ? `${t('Study ID')}: ${patient.studyId} / ${t(`${patient.name} · ${patient.sex} · ${patient.age}岁 · ${patient.diseaseType}`)}`
+                ? `${t('Study ID')}: ${patient.studyId} / ${t(`${patient.name} · ${patient.sex} · ${patientAgeLabel(patient.age)} · ${patient.diseaseType}`)}`
                 : `${t('Study ID')}: ${currentStudyId ?? '-'} / ${t('暂无患者')}`}
             </p>
           </div>
@@ -858,7 +862,7 @@ export function PatientJourneyPage({
                   type="button"
                 >
                   <strong>{item.name}</strong>
-                  <span>{t(`${item.hospitalNo} · ${item.sex} · ${item.age}岁 · ${item.diseaseType}`)}</span>
+                  <span>{t(`${item.hospitalNo} · ${item.sex} · ${patientAgeLabel(item.age)} · ${item.diseaseType}`)}</span>
                 </button>
               ))}
               {!patientMatches.length ? <span className="patient-journey-patient-empty">{t('无匹配患者')}</span> : null}

@@ -18,14 +18,15 @@ export interface PatientRecord {
   patientNameInitials?: string;
   name: string;
   hospitalNo: string;
-  sex: '男' | '女';
-  age: number;
+  sex: '男' | '女' | 'unknown';
+  age: number | null;
+  birthDate?: string | null;
   diseaseType: DiseaseType;
   organs: string[];
   samples: SampleCollection[];
   omicsStatus: OmicsStatus;
   note: string;
-  clinicalData: Record<string, string | number>;
+  clinicalData: Record<string, string | number | null>;
   clinicalDataVersion?: string;
   clinicalDataFormat?: 'jsonb' | 'json' | 'legacy';
   studyName?: string;
@@ -39,6 +40,40 @@ export { clinicalFields } from './crfTemplate';
 export const diseases: DiseaseType[] = defaultDiseaseTypes.slice(0, 5);
 export const lungResistanceDiseases: DiseaseType[] = defaultDiseaseTypes.slice(5);
 export const lzxkStudyId = 'LZXK-01';
+
+function padDatePart(value: number) {
+  return String(value).padStart(2, '0');
+}
+
+export function inferBirthDateFromAge(age: number | null, referenceDate = new Date()) {
+  if (age === null || !Number.isFinite(age) || age < 0 || age > 120) return '';
+  return `${referenceDate.getFullYear() - Math.floor(age)}-01-01`;
+}
+
+export function calculateAgeFromBirthDate(birthDate?: string | null, referenceDate = new Date()) {
+  const match = birthDate?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const birthYear = Number(match[1]);
+  const birthMonth = Number(match[2]);
+  const birthDay = Number(match[3]);
+  if (!birthYear || birthMonth < 1 || birthMonth > 12 || birthDay < 1 || birthDay > 31) return null;
+
+  let age = referenceDate.getFullYear() - birthYear;
+  const currentMonth = referenceDate.getMonth() + 1;
+  const currentDay = referenceDate.getDate();
+  if (currentMonth < birthMonth || (currentMonth === birthMonth && currentDay < birthDay)) age -= 1;
+  return age >= 0 && age <= 120 ? age : null;
+}
+
+export function normalizeBirthDate(value?: string | null) {
+  const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '';
+  return `${match[1]}-${padDatePart(Number(match[2]))}-${padDatePart(Number(match[3]))}`;
+}
+
+export function patientDerivedAge(patient: Pick<PatientRecord, 'age' | 'birthDate'>) {
+  return calculateAgeFromBirthDate(patient.birthDate) ?? patient.age;
+}
 
 const patientPrefixes = ['LQH', 'WYM', 'ZXR', 'CJY', 'LYT', 'HQN', 'QML', 'SYF', 'ZYW', 'GCH'];
 
@@ -106,7 +141,7 @@ function numericValue(field: string, index: number, fallback: number) {
   return Number((base + ((index % 5) - 2) * 0.07).toFixed(2));
 }
 
-function lungResistanceClinicalData(index: number, disease: DiseaseType): Record<string, string | number> {
+function lungResistanceClinicalData(index: number, disease: DiseaseType): Record<string, string | number | null> {
   if (!isLungResistanceDisease(disease)) return {};
   const driverGene: Record<string, string> = {
     NSCLC: 'EGFR exon19del',
@@ -154,13 +189,14 @@ function generatedClinicalValue(
   index: number,
   name: string,
   hospitalNo: string,
-  sex: '男' | '女',
-  age: number,
+  sex: '男' | '女' | 'unknown',
+  age: number | null,
   disease: DiseaseType,
   organs: string[]
-): string | number {
+): string | number | null {
   const activity = diseaseActivityFor(disease);
   const [primaryMedication, secondaryMedication, otherMedication] = medicationByDisease[disease] ?? ['待录入', '', ''];
+  const numericAge = age ?? 0;
 
   switch (field) {
     case '姓名':
@@ -243,8 +279,8 @@ function generatedClinicalValue(
     default:
       if (field.includes('DNA')) return disease === 'HC' ? 0 : numericValue(field, index, isLungResistanceDisease(disease) ? 35 : 60);
       if (field.includes('WBC')) return numericValue(field, index, 6.4);
-      if (field.includes('HB')) return 105 + (age % 28);
-      if (field.includes('PLT')) return 180 + (age % 12) * 18;
+      if (field.includes('HB')) return 105 + (numericAge % 28);
+      if (field.includes('PLT')) return 180 + (numericAge % 12) * 18;
       if (field.includes('C3')) return numericValue(field, index, 0.72);
       if (field.includes('C4')) return numericValue(field, index, 0.18);
       if (field.includes('Ig')) return numericValue(field, index, 7.6);
@@ -256,19 +292,19 @@ function generatedClinicalValue(
 
 function makeClinicalData(
   completeness: number,
-  seed: Record<string, string | number>,
+  seed: Record<string, string | number | null>,
   context: {
     index: number;
     name: string;
     hospitalNo: string;
-    sex: '男' | '女';
-    age: number;
+    sex: '男' | '女' | 'unknown';
+    age: number | null;
     disease: DiseaseType;
     organs: string[];
   }
 ) {
   const filledCount = Math.round((clinicalFields.length * completeness) / 100);
-  const data: Record<string, string | number> = {};
+  const data: Record<string, string | number | null> = {};
 
   clinicalFields.slice(0, filledCount).forEach((field) => {
     data[field] =
@@ -307,6 +343,7 @@ function createPatient(index: number): PatientRecord {
   const hospitalNo = `${23000000 + index * 137}`;
   const sex = index % 2 === 0 ? '女' : '男';
   const age = 19 + (index * 7) % 48;
+  const birthDate = inferBirthDateFromAge(age);
   const organs = organsForDisease(diseaseType, index);
   const completeness = 68 + (index * 7) % 33;
   const sampleTypes = samplePlanForDisease(diseaseType, index);
@@ -327,6 +364,7 @@ function createPatient(index: number): PatientRecord {
     姓名: name,
     性别: sex,
     年龄: age,
+    出生日期: birthDate,
     住院号: hospitalNo,
     出院诊断: diseaseType,
     受累脏器: organs.join('、')
@@ -352,6 +390,7 @@ function createPatient(index: number): PatientRecord {
     hospitalNo,
     sex,
     age,
+    birthDate,
     diseaseType,
     organs,
     samples,
@@ -363,7 +402,7 @@ function createPatient(index: number): PatientRecord {
   };
 }
 
-export function calculateClinicalCompleteness(clinicalData: Record<string, string | number>) {
+export function calculateClinicalCompleteness(clinicalData: Record<string, string | number | null>) {
   const explicitCompleteness = clinicalData['数据完整度'];
   if (typeof explicitCompleteness === 'number') return Math.round(explicitCompleteness);
   if (typeof explicitCompleteness === 'string' && explicitCompleteness.trim()) {
