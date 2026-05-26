@@ -530,6 +530,15 @@ const exactEnglish: Record<string, string> = {
   'Deleted': 'Deleted',
   '确认删除该患者？删除后患者队列中将不再显示该记录。':
     'Delete this patient? The record will no longer appear in the patient cohort after deletion.',
+  '确认删除样本': 'Delete sample',
+  '确认删除检测': 'Delete test',
+  '删除后无法恢复。': 'This cannot be undone.',
+  '未创建检测，无需删除': 'No test has been created; nothing to delete',
+  '该行尚未创建检测项目，无需删除': 'No test has been created for this row; nothing to delete',
+  '删除失败：后端不可用或当前角色无样本删除权限':
+    'Deletion failed: backend is unavailable or the current role has no sample delete permission',
+  '删除失败：后端不可用或当前角色无检测删除权限':
+    'Deletion failed: backend is unavailable or the current role has no test delete permission',
   '确认删除 Study': 'Delete Study',
   '删除后将归档并从 Study 选择列表中隐藏。':
     'It will be archived and hidden from the Study selector after deletion.',

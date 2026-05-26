@@ -1125,6 +1125,11 @@ export async function updateSampleRecord(record: SampleRecord): Promise<SampleRe
   return sample;
 }
 
+export async function deleteSampleRecord(sampleId: string): Promise<void> {
+  await requestJson<void>(`/samples/${encodeURIComponent(sampleId)}`, { method: 'DELETE' });
+  emitWorkspaceDataChanged({ resource: 'samples', id: sampleId });
+}
+
 export async function createOmicsRecord(record: OmicsRecord): Promise<OmicsRecord> {
   if (!record.patientId) throw new Error('patient id is required');
   const response = await postJson<ApiOmics>(studyBusinessPath(record.studyId, 'omics'), {
@@ -1173,6 +1178,11 @@ export async function updateOmicsRecord(record: OmicsRecord): Promise<OmicsRecor
   const omics = toOmicsRecord(response);
   emitWorkspaceDataChanged({ resource: 'omics', id: omics.id, studyId: omics.studyId });
   return omics;
+}
+
+export async function deleteOmicsRecord(recordId: string): Promise<void> {
+  await requestJson<void>(`/omics/${encodeURIComponent(recordId)}`, { method: 'DELETE' });
+  emitWorkspaceDataChanged({ resource: 'omics', id: recordId });
 }
 
 function toSamplesByType(records: ApiSample[]): SampleCollection[] {

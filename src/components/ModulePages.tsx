@@ -47,6 +47,8 @@ import {
   createStudyCrfVersion,
   createStudyVisitPlan,
   createUserAccount,
+  deleteOmicsRecord,
+  deleteSampleRecord,
   deleteUserAccount,
   deleteStudy,
   downloadExportJob,
@@ -777,27 +779,9 @@ function omicsUsageSummary(record: OmicsRecord) {
     .join(' / ');
 }
 
-function normalizeLinkedOmicsLabel(label: string) {
-  return label.replace(/\s*\([^)]*\)\s*$/, '').trim();
-}
-
 function buildSampleDetectionRows(sampleRows: SampleRecord[], omicsRows: OmicsRecord[], fileRows: ApiFileMetadata[] = []): SampleDetectionRow[] {
   const filesById = new Map(fileRows.map((file) => [file.id, file]));
-  const representedOmicsBySample = new Map<string, Set<string>>();
-  const representedSampleIds = new Set<string>();
-
-  for (const record of omicsRows) {
-    const sampleIds = (record.sampleIds?.length ? record.sampleIds : [record.sampleId]).filter(Boolean);
-    for (const sampleId of sampleIds) {
-      representedSampleIds.add(sampleId);
-      const labels = representedOmicsBySample.get(sampleId) ?? new Set<string>();
-      labels.add(record.assay);
-      labels.add(`${record.assay} (${record.id})`);
-      representedOmicsBySample.set(sampleId, labels);
-    }
-  }
-
-  const rowsFromOmics = omicsRows.map((record) => {
+  return omicsRows.map((record) => {
     const linkedSamples = (record.sampleIds?.length ? record.sampleIds : [record.sampleId])
       .map((sampleId) => sampleRows.find((item) => item.id === sampleId))
       .filter(Boolean) as SampleRecord[];
@@ -825,41 +809,7 @@ function buildSampleDetectionRows(sampleRows: SampleRecord[], omicsRows: OmicsRe
       qc: normalizeOmicsDisplayQc(record.qc),
       ...resultFile
     };
-  });
-
-  const rowsFromSamples = sampleRows
-    .flatMap((sample) => {
-      const representedLabels = representedOmicsBySample.get(sample.id) ?? new Set<string>();
-      const unmatchedLinkedOmics = sample.linkedOmics.filter((assay) => {
-        if (!assay || assay === '待选择' || assay === '待指定') return false;
-        return !representedLabels.has(assay) && !representedLabels.has(normalizeLinkedOmicsLabel(assay));
-      });
-      const assays = unmatchedLinkedOmics.length ? unmatchedLinkedOmics : representedSampleIds.has(sample.id) ? [] : ['待指定'];
-      const status = normalizeOmicsDisplayStatus(undefined, sample.status);
-      const sampleId = formatSampleLedgerId(sample);
-
-      return assays.map((assay, index) => ({
-        id: `${sample.id}-${index}`,
-        omicsId: undefined,
-        studyId: sample.studyId,
-        patientName: sample.patientName,
-        hospitalNo: sample.hospitalNo || '-',
-        sampleId,
-        sampleIds: [sampleId],
-        sampleType: sample.sampleType,
-        collectedAt: formatDateOnly(sample.collectedAt),
-        sentAt: formatDateOnly(sample.collectedAt),
-        assay,
-        vendor: '-',
-        usageSummary: '-',
-        status,
-        qc: '待检' as OmicsDisplayQc,
-        resultFileLabel: '-',
-        resultFileStatus: '未创建检测'
-      }));
-    });
-
-  return [...rowsFromOmics, ...rowsFromSamples].sort((a, b) => b.collectedAt.localeCompare(a.collectedAt));
+  }).sort((a, b) => b.collectedAt.localeCompare(a.collectedAt));
 }
 
 function formatSampleLedgerId(sample: SampleRecord) {
@@ -1549,6 +1499,7 @@ function OmicsTable({
   records,
   onView,
   onEdit,
+  onDelete,
   onUpload,
   onOpenFile,
   showStudyId = false
@@ -1556,6 +1507,7 @@ function OmicsTable({
   records: SampleDetectionRow[];
   onView: (record: SampleDetectionRow) => void;
   onEdit: (record: SampleDetectionRow) => void;
+  onDelete: (record: SampleDetectionRow) => void;
   onUpload: (record: SampleDetectionRow) => void;
   onOpenFile: (record: SampleDetectionRow) => void;
   showStudyId?: boolean;
@@ -1639,6 +1591,15 @@ function OmicsTable({
                   >
                     {t('上传结果')}
                   </button>
+                  <button
+                    className="module-link-button module-link-button--danger"
+                    type="button"
+                    disabled={!record.omicsId}
+                    title={!record.omicsId ? t('未创建检测，无需删除') : undefined}
+                    onClick={() => onDelete(record)}
+                  >
+                    {t('删除')}
+                  </button>
                 </div>
               </td>
             </tr>
@@ -1653,11 +1614,13 @@ function SampleLedgerTable({
   rows,
   onView,
   onEdit,
+  onDelete,
   showStudyId = false
 }: {
   rows: SampleLedgerRow[];
   onView: (row: SampleLedgerRow) => void;
   onEdit: (row: SampleLedgerRow) => void;
+  onDelete: (row: SampleLedgerRow) => void;
   showStudyId?: boolean;
 }) {
   const { t } = useI18n();
@@ -1696,6 +1659,7 @@ function SampleLedgerTable({
                 <div className="module-table-actions">
                   <button className="module-link-button" type="button" onClick={() => onEdit(row)}>{t('编辑')}</button>
                   <button className="module-link-button module-link-button--primary" type="button" onClick={() => onView(row)}>{t('查看')}</button>
+                  <button className="module-link-button module-link-button--danger" type="button" onClick={() => onDelete(row)}>{t('删除')}</button>
                 </div>
               </td>
             </tr>
@@ -3086,6 +3050,21 @@ export function SampleTestingPage({
     setUploadStatus(`正在编辑样本 ${row.sampleId}`);
   }
 
+  async function handleDeleteSample(row: SampleLedgerRow) {
+    const target = sampleRows.find((sample) => sample.id === row.id);
+    if (!target) return;
+    if (!window.confirm(`${t('确认删除样本')} ${row.sampleId}？${t('删除后无法恢复。')}`)) return;
+    setUploadStatus(`样本 ${row.sampleId} 正在删除...`);
+    try {
+      await deleteSampleRecord(target.id);
+      setSampleRows((rows) => rows.filter((sample) => sample.id !== target.id));
+      setSampleTestingEditor((editor) => (editor?.kind === 'sample' && editor.draft.id === target.id ? null : editor));
+      setUploadStatus(`样本 ${row.sampleId} 已删除`);
+    } catch {
+      setUploadStatus('删除失败：后端不可用或当前角色无样本删除权限');
+    }
+  }
+
   function handleViewSample(row: SampleLedgerRow) {
     setSampleSearchQuery(row.sampleId);
     setUploadStatus(`已定位样本 ${row.sampleId}`);
@@ -3142,9 +3121,9 @@ export function SampleTestingPage({
       sampleIds,
       sampleUsage,
       sampleType: selectedSamples.length > 1 ? selectedSamples.map((item) => item.sampleType).join(' / ') : sample.sampleType,
-      assay: configuredDetectionTypes[0] ?? (sample.studyId === 'LZXK-01' ? 'ctDNA' : 'WGS'),
+      assay: '',
       vendor: '',
-      platform: sample.studyId === 'LZXK-01' ? 'NextSeq 2000' : 'NovaSeq 6000',
+      platform: '',
       runId: `RUN-${Date.now().toString().slice(-6)}`,
       status: '样本接收',
       qc: '待确认',
@@ -3192,9 +3171,9 @@ export function SampleTestingPage({
         [sample.id]: { usedQuantity: '', returnedQuantity: '', unit: sample.quantityUnit ?? '', role: '主样本' }
       },
       sampleType: sample.sampleType,
-      assay: configuredDetectionTypes[0] ?? (sample.studyId === 'LZXK-01' ? 'ctDNA' : 'WGS'),
+      assay: '',
       vendor: '',
-      platform: sample.studyId === 'LZXK-01' ? 'NextSeq 2000' : 'NovaSeq 6000',
+      platform: '',
       runId: `RUN-${Date.now().toString().slice(-6)}`,
       status: '样本接收',
       qc: '待确认',
@@ -3211,6 +3190,24 @@ export function SampleTestingPage({
     const target = row.omicsId ? records.find((record) => record.id === row.omicsId) : undefined;
     setSelectedUploadOmicsId(target?.id ?? null);
     setUploadStatus(target ? `已定位检测 ${target.id}，上传结果将关联该检测` : `已定位样本 ${row.sampleId}，请先创建检测后上传结果`);
+  }
+
+  async function handleDeleteOmics(row: SampleDetectionRow) {
+    if (!row.omicsId) {
+      setUploadStatus('该行尚未创建检测项目，无需删除');
+      return;
+    }
+    if (!window.confirm(`${t('确认删除检测')} ${row.omicsId}？${t('删除后无法恢复。')}`)) return;
+    setUploadStatus(`检测 ${row.omicsId} 正在删除...`);
+    try {
+      await deleteOmicsRecord(row.omicsId);
+      setRecords((items) => items.filter((record) => record.id !== row.omicsId));
+      setSelectedUploadOmicsId((current) => (current === row.omicsId ? null : current));
+      setSampleTestingEditor((editor) => (editor?.kind === 'omics' && editor.draft.id === row.omicsId ? null : editor));
+      setUploadStatus(`检测 ${row.omicsId} 已删除`);
+    } catch {
+      setUploadStatus('删除失败：后端不可用或当前角色无检测删除权限');
+    }
   }
 
   function updateFlowPatientQuery(query: string) {
@@ -3622,7 +3619,13 @@ export function SampleTestingPage({
           </section>
         ) : null}
         <SampleTestingStatTiles items={sampleStatItems} />
-        <SampleLedgerTable rows={pagedSampleLedgerRows} onView={handleViewSample} onEdit={(row) => void handleEditSample(row)} showStudyId={showStudyId} />
+        <SampleLedgerTable
+          rows={pagedSampleLedgerRows}
+          onView={handleViewSample}
+          onEdit={(row) => void handleEditSample(row)}
+          onDelete={(row) => void handleDeleteSample(row)}
+          showStudyId={showStudyId}
+        />
         <ModuleTableFooter page={safeSampleLedgerPage} total={filteredSampleLedgerRows.length} pageSize={sampleLedgerPageSize} onPageChange={setSampleLedgerPage} />
       </section>
 
@@ -3769,7 +3772,6 @@ export function SampleTestingPage({
                     </span>
                     <span>
                       <strong>{sample.linkedOmics.length ? sample.linkedOmics.join(' / ') : t('待指定检测')}</strong>
-                      <small>{t('已做检测')}</small>
                     </span>
                   </label>
                 ))}
@@ -3862,6 +3864,7 @@ export function SampleTestingPage({
               <label>
                 <span>{t('检测项目')}</span>
                 <select value={sampleTestingEditor.draft.assay} onChange={(event) => patchSampleTestingDraft({ assay: event.target.value as OmicsRecord['assay'] })}>
+                  <option value="">{t('未选择')}</option>
                   {omicsAssayOptions.map((item) => <option value={item} key={item}>{t(item)}</option>)}
                 </select>
               </label>
@@ -3913,6 +3916,7 @@ export function SampleTestingPage({
           records={pagedDetectionRows}
           onView={handleViewOmics}
           onEdit={(row) => void handleEditOmics(row)}
+          onDelete={(row) => void handleDeleteOmics(row)}
           onUpload={startResultFileUpload}
           onOpenFile={(row) => void handleOpenResultFile(row)}
           showStudyId={showStudyId}
